@@ -69,6 +69,16 @@
   --ifx-danger-surface: #ffecef;
   --ifx-info: #1263bf;
   --ifx-info-surface: #eaf4ff;
+  /* Shared page anatomy follows the approved compact vehicle workspace. */
+  --ifx-workspace-header-background: var(--ifx-neutral-100);
+  --ifx-workspace-header-ink: var(--navy-900);
+  --ifx-workspace-header-muted: var(--ink-600);
+  --ifx-workspace-header-control: var(--blue-050);
+  --ifx-workspace-header-border: var(--ifx-border-control);
+  --ifx-icon-action-size: 18px;
+  --ifx-icon-heading-size: 20px;
+  --ifx-workspace-ledger-border: var(--ifx-border-subtle);
+  --ifx-workspace-gap: var(--ifx-space-3);
   --ifx-hold: #6941c6;
   --ifx-hold-surface: #f2edff;
 
@@ -113,6 +123,30 @@
   --ifx-space-10: 2.5rem;
   --ifx-space-12: 3rem;
   --ifx-space-16: 4rem;
+
+  /* Transfer queue geometry retains the compact vehicle thumbnail and row proportions. */
+  --ifx-transfer-list-thumbnail-width: 96px;
+  --ifx-transfer-list-thumbnail-height: 72px;
+  --ifx-transfer-list-thumbnail-compact-width: 66px;
+  --ifx-transfer-list-thumbnail-compact-height: 50px;
+  --ifx-transfer-list-row-min-height: 126px;
+  --ifx-transfer-list-chevron-size: 14px;
+  --ifx-transfer-list-search-gap: 9px;
+  --ifx-transfer-list-search-inline-padding: 11px;
+  --ifx-transfer-list-copy-gap: 5px;
+  --ifx-transfer-list-field-gap: 10px;
+  --ifx-transfer-heading-gap: 14px;
+  --ifx-transfer-list-mobile-row-padding: 14px;
+  --ifx-transfer-list-count-size: 22px;
+  --ifx-transfer-list-count-inline-padding: 5px;
+  --ifx-transfer-list-count-compact-width: 19px;
+  --ifx-transfer-list-count-compact-inline-padding: 3px;
+  --ifx-transfer-filter-select-inline-start-padding: 33px;
+  --ifx-transfer-filter-select-inline-end-padding: 25px;
+  --ifx-transfer-filter-select-block-padding: 8px;
+  --ifx-transfer-filter-select-end-padding: 18px;
+  --ifx-transfer-detail-leading: 1.45;
+  --ifx-transfer-row-leading: 1.35;
 
   --ifx-radius-xs: 5px;
   --ifx-radius-sm: 8px;
@@ -166,6 +200,7 @@
   --ifx-elevation-action: 0 6px 16px rgb(53 70 219 / 22%), inset 0 1px rgb(255 255 255 / 20%);
 
   --ifx-motion-instant: 40ms;
+  --ifx-motion-press: 100ms;
   --ifx-motion-fast: var(--motion-fast);
   --ifx-motion-standard: var(--motion-standard);
   --ifx-motion-deliberate: 120ms;
@@ -228,6 +263,7 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --ifx-motion-instant: 0.01ms;
+    --ifx-motion-press: 0.01ms;
     --ifx-motion-fast: 0.01ms;
     --ifx-motion-standard: 0.01ms;
     --ifx-motion-deliberate: 0.01ms;

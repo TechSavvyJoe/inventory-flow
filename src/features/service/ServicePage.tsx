@@ -16,9 +16,11 @@ import { CopyableValue } from '../../components/CopyableValue'
 import { VehicleQuickFacts } from '../../components/VehicleQuickFacts'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleGallery } from '../inventory/VehicleGallery'
+import { providerHoldLabel } from '../inventory/provider-evidence-utils'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
 import { serviceEvidenceSummary, SourceServiceHistory } from './SourceServiceHistory'
 import { searchFieldsMatch } from '../../lib/search'
+import { FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
 import './ServiceDesk.css'
 
 export const SERVICE_LABELS: Record<ServiceReadinessStatus, string> = {
@@ -128,8 +130,9 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
     setBusy(true)
     setError('')
     setSaved('')
+    let result: ServiceReadinessDetail
     try {
-      const result = await updateServiceReadiness(vehicle.vin, {
+      result = await updateServiceReadiness(vehicle.vin, {
         status, expectedVersion: detail.version, notes,
         ...(['in_service', 'serviced'].includes(status) ? { serviceDate: date } : {}),
       }, role, store)
@@ -137,7 +140,6 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
       markSaved()
       acceptDetail(result)
       setSaved(`${SERVICE_LABELS[result.status]} saved for ${vehicle.stockNumber}.`)
-      await onSaved(result.status)
     } catch (caught) {
       if (!isCurrentWorkspace()) return
       setError(caught instanceof Error ? caught.message : 'Service status could not be saved. Try again.')
@@ -149,13 +151,20 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
           if (isCurrentWorkspace()) setDetail(latest)
         } catch { /* The current draft remains available to retry. */ }
       }
-    } finally { if (isCurrentWorkspace()) setBusy(false) }
+      if (isCurrentWorkspace()) setBusy(false)
+      return
+    }
+    if (!isCurrentWorkspace()) return
+    setBusy(false)
+    try {
+      await onSaved(result.status)
+    } catch { /* The shared workspace provider owns refresh warnings and retry. */ }
   }
 
   const historyEntry = (entry: ServiceReadinessDetail['history'][number]) => <li key={entry.version}><strong>{serviceStatusLabel(entry)}</strong><span>{entry.updatedBy} · {displayDate(entry.updatedAt)}</span>{entry.serviceEnteredAt && <span>Entered service {displayDate(entry.serviceEnteredAt)}</span>}{entry.completedAt && <span>Completed {displayDate(entry.completedAt)}</span>}{entry.notes && <p>{entry.notes}</p>}</li>
 
   return <aside ref={editorRef} className="service-editor" aria-label={`Service for ${vehicle.vehicleName}`}>
-    <button className="service-back" type="button" onClick={() => { if (confirmDiscard()) onBack() }}><ArrowLeft size={17} />{backLabel}</button>
+    <button className={flowButtonClassName({ variant: "quiet", className: "service-back" })} type="button" onClick={() => { if (confirmDiscard()) onBack() }}><ArrowLeft size={18} />{backLabel}</button>
     <section className="service-vehicle-summary" aria-label="Vehicle summary">
     <header className="service-editor-heading">
       <VehicleGallery vehicle={{ id: vehicle.vin, vehicleName: vehicle.vehicleName, imageUrl: vehicle.imageUrl, imageUrls: vehicle.imageUrls, photoCount: vehicle.photoCount }} />
@@ -168,24 +177,22 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
         </div>
       </div>
     </header>
+    {configuration.length > 0 && <dl className="service-vehicle-configuration" aria-label="Vehicle configuration">
+      {configuration.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+    </dl>}
     <dl className="service-editor-identifiers" aria-label="Vehicle identification">
       <div><dt>Stock</dt><dd><CopyableValue label="stock number" text={vehicle.stockNumber} compact>{vehicle.stockNumber}</CopyableValue></dd></div>
       <div className="service-editor-vin"><dt>VIN</dt><dd><CopyableValue label="VIN" text={vehicle.vin} compact>{vehicle.vin}</CopyableValue></dd></div>
     </dl>
-    {configuration.length > 0 && <dl className="service-vehicle-configuration" aria-label="Vehicle configuration">
-      {configuration.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-    </dl>}
     </section>
     <section className="service-status-panel" aria-labelledby="service-status-heading">
-      <header className="service-status-heading">
-        <h3 id="service-status-heading">Service status</h3>
-        {!loading && detail?.canManage && !editing && <button type="button" className="service-note-action" disabled={busy || newerRecordAvailable} onClick={() => { setEditIntent(serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'completion' : 'note'); setStatus(serviceWorkflowStatus(detail)); setSaved(''); setError(''); setEditing(true) }}>{serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'Record completion' : 'Edit note'}</button>}
-      </header>
+      <FlowLedgerHeading className="service-status-heading" title="Service status" titleId="service-status-heading" level={3} variant="plain"
+        actions={!loading && detail?.canManage && !editing ? <button type="button" className={flowButtonClassName({ variant: "secondary", className: "service-note-action" })} disabled={busy || newerRecordAvailable} onClick={() => { setEditIntent(serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'completion' : 'note'); setStatus(serviceWorkflowStatus(detail)); setSaved(''); setError(''); setEditing(true) }}>{serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'Record completion' : 'Edit note'}</button> : undefined} />
     {loading ? <p role="status">Loading service history…</p> : <>
       {error && <div className="service-error" role="alert"><p>{error}</p>{!detail && <button type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button>}</div>}
       {newerRecordAvailable && <div className="service-error" role="status">
         <p>A newer service update is available. Your unsaved edits are still here. Loading the latest status will replace them.</p>
-        <button type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { setSaved(''); setRetry((value) => value + 1) } }}>Load latest status</button>
+        <button className={flowButtonClassName({ variant: "secondary" })} type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { setSaved(''); setRetry((value) => value + 1) } }}>Load latest status</button>
       </div>}
       {saved && <p className="service-saved" role="status"><CheckCircle2 size={18} />{saved}</p>}
       {detail && <>
@@ -193,6 +200,7 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
           <p className={`service-current service-current--${serviceWorkflowStatus(detail)}`}><span className="service-current-label">Current state</span><strong>{serviceWorkflowStatus(detail) === 'serviced' && <CheckCircle2 size={18} aria-hidden="true" />}{serviceStatusLabel(detail)}</strong></p>
           {(detail.serviceEnteredAt || detail.completedAt) && <div className="service-recorded-dates">{detail.serviceEnteredAt && <span>Entered service<strong>{displayDate(detail.serviceEnteredAt)}</strong></span>}{detail.completedAt && <span>Completed<strong>{displayDate(detail.completedAt)}</strong></span>}</div>}
         </section>
+        {!editing && detail.notes && <section className="service-current-note" aria-label="Current service note"><h4>Current service note</h4><p>{detail.notes}</p></section>}
         {detail.readinessBasis === 'unconfirmed' && <p className="service-unconfirmed">No service completion is recorded. Check the vehicle’s service record, then mark it Ready or start the work needed.</p>}
         {detail.canManage ? <>
           {!editing && <div className="service-status-switch" role="group" aria-label="Service actions">
@@ -210,26 +218,28 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
           <label htmlFor="service-notes">Service note <span>(optional)</span></label>
           <textarea id="service-notes" value={notes} maxLength={1000} rows={2} disabled={busy} placeholder="Work needed, completed, or a short handoff note" onChange={(event) => setNotes(event.target.value)} />
           <p className="service-form-help">{editIntent === 'note' ? `Current state: ${SERVICE_LABELS[detail.status]}. Your name and save time are recorded.` : status === 'serviced' ? 'Confirm the vehicle is ready. This records your name and completion date.' : 'Your name and save time are recorded.'}</p>
-          <div className="service-direct-actions"><button className="service-save" type="submit" disabled={busy || newerRecordAvailable}>{busy ? 'Saving…' : editIntent === 'note' ? 'Save note' : 'Save service status'}</button><button type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { acceptDetail(detail); setEditing(false) } }}>Cancel</button></div>
+          <div className="service-direct-actions"><button className={flowButtonClassName({ variant: "primary", className: "service-save" })} type="submit" disabled={busy || newerRecordAvailable}>{busy ? 'Saving…' : editIntent === 'note' ? 'Save note' : 'Save service status'}</button><button className={flowButtonClassName({ variant: "secondary" })} type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { acceptDetail(detail); setEditing(false) } }}>Cancel</button></div>
         </form>}</> : <p className="service-permission">{detail.store ? `A ${detail.store} manager can update this vehicle’s service status.` : 'A group manager can update service until the vehicle’s store is confirmed.'}</p>}
 
       </>}
       {/* Vehicle references come from the inventory record, not the service
           endpoint, so they stay readable when service detail fails to load. */}
       <dl className="service-fact-grid" aria-label="Service decision facts">
-        <div><dt>Hold</dt><dd>{['primary', 'backup', 'multiple'].includes(vehicle.hold?.state) ? vehicle.hold.label || 'Held — confirm availability' : vehicle.hold?.state === 'none_observed' ? 'No observed hold' : 'Review hold status'}</dd></div>
+        <div><dt>Hold</dt><dd>{vehicle.hold?.label || (['primary', 'backup', 'multiple'].includes(vehicle.hold?.state) ? 'Held — confirm availability' : 'Review hold status')}</dd></div>
+        {(vehicle.inventoryDecision?.evidence ?? vehicle.operationalEvidence?.records ?? []).filter(record => record.provider !== 'legacy-dealermail').map(record => <div key={record.provider}><dt>{record.sourceLabel}</dt><dd>{providerHoldLabel(record)}{record.holdState === 'held' && (record.dataState !== 'current' || !record.complete) ? record.dataState === 'stale_unverified' ? ' · Retained hold observation' : ' · Unverified hold observation' : ''}</dd></div>)}
+        {vehicle.manualHold?.state === 'active' || vehicle.manualHold?.state === 'requested' ? <div><dt>Inventory Flow hold</dt><dd>{vehicle.manualHold.state === 'active' ? 'Approved hold' : 'Pending approval · not a confirmed hold'}</dd></div> : null}
         <div><dt>Location</dt><dd>{vehicle.movement?.currentLocation || vehicle.sourceReportedLocation || 'Not confirmed'}<small>{vehicle.movement?.currentLocation && vehicle.movement.locationConfidence === 'verified' ? 'Confirmed location' : 'Confirm with the store'}</small></dd></div>
       </dl>
       <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>
     </>}
-    </section>
-    <SourceServiceHistory vehicle={vehicle} recordsHref={recordsHref} />
-    <ServiceVehicleContext vehicle={vehicle} recordsHref={recordsHref} />
       {!loading && detail && <>
         <section className="service-history" aria-labelledby="service-history-title"><h3 id="service-history-title">Status updates</h3>
           {detail.history.length ? <><ol>{detail.history.slice(0, 3).map(historyEntry)}</ol>{detail.history.length > 3 && <details><summary>Earlier updates ({detail.history.length - 3})</summary><ol>{detail.history.slice(3).map(historyEntry)}</ol></details>}</> : <p>{detail.version ? 'Detailed service history is limited to sales staff and managers.' : serviceWorkflowStatus(detail) === 'serviced' ? 'Ready is recorded. No completion date is available.' : 'Service has not been confirmed. A manager must mark this vehicle Ready after review.'}</p>}
         </section>
       </>}
+    </section>
+    <SourceServiceHistory vehicle={vehicle} recordsHref={recordsHref} />
+    <ServiceVehicleContext vehicle={vehicle} recordsHref={recordsHref} />
   </aside>
 }
 
@@ -247,15 +257,20 @@ export function ServicePage() {
   // this visit only; the parameter is read once and stripped.
   const [storeFilter, setStoreFilter] = useState<StoreName | null>(null)
   const storeParam = params.get('store')
+  const scopeParam = params.get('scope')
   useEffect(() => {
-    if (storeParam === null) return
+    if (storeParam === null && scopeParam === null) return
+    if (scopeParam === 'all' || scopeParam === 'my_store') {
+      setScope(scopeParam)
+      setStoreFilter(null)
+    }
     if (STORE_NAMES.includes(storeParam as StoreName)) {
       const linked = storeParam as StoreName
       setScope(linked === homeStore ? 'my_store' : 'all')
       setStoreFilter(linked === homeStore ? null : linked)
     }
-    setParams((current) => { const next = new URLSearchParams(current); next.delete('store'); return next }, { replace: true })
-  }, [storeParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
+    setParams((current) => { const next = new URLSearchParams(current); next.delete('store'); next.delete('scope'); return next }, { replace: true })
+  }, [storeParam, scopeParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
   const statusParam = params.get('status') as ServiceWorkflowStatus
   const actionParam = params.get('action') as ServiceWorkflowStatus
   const selectedVin = params.get('vin')
@@ -275,11 +290,15 @@ export function ServicePage() {
   }
   if (!data) return null
   const returnParams = new URLSearchParams(location.search)
+  returnParams.set('scope', scope)
   if (scope === 'all' && storeFilter) returnParams.set('store', storeFilter)
+  else returnParams.delete('store')
   const returnPath = currentWorkspaceReturnPath({ ...location, search: returnParams.size ? `?${returnParams.toString()}` : '' })
   return <section className={`service-page${selected ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
     <SourceWarning meta={data.meta} />
-    <header className="service-page-heading"><h1><Wrench aria-hidden="true" size={25} />Service status</h1><div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => { setScope('my_store'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all' && !storeFilter} onClick={() => { setScope('all'); setStoreFilter(null) }}>All stores</button></div></div></header>
+    <FlowPageHeader className="service-page-heading" icon={<Wrench aria-hidden="true" size={20} />} title="Service status">
+      <div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => { setScope('my_store'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all' && !storeFilter} onClick={() => { setScope('all'); setStoreFilter(null) }}>All stores</button></div></div>
+    </FlowPageHeader>
     <div className="service-tabs" role="group" aria-label="Service status">
       {STATUSES.map((value) => <button key={value} type="button" aria-pressed={status === value} onClick={() => setParams({ status: value, ...(returnTo ? { returnTo } : {}) })}>{SERVICE_LABELS[value]}{' '}<span>{counts[value]}</span></button>)}
     </div>
@@ -291,14 +310,14 @@ export function ServicePage() {
       {vehicles.length ? <ul className="service-list">{vehicles.map((vehicle) => {
         const serviceAction = vehicle.serviceReadiness?.canManage ? 'Update service' : 'View service'
         return <li key={vehicle.vin} className="service-vehicle-entry"><button className="service-vehicle-row" type="button" aria-pressed={selectedVin === vehicle.vin} onClick={() => selectVin(vehicle.vin)}>
-          <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small><VehicleQuickFacts vehicle={vehicle} /></span>
+          <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small></span>
           <span className="service-row-numbers"><strong>{vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : 'Mileage unavailable'}</strong><span>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : ''}</span></span>
           <span className={`service-status-badge service-status-${status}`}>{SERVICE_LABELS[status]}<small>{vehicle.serviceReadiness?.notes || (status === 'in_service' && vehicle.serviceReadiness?.serviceEnteredAt ? `Since ${displayDate(vehicle.serviceReadiness.serviceEnteredAt)}` : serviceEvidenceSummary(vehicle) || 'View & update')}</small></span>
         </button><nav className="service-row-actions" aria-label={`Actions for ${vehicle.vehicleName}`}>
-          <Link aria-label={`Open vehicle for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { returnTo: returnPath })}><CarFront size={16} aria-hidden="true" />Open vehicle</Link>
-          <Link aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={16} aria-hidden="true" />Records</Link>
-          <button type="button" aria-label={`${serviceAction} for ${vehicle.vehicleName}`} onClick={() => selectVin(vehicle.vin)}><Wrench size={16} aria-hidden="true" />{serviceAction}</button>
-        </nav></li>
+          <button className={flowButtonClassName({ variant: "primary", className: "service-row-primary-action" })} type="button" aria-label={`${serviceAction} for ${vehicle.vehicleName}`} onClick={() => selectVin(vehicle.vin)}><Wrench size={18} aria-hidden="true" />{serviceAction}</button>
+          <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-open-vehicle" })} aria-label={`Open vehicle for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { returnTo: returnPath })}><CarFront size={18} aria-hidden="true" />Open vehicle</Link>
+          <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-records" })} aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={18} aria-hidden="true" />Records</Link>
+        </nav><div className="service-row-supporting"><VehicleQuickFacts vehicle={vehicle} /></div></li>
       })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
     </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
   </section>

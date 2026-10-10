@@ -180,7 +180,8 @@ export async function closeUnresponsiveOriginTabs(origin) {
 // required so login, menu, and other user-opened pages on the same origin are
 // never treated as duplicates.
 export async function closeDuplicateTabs(origin, { pathIncludes = '', keepTabId = null } = {}) {
-  const list = await targets()
+  let list
+  try { list = await targets() } catch { return 0 }
   const matches = list.filter((candidate) => candidate.type === 'page' &&
     (candidate.url || '').startsWith(origin + '/') &&
     (!pathIncludes || (candidate.url || '').includes(pathIncludes)))

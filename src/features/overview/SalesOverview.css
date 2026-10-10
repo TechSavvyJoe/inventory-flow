@@ -1,32 +1,21 @@
-.sales-overview { display:grid; gap:var(--ifx-space-4); color:var(--ink-900); }
-.sales-overview__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border:1px solid var(--border); border-radius:var(--radius-panel); background:var(--surface); overflow:hidden; }
-.sales-overview__metric { display:grid; grid-template-columns:1fr auto; grid-template-rows:auto auto; gap:var(--ifx-space-1) var(--ifx-space-2); min-width:0; min-height:var(--control-target); padding:var(--ifx-space-3) var(--ifx-space-4); border-right:1px solid var(--border); color:var(--ink-700); text-decoration:none; }
+.sales-overview { display:grid; gap:var(--ifx-workspace-gap); color:var(--ink-900); }
+.sales-overview__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); background:var(--surface); }
+.sales-overview__metric { display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto; gap:var(--ifx-space-1) var(--ifx-space-2); min-width:0; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border-right:1px solid var(--border); color:var(--ink-700); text-decoration:none; }
 .sales-overview__metric:last-child { border-right:0; }
-.sales-overview__metric span { align-self:end; font-size:var(--ifx-text-sm); }
-.sales-overview__metric strong { color:var(--navy-900); font-size:var(--ifx-text-h4); line-height:var(--ifx-leading-heading); }
-.sales-overview__metric svg { grid-column:2; grid-row:1 / span 2; align-self:center; width:var(--ifx-space-4); color:var(--blue-600); }
+.sales-overview__metric span { grid-column:1 / -1; font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
+.sales-overview__metric strong { color:var(--blue-700); font-size:var(--ifx-text-xl); line-height:var(--ifx-leading-heading); }
+.sales-overview__metric svg { grid-column:1; grid-row:1; align-self:center; width:var(--ifx-icon-action-size); height:var(--ifx-icon-action-size); color:var(--blue-600); }
 .sales-overview__metric:hover { background:var(--blue-050); }
 .sales-overview__metric:focus-visible,
 .sales-overview :is(a,button):focus-visible { outline:var(--ifx-space-0-5) solid var(--focus); outline-offset:var(--ifx-space-0-5); }
 
-.sales-overview__workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(calc(var(--ifx-space-16) * 4),.38fr); gap:var(--ifx-space-4); align-items:start; }
+.sales-overview__workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(calc(var(--ifx-space-16) * 4),.38fr); gap:var(--ifx-workspace-gap); align-items:start; }
 .sales-overview__vehicle-column,
-.sales-overview__sidebar { display:grid; min-width:0; gap:var(--ifx-space-4); align-content:start; align-items:start; }
+.sales-overview__sidebar { display:grid; min-width:0; gap:var(--ifx-workspace-gap); align-content:start; align-items:start; }
 .sales-overview__workspace--no-saved .sales-overview__other { order:-1; }
-.sales-overview__panel { min-width:0; border:1px solid var(--border); border-radius:var(--radius-panel); background:var(--surface); overflow:hidden; }
-.sales-overview__section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--ifx-space-3); padding:var(--ifx-space-3) var(--ifx-space-4); border-bottom:1px solid var(--border); }
-.sales-overview__section-head h2,
-.sales-overview__browse-panel h2 { margin:0; color:var(--navy-900); font-size:var(--ifx-text-lg); line-height:var(--ifx-leading-heading); }
-.sales-overview__section-head p,
-.sales-overview__browse-panel p { margin:var(--ifx-space-1) 0 0; max-width:62ch; color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
-.sales-overview__section-head > :is(span,strong,a) { flex:0 0 auto; color:var(--blue-700); font-size:var(--ifx-text-sm); }
-.sales-overview__section-head a { display:inline-flex; align-items:center; min-height:var(--control-target); }
-
-.sales-overview__list-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:var(--ifx-space-2); padding:var(--ifx-space-3) var(--ifx-space-4); border-bottom:1px solid var(--border); }
+.sales-overview__panel { min-width:0; border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-radius:var(--radius-panel); background:var(--surface); overflow:hidden; }
+.sales-overview__list-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:var(--ifx-space-2); padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); background:var(--ifx-neutral-50); }
 .sales-overview__list-tabs { display:flex; flex:1 1 calc(var(--control-target) * 3); min-width:0; gap:var(--ifx-space-2); overflow-x:auto; }
-.sales-overview__sheet { display:inline-flex; align-items:center; justify-content:center; gap:var(--ifx-space-2); flex:0 0 auto; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--blue-700); border-radius:var(--radius-control); background:var(--blue-700); color:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); white-space:nowrap; cursor:pointer; }
-.sales-overview__sheet:hover { background:var(--navy-900); border-color:var(--navy-900); }
-.sales-overview__sheet:active { background:var(--blue-600); }
 .sales-overview__saved-note { margin:0; padding:var(--ifx-space-2) var(--ifx-space-4); border-bottom:1px solid var(--border); background:var(--surface-soft); color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
 .sales-overview__list-tabs button { display:inline-flex; align-items:center; gap:var(--ifx-space-2); flex:0 0 auto; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--radius-control); background:var(--surface); color:var(--ink-700); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
 .sales-overview__list-tabs button[aria-pressed="true"] { border-color:var(--blue-600); background:var(--blue-050); color:var(--navy-900); }
@@ -34,74 +23,64 @@
 
 .sales-overview__vehicle-list,
 .sales-overview__plain-list { margin:0; padding:0; list-style:none; }
-.sales-overview__vehicle-row { display:grid; grid-template-columns:calc(var(--control-target) * 2 + var(--ifx-space-4)) minmax(0,1fr); gap:var(--ifx-space-4); align-items:start; padding:var(--ifx-space-4); border-bottom:1px solid var(--border); }
+.sales-overview__vehicle-row { display:grid; grid-template-columns:calc(var(--control-target) * 2 + var(--ifx-space-4)) minmax(0,1fr); gap:var(--ifx-workspace-gap); align-items:start; padding:var(--ifx-space-3); border-bottom:1px solid var(--border); }
 .sales-overview__vehicle-row:last-child,
 .sales-overview__plain-list > li:last-child { border-bottom:0; }
 .sales-overview__vehicle-photo { display:flex; align-items:center; justify-content:center; width:calc(var(--control-target) * 2 + var(--ifx-space-4)); height:calc(var(--control-target) + var(--ifx-space-6) + var(--ifx-space-1)); border-radius:var(--radius-control); background:var(--surface-soft); overflow:hidden; }
 .sales-overview__vehicle-photo :is(img,svg) { width:100%; height:100%; object-fit:contain; }
 .sales-overview__vehicle-content { display:grid; min-width:0; gap:var(--ifx-space-3); }
-.sales-overview__vehicle-heading { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:var(--ifx-space-3); align-items:start; }
+.sales-overview__vehicle-heading { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--ifx-space-3); align-items:start; }
 .sales-overview__vehicle-identity { display:grid; min-width:0; gap:var(--ifx-space-1); color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
 .sales-overview__vehicle-identity strong { color:var(--navy-900); font-size:var(--ifx-text-body); line-height:var(--ifx-leading-heading); }
 .sales-overview__vin { overflow-wrap:anywhere; }
 .sales-overview__price-mileage { display:grid; justify-items:end; gap:var(--ifx-space-1); color:var(--ink-600); font-size:var(--ifx-text-sm); white-space:nowrap; }
 .sales-overview__price-mileage strong { color:var(--navy-900); font-size:var(--ifx-text-xl); line-height:var(--ifx-leading-heading); }
-.sales-overview__open { display:inline-flex; align-items:center; justify-content:center; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--blue-700); border-radius:var(--radius-control); background:var(--blue-700); color:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); text-decoration:none; white-space:nowrap; }
-.sales-overview__open:hover { background:var(--navy-900); border-color:var(--navy-900); }
 
-.sales-overview__specs,
 .sales-overview__operational-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--ifx-space-3); min-width:0; margin:0; padding:0; }
-.sales-overview__specs > div,
 .sales-overview__operational-facts > div { display:grid; align-content:start; min-width:0; gap:var(--ifx-space-1); }
-.sales-overview__specs dt,
 .sales-overview__operational-facts dt { color:var(--ink-600); font-size:var(--ifx-text-sm); font-weight:var(--ifx-weight-semibold); line-height:var(--ifx-leading-compact); }
-.sales-overview__specs dd,
 .sales-overview__operational-facts dd { margin:0; color:var(--ink-800); font-size:var(--ifx-text-md); line-height:var(--ifx-leading-compact); overflow-wrap:anywhere; }
 .sales-overview__operational-facts { grid-template-columns:repeat(auto-fit,minmax(calc(var(--ifx-space-16) * 2),1fr)); padding-top:var(--ifx-space-3); border-top:1px solid var(--border); }
 .sales-overview__operational-facts dt { color:var(--navy-900); }
 
-.sales-overview__browse-panel { display:grid; gap:var(--ifx-space-3); padding:var(--ifx-space-4); }
-.sales-overview__browse { display:flex; align-items:center; justify-content:space-between; gap:var(--ifx-space-2); min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--radius-control); color:var(--blue-700); font-size:var(--ifx-text-md); font-weight:var(--ifx-weight-semibold); text-decoration:none; }
-.sales-overview__browse svg { flex:0 0 auto; width:var(--ifx-space-4); }
-.sales-overview__plain-list > li { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--ifx-space-3); padding:var(--ifx-space-3) var(--ifx-space-4); border-bottom:1px solid var(--border); }
+.sales-overview__browse-panel { display:grid; gap:var(--ifx-space-2); padding-bottom:var(--ifx-space-3); }
+.sales-overview__browse-panel > .sales-overview__browse { justify-content:space-between; }
+.sales-overview__plain-list > li { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--ifx-space-3); padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:1px solid var(--border); }
 .sales-overview__plain-list li > div { display:grid; min-width:0; gap:var(--ifx-space-1); }
 .sales-overview__plain-list strong { color:var(--navy-900); font-size:var(--ifx-text-md); line-height:var(--ifx-leading-compact); }
 .sales-overview__plain-list span { color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
-.sales-overview__plain-list a { display:inline-flex; flex:0 0 auto; align-items:center; justify-content:center; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--radius-control); color:var(--blue-700); font-size:var(--ifx-text-md); text-decoration:none; white-space:nowrap; }
-.sales-overview__state { display:flex; align-items:center; gap:var(--ifx-space-2); margin:0; padding:var(--ifx-space-4); color:var(--ink-600); font-size:var(--ifx-text-md); line-height:var(--ifx-leading-body); }
+.sales-overview__plain-list a { flex:0 0 auto; white-space:nowrap; }
+.sales-overview__state { display:flex; align-items:center; gap:var(--ifx-space-2); margin:0; padding:var(--ifx-space-3); color:var(--ink-600); font-size:var(--ifx-text-md); line-height:var(--ifx-leading-body); }
 .sales-overview__state svg { flex:0 0 auto; width:var(--ifx-space-4); }
 .sales-overview__state--alert { color:var(--red); }
-.sales-overview__error { display:flex; align-items:center; justify-content:space-between; gap:var(--ifx-space-3); padding:var(--ifx-space-3) var(--ifx-space-4); border-bottom:1px solid var(--border); background:var(--red-bg); color:var(--red); }
-.sales-overview__error button { display:inline-flex; align-items:center; gap:var(--ifx-space-2); min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--red); border-radius:var(--radius-control); background:var(--surface); color:var(--red); cursor:pointer; }
-.sales-overview__error svg { width:var(--ifx-space-4); }
+.sales-overview__error { display:flex; align-items:center; justify-content:space-between; gap:var(--ifx-space-3); padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:1px solid var(--border); background:var(--red-bg); color:var(--red); }
 .sales-overview__boundary { display:flex; align-items:flex-start; gap:var(--ifx-space-2); margin:0; color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
 .sales-overview__boundary svg { flex:0 0 auto; width:var(--ifx-space-4); color:var(--amber); }
 
 @media (max-width:64rem) {
   .sales-overview__workspace { grid-template-columns:1fr; }
   .sales-overview__sidebar { grid-template-columns:repeat(auto-fit,minmax(calc(var(--ifx-space-16) * 3),1fr)); }
-  .sales-overview__specs { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
 @media (max-width:34rem) {
-  .sales-overview { gap:var(--ifx-space-3); }
+  .sales-overview { gap:var(--ifx-space-2); }
   .sales-overview__metrics { grid-template-columns:repeat(4,minmax(0,1fr)); }
   .sales-overview__metric { padding:var(--ifx-space-2); gap:var(--ifx-space-1); }
   .sales-overview__metric span { font-size:var(--ifx-text-xs); }
-  .sales-overview__metric svg { display:none; }
-  .sales-overview__metric strong { grid-column:1 / -1; }
+  .sales-overview__metric svg { width:var(--ifx-icon-action-size); }
+  .sales-overview__metric strong { grid-column:2; grid-row:1; }
   .sales-overview__sidebar { grid-template-columns:1fr; }
-  .sales-overview__section-head { padding:var(--ifx-space-3); }
-  .sales-overview__list-toolbar { padding:var(--ifx-space-2) var(--ifx-space-3); }
+  .sales-overview__list-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; padding:var(--ifx-space-1) var(--ifx-space-3); }
+  .sales-overview__sheet { --ifx-button-pad:var(--ifx-space-2); }
   .sales-overview__vehicle-row { grid-template-columns:var(--ifx-space-16) minmax(0,1fr); gap:var(--ifx-space-3); padding:var(--ifx-space-3); }
   .sales-overview__vehicle-photo { width:var(--ifx-space-16); height:var(--ifx-space-12); }
   .sales-overview__vehicle-content { display:contents; }
-  .sales-overview__vehicle-heading { grid-column:2; grid-template-columns:minmax(0,1fr) auto; gap:var(--ifx-space-2); }
-  .sales-overview__vehicle-identity { grid-column:1; }
-  .sales-overview__price-mileage { grid-column:1 / -1; grid-row:2; justify-items:start; grid-template-columns:auto auto; align-items:baseline; gap:var(--ifx-space-2); white-space:normal; }
+  .sales-overview__vehicle-heading { display:contents; }
+  .sales-overview__vehicle-identity { grid-column:2; }
+  .sales-overview__value-actions { grid-column:1 / -1; }
+  .sales-overview__price-mileage { justify-items:start; }
   .sales-overview__price-mileage strong { font-size:var(--ifx-text-lg); }
-  .sales-overview__open { grid-column:2; grid-row:1; align-self:start; padding-inline:var(--ifx-space-2); }
-  .sales-overview__specs,
+  .sales-overview__open { align-self:center; }
   .sales-overview__operational-facts { grid-column:1 / -1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-3) var(--ifx-space-2); }
   .sales-overview__operational-facts > div:nth-child(5) { grid-column:1 / -1; }
   .sales-overview__plain-list > li { align-items:flex-start; }
@@ -119,3 +98,10 @@
   .sales-overview__browse-panel,
   .sales-overview__list-tabs button[aria-pressed="false"] { display:none; }
 }
+
+.sales-overview__specs { min-width:0; border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); padding-top:var(--ifx-space-2); }
+.sales-overview__specs .vehicle-quick-facts { width:100%; }
+@media(max-width:48rem) { .sales-overview__specs { grid-column:1 / -1; } }
+.sales-overview__value-actions { display:flex; align-items:center; justify-content:space-between; gap:var(--ifx-space-3); min-width:0; }
+.sales-overview__operational-facts dt { display:flex; align-items:center; gap:var(--ifx-space-1); }
+.sales-overview__operational-facts dt svg { flex:none; width:var(--ifx-icon-action-size); height:var(--ifx-icon-action-size); color:var(--ink-600); stroke-width:2; }

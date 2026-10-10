@@ -20,12 +20,42 @@ function Dialog({ onEscape, escapeOnCommit = false, tabOnCommit = false, active 
   return active ? <div ref={container} role="dialog" aria-modal="true" aria-label="Vehicle details" tabIndex={-1}>Vehicle details</div> : null
 }
 
+function FocusableDialog({ onEscape }: { onEscape: () => void }) {
+  const container = useRef<HTMLDivElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  useContainedFocus({ active: true, contain: true, containerRef: container, initialFocusRef: heading, onEscape })
+  return <div ref={container} role="dialog" aria-modal="true" aria-label="Issue details" tabIndex={-1}>
+    <h2 ref={heading} tabIndex={-1}>Issue details</h2>
+    <button>First action</button>
+    <button>Last action</button>
+  </div>
+}
+
 function ClosingDialog({ escapeOnCommit = false }: { escapeOnCommit?: boolean }) {
   const [open, setOpen] = useState(true)
   return open ? <Dialog onEscape={() => setOpen(false)} tabOnCommit escapeOnCommit={escapeOnCommit} /> : null
 }
 
 describe('contained dialog keyboard readiness', () => {
+  it.each([
+    [false, 'heading', 'First action'],
+    [true, 'heading', 'Last action'],
+    [false, 'container', 'First action'],
+    [true, 'container', 'Last action'],
+  ] as const)('sends Tab from a non-focusable %s target to the correct boundary', (shiftKey, initialTarget, boundary) => {
+    const bounds = { x: 0, y: 0, top: 0, right: 10, bottom: 10, left: 0, width: 10, height: 10, toJSON: () => ({}) } as DOMRect
+    const dimensions = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(bounds)
+    render(<FocusableDialog onEscape={vi.fn()} />)
+    const target = initialTarget === 'heading'
+      ? screen.getByRole('heading', { name: 'Issue details' })
+      : screen.getByRole('dialog', { name: 'Issue details' })
+    target.focus()
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey })
+    expect(screen.getByRole('button', { name: boundary })).toHaveFocus()
+    dimensions.mockRestore()
+  })
+
   it('handles Escape in the same commit that exposes a newly opened dialog', () => {
     const onEscape = vi.fn()
     render(<Dialog onEscape={onEscape} escapeOnCommit />)

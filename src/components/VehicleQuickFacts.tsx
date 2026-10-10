@@ -26,12 +26,12 @@ export function VehicleQuickFacts({ vehicle, standouts = [] }: VehicleQuickFacts
   const driving = [vehicle.transmission, vehicle.fuelType, economy ? `${economy} MPG` : null].filter(Boolean).join(' · ')
   const facts = [
     ['Engine / drive', powertrain],
-    ['Exterior / interior', colors],
     ['Transmission / fuel', driving],
+    ['Exterior / interior', colors],
     ['Standout equipment', standouts.join(' · ')],
   ].filter(([, value]) => value)
   if (!facts.length) return null
   return <span className="vehicle-quick-facts" role="group" aria-label="Vehicle quick facts">
-    {facts.map(([label, value]) => <span className="vehicle-quick-facts__item" key={label} aria-label={`${label}: ${value}`} title={label}>{value}</span>)}
+    {facts.map(([label, value]) => <span className={`vehicle-quick-facts__item${label === 'Exterior / interior' ? ' vehicle-quick-facts__item--colors' : label === 'Standout equipment' ? ' vehicle-quick-facts__item--equipment' : ''}`} key={label} aria-label={`${label}: ${value}`} title={label}>{label === 'Exterior / interior' ? <>{vehicle.exteriorColor ? <span className="vehicle-quick-facts__color"><span className="vehicle-quick-facts__label">Exterior</span><span className="vehicle-quick-facts__value">{vehicle.exteriorColor}</span></span> : null}{vehicle.interiorColor ? <span className="vehicle-quick-facts__color"><span className="vehicle-quick-facts__label">Interior</span><span className="vehicle-quick-facts__value">{vehicle.interiorColor}</span></span> : null}</> : <><span className="vehicle-quick-facts__label">{label}</span><span className="vehicle-quick-facts__value">{value}</span></>}</span>)}
   </span>
 }

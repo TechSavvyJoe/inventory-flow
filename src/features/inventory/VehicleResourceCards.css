@@ -40,7 +40,7 @@
 .vehicle-resources--scan > :is(.vehicle-resource-scan[data-resource-kind="autocheck"], .vehicle-resource-scan__missing[data-missing="history"]) { grid-column:1; grid-row:1; border-left:0; }
 .vehicle-resources--scan > :is(.vehicle-resource-scan[data-resource-kind="window-sticker"], .vehicle-resource-scan[data-resource-kind="vauto"], .vehicle-resource-scan__missing[data-missing="equipment"]) { grid-column:2; grid-row:1; }
 .vehicle-resources--scan > :is(.vehicle-resource-scan[data-resource-kind="oasis"], .vehicle-resource-scan__missing[data-missing="oasis"]) { grid-column:3; grid-row:1; }
-.vehicle-resource-scan__source { display:inline-flex; grid-column:1; grid-row:1; align-items:center; justify-content:center; gap:var(--ifx-space-1); width:calc(var(--ifx-space-16) + var(--ifx-space-10)); max-width:100%; min-height:var(--ifx-control-height-lg); margin:0; padding:0 var(--ifx-space-2); border:1px solid var(--border); border-radius:var(--ifx-radius-xs); color:var(--navy-900); background:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.3 var(--font-app); text-decoration:none; cursor:pointer; }
+.vehicle-resource-scan__source { display:inline-flex; grid-column:1; grid-row:1; align-items:center; justify-content:center; gap:var(--ifx-space-1); width:calc(var(--ifx-space-16) + var(--ifx-space-10)); max-width:100%; min-height:var(--ifx-control-height-md); margin:0; padding:0 var(--ifx-space-2); border:1px solid var(--border); border-radius:var(--ifx-radius-xs); color:var(--navy-900); background:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.3 var(--font-app); text-decoration:none; cursor:pointer; }
 .vehicle-resource-scan__source--static { min-height:var(--ifx-space-5); padding:0; border:0; background:transparent; cursor:default; }
 .vehicle-resource-scan__source .vehicle-resource-brand { width:var(--ifx-space-16); height:var(--ifx-space-5); object-fit:contain; object-position:left center; }
 .vehicle-resource-scan__source .vehicle-resource-brand--ford { width:var(--ifx-space-10); }
@@ -49,20 +49,20 @@
 .vehicle-resource-scan__source > svg { flex-shrink:0; }
 .vehicle-resource-scan__source:is(a,button):hover { color:var(--blue-700); background:var(--blue-050); border-color:var(--blue-600); }
 .vehicle-resource-scan__source[aria-expanded=true] { background:var(--blue-600); border-color:var(--blue-600); color:var(--surface); }
-.vehicle-resource-scan__findings { grid-column:2; grid-row:1 / span 2; min-width:0; align-self:start; }
+.vehicle-resource-scan__findings { grid-column:2; grid-row:1; min-width:0; align-self:start; }
 .vehicle-resource-scan__fields { display:flex; flex-wrap:wrap; gap:var(--ifx-space-0-5) var(--ifx-space-3); margin:0; }
 .vehicle-resource-scan__fields > div { display:flex; align-items:baseline; gap:var(--ifx-space-1); min-width:0; max-width:100%; padding:0; }
 .vehicle-resource-scan__fields > [data-field="score"] { order:-3; }
 .vehicle-resource-scan__fields > :is([data-field="owners"],[data-field="use"]) { order:-2; }
 .vehicle-resource-scan__fields > [data-field="odometer"] { order:-1; }
-.vehicle-resource-scan__fields > :is([data-field="title"],[data-field="accidents"],[data-field="accident / damage"],[data-field="option"],[data-field="equipment"],[data-field="group"],[data-field="highlight"],[data-field="package"],[data-field="service"]) { flex-basis:100%; }
+.vehicle-resource-scan__fields > :is([data-field="accidents"],[data-field="accident / damage"],[data-field="option"],[data-field="equipment"],[data-field="group"],[data-field="highlight"],[data-field="package"],[data-field="service"]) { flex-basis:100%; }
 .vehicle-resource-scan__fields dt { margin:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
 /* Outranks the app-wide paragraph/definition line-height so the ledger stays compact. */
 .vehicle-resources--scan .vehicle-resource-scan__fields dd { display:grid; gap:var(--ifx-space-0-5); margin:0; min-width:0; color:var(--ink-900); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.3 var(--font-app); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .vehicle-resource-scan__fields > [data-field="captured"] { column-gap:var(--ifx-space-0-5); }
 .vehicle-resources--scan .vehicle-resource-scan__fields > [data-field="captured"] dd { font-size:var(--ifx-text-xs); white-space:nowrap; }
 .vehicle-resource-scan__fields > :is([data-field="group"],[data-field="highlight"],[data-field="package"],[data-field="service"]) dd > span { display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-.vehicle-resource-scan__caption { grid-column:1; grid-row:2; width:calc(2 * var(--ifx-space-16) + var(--ifx-space-3)); max-width:100%; margin:0; padding:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.35 var(--font-app); overflow-wrap:anywhere; }
+.vehicle-resource-scan__caption { grid-column:1 / -1; grid-row:2; width:auto; max-width:100%; margin:0; padding:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.35 var(--font-app); overflow-wrap:anywhere; }
 .vehicle-resource-scan__missing { grid-column:1 / -1; margin:var(--ifx-space-0-5) 0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.35 var(--font-app); }
 .vehicle-resources--scan > .vehicle-resource-scan__missing { margin:0; padding:var(--ifx-space-1) var(--ifx-space-3); border-left:1px solid var(--border); }
 .vehicle-resources--scan > .vehicle-resource-scan__missing[data-missing="history"] { border-left:0; }

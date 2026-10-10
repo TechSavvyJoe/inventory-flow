@@ -3,11 +3,13 @@ import { PanelApiError, clearApiCache, fetchBootstrap, fetchCompanionRelease, fe
 import { createCustomerListSession, customerListWritesReady } from './lib/customer-lists.mjs'
 import { bindPhotoSwipe } from './lib/photo-swipe.mjs'
 import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
+import { currentProviderHoldReports, unverifiedProviderHoldReports } from './lib/hold-evidence.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
 import { groupMatchesByStore, resolveStoreScope, scopeCounts, scopeMatches } from './lib/scope.mjs'
 import { compareVehicles } from './lib/compare.mjs'
 import { certifiedTerms, vehicleInServiceSource, warrantyOutlook } from './lib/warranty.mjs'
+import { calculatedWarrantyMiles } from './lib/vehicle-rules-core.mjs'
 import { sourceDistanceText } from './lib/source-distance.mjs'
 import { brandFor } from './lib/brand.mjs'
 import * as links from './lib/links.mjs'
@@ -390,6 +392,22 @@ function holdPill(vehicle, { long = false } = {}) {
   return el('span', { class: `pill ${tone}`.trim(), title: fmt.joinFacts([hold.label, primary?.salesperson ? `Hold · ${primary.salesperson}` : null]) }, hold.tone === 'held' ? icon('lock') : null, label)
 }
 
+function additionalHoldBadges(vehicle) {
+  const badges = currentProviderHoldReports(vehicle).map((report) => el('span', {
+    class: 'pill pill-held', title: `${report.sourceLabel || report.provider} is separate read-only evidence; DealerMail status is shown separately.`,
+  }, icon('lock'), `${report.sourceLabel || report.provider} reports hold`))
+  for (const report of unverifiedProviderHoldReports(vehicle)) badges.push(el('span', {
+    class: 'pill pill-moving', title: `${report.sourceLabel || report.provider} previously reported a hold; this evidence is not current. DealerMail status is shown separately.`,
+  }, icon('help'), `${report.sourceLabel || report.provider} prior hold · verify`))
+  if (vehicle.manualHold?.state === 'active') badges.push(el('span', {
+    class: 'pill pill-held', title: 'App-owned reservation; DealerMail status is shown separately.',
+  }, icon('lock'), 'Inventory Flow reservation'))
+  if (vehicle.manualHold?.state === 'requested') badges.push(el('span', {
+    class: 'pill pill-moving', title: 'Waiting for manager approval; this request is not an approved hold.',
+  }, icon('help'), 'Hold request · Pending approval'))
+  return badges
+}
+
 function movementPill(vehicle) {
   const move = vehicle.movement
   if (!move) return null
@@ -423,10 +441,9 @@ function rowThumb(vehicle) {
 
 function renderRow(match, position) {
   const vehicle = match.vehicle
-  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)}d listed` : null]
+  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null]
   const via = state.query && match.matchedLabels.find((label) => !['Stock', 'VIN', 'Vehicle', 'Make', 'Model', 'Year', 'Trim'].includes(label))
   const inCompare = state.compare.includes(vehicle.vin)
-  const config = fmt.joinFacts([vehicle.bodyStyle, vehicle.exteriorColor, vehicle.interiorColor ? `Interior ${vehicle.interiorColor}` : null])
   const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
   const economy = vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} hwy MPG` : null
   const specification = fmt.joinFacts([vehicle.transmission, vehicle.fuelType, economy])
@@ -444,18 +461,26 @@ function renderRow(match, position) {
     el('span', { class: 'plate' }, rowThumb(vehicle), el('b', { text: vehicle.stockNumber, title: `Stock ${vehicle.stockNumber}` }), certifiedBadge(vehicle)),
     el('span', { class: 'row-main' },
       el('span', { class: 'row-title', text: vehicle.name, title: vehicle.name }),
-      el('span', { class: 'row-meta', title: fmt.joinFacts([metaParts[0], metaParts[1], fmt.formatDays(vehicle.daysListed)]) }, el('strong', { text: metaParts[0] }), metaParts.slice(1).some(Boolean) ? ' · ' : '', fmt.joinFacts(metaParts.slice(1))),
+      el('span', { class: 'row-meta', title: fmt.joinFacts([metaParts[0], metaParts[1], fmt.formatDays(vehicle.daysListed)]) },
+        el('strong', { text: metaParts[0] }),
+        vehicle.mileage !== null ? el('span', { class: 'row-mileage', 'aria-label': `Mileage: ${metaParts[1]}`, text: metaParts[1] }) : null,
+        vehicle.daysListed !== null ? el('span', { class: 'row-age', 'aria-label': `Age: ${fmt.formatDays(vehicle.daysListed)} listed`, text: fmt.formatDays(vehicle.daysListed) }) : null,
+      ),
       powertrain ? el('span', { class: 'row-spec row-powertrain', text: powertrain, title: powertrain }) : null,
       via ? el('span', { class: 'row-match', text: `Matched ${via.toLowerCase()}` }) : null,
     ),
     inCompare ? el('span', { class: 'row-cmp', title: 'In the compare set' }, icon('columns', { size: 13 })) : icon('chevron-right', { size: 14 }),
     el('span', { class: 'row-configuration' },
       el('span', { class: 'row-vin', text: `VIN ${vehicle.vin}` }),
-      config ? el('span', { class: 'row-spec', text: config }) : null,
+      vehicle.bodyStyle ? el('span', { class: 'row-spec', text: vehicle.bodyStyle }) : null,
+      vehicle.exteriorColor || vehicle.interiorColor ? el('span', { class: 'row-colors' },
+        ...[['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor]].filter(([,value]) => value).map(([label,value]) =>
+          el('span', { class: 'row-color' }, el('small', { text: label }), el('span', { text: value }))),
+      ) : null,
       specification ? el('span', { class: 'row-spec', text: specification }) : null,
     ),
     el('span', { class: 'row-operations' },
-      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), holdPill(vehicle), servicePill(vehicle)),
+      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), holdPill(vehicle), ...additionalHoldBadges(vehicle), servicePill(vehicle)),
       vehicle.movement ? el('span', { class: 'row-movement' }, movementPill(vehicle), vehicle.movement.destination ? el('span', { text: `To ${vehicle.movement.destination}` }) : null) : null,
       holdDetail ? el('span', { class: 'row-spec row-hold-detail', text: holdDetail, title: holdDetail }) : null,
       vehicle.location.store !== vehicle.homeStore || vehicle.location.provenance === 'app-confirmed' || vehicle.location.conflict ? locationNode(vehicle) : null,
@@ -535,7 +560,7 @@ function rowDocumentFacts(vehicle) {
   // Originals and saved-record actions are separate controls in its detail view.
   return el('span', { class: 'row-documents', 'aria-label': 'Vehicle record highlights. Open the vehicle for complete details.' }, ...prioritized.map(resource =>
     el('span', { class: 'row-doc-summary', dataset: { resource: resource.id } },
-      el('span', { class: 'row-doc-provider' }, resource.brand ? resourceBrand(resource.brand, 'row-doc-brand') : icon('file-text'), resource.brand === 'autocheck' || resource.brand === 'vauto' ? null : el('b', { text: resource.id === 'oasis' ? 'OASIS' : 'Sticker' }), sourceNoteBadge(resource.sourceNote)),
+      el('span', { class: 'row-doc-provider' }, resource.brand ? resourceBrand(resource.brand, 'row-doc-brand') : icon('file-text'), resource.brand === 'autocheck' || resource.brand === 'vauto' ? null : el('b', { text: resource.id === 'oasis' ? 'OASIS' : resource.id === 'carfax' ? 'CARFAX estimate' : 'Sticker' }), sourceNoteBadge(resource.sourceNote)),
       el('span', { class: 'row-doc-content' }, scanResource(resource, vehicle)),
     )),
   )
@@ -835,8 +860,8 @@ function identity(vehicle) {
     ),
     el('div', { class: 'detail-home' }, el('span', { text: vehicle.homeStore }), vehicle.daysListed !== null ? el('span', { text: `· ${fmt.formatNumber(vehicle.daysListed)} days listed` }) : null, certifiedBadge(vehicle)),
     el('div', { class: 'service-summary detail-status-line' },
-      holdPill(vehicle), servicePill(vehicle), movementPill(vehicle),
-      vehicle.serviceReadiness?.completedAt ? el('span', { text: `Completed ${fmt.formatDate(vehicle.serviceReadiness.completedAt)}` }) : vehicle.serviceReadiness?.serviceEnteredAt ? el('span', { text: `Since ${fmt.formatDate(vehicle.serviceReadiness.serviceEnteredAt)}` }) : null,
+      holdPill(vehicle), ...additionalHoldBadges(vehicle), servicePill(vehicle), movementPill(vehicle),
+      vehicle.serviceReadiness?.completedAt ? el('span', { text: `Service completed ${fmt.formatDate(vehicle.serviceReadiness.completedAt)}` }) : vehicle.serviceReadiness?.serviceEnteredAt ? el('span', { text: `In service since ${fmt.formatDate(vehicle.serviceReadiness.serviceEnteredAt)}` }) : null,
     ),
     vehicle.serviceReadiness?.readinessBasis === 'unconfirmed' ? el('p', { class: 'service-unconfirmed', text: 'Service not yet confirmed · manager review needed' }) : null,
   )
@@ -1068,18 +1093,21 @@ function openRecord(id) {
 
 /* Overview tab */
 function resourceBrand(brand, className = 'doc-brand') {
+  // CARFAX estimates have no approved local logo asset; keep the source
+  // neutral instead of falling through to the Ford logo.
+  if (brand === 'carfax') return icon('file-text', { size: 16, className: `${className} ${className}--carfax`, 'aria-hidden': 'true' })
   return el('img', { class: `${className} ${className}--${brand}`, src: `../resource-brands/${brand}.svg`, alt: brand === 'autocheck' ? 'AutoCheck' : brand === 'vauto' ? 'vAuto' : 'Ford' })
 }
 
 function docTile({ title, sub, iconName, url, onOpen, disabledText, score, brand }) {
   const available = Boolean(url) || Boolean(onOpen)
-  const accessibleTitle = brand === 'autocheck' ? 'AutoCheck history' : brand === 'vauto' ? 'vAuto equipment label' : title
+  const accessibleTitle = brand === 'autocheck' ? (title === 'AutoCheck' ? 'AutoCheck history' : title) : brand === 'vauto' ? 'vAuto equipment label' : title
   return el('button', {
     type: 'button', class: `doc ${available ? '' : 'is-off'} ${brand ? `doc-${brand}` : ''}`.trim(), disabled: !available, title: available ? `${onOpen ? 'View details' : 'Open'} ${accessibleTitle}` : disabledText ?? `${accessibleTitle} unavailable`, 'aria-label': `${available ? onOpen ? 'View details' : 'Open' : 'Unavailable:'} ${accessibleTitle}`,
     onclick: () => (onOpen ? onOpen() : openUrl(url)),
   },
     brand ? resourceBrand(brand) : score !== null && score !== undefined ? el('span', { class: 'doc-score num', text: String(score) }) : el('span', { class: 'doc-icon' }, icon(iconName, { size: 16 })),
-    el('span', { class: 'doc-body' }, el('strong', { text: brand === 'autocheck' ? 'History' : brand === 'vauto' ? 'Equipment' : title }), el('small', { text: available ? sub : disabledText ?? 'Not published' })),
+    el('span', { class: 'doc-body' }, el('strong', { text: brand === 'autocheck' ? (title === 'AutoCheck' ? 'History' : 'Warranty estimate') : brand === 'vauto' ? 'Equipment' : title }), el('small', { text: available ? sub : disabledText ?? 'Not published' })),
     available ? icon('external', { size: 12, className: 'doc-ext' }) : null,
   )
 }
@@ -1168,7 +1196,7 @@ function documentsGrid(vehicle) {
   const resources = sourceResources.filter(resource => !['window-sticker', 'vauto'].includes(resource.id) || resource === selectedEquipment)
   const cards = resources.filter(resource => resource.hasCapturedData).map(resource => {
     const captured = resource.hasCapturedData
-    const accessibleTitle = resource.id === 'autocheck' ? 'AutoCheck history' : resource.id === 'vauto' ? 'vAuto equipment label' : resource.title
+    const accessibleTitle = resource.id === 'autocheck' && resource.title === 'AutoCheck' ? 'AutoCheck history' : resource.id === 'vauto' ? 'vAuto equipment label' : resource.title
     const label = captured ? `View ${accessibleTitle}` : resource.url ? `Open ${resource.title}` : `${resource.title}: details unavailable`
     return el('section', { class: 'doc-summary', dataset: { resource: resource.id }, 'aria-label': `${resource.title} summary` },
       el('button', { type: 'button', class: `doc doc-summary-heading${resource.brand ? ` doc-${resource.brand}` : ''}`, disabled: !captured && !resource.url, 'aria-label': label,
@@ -1273,7 +1301,7 @@ function warrantyCard(vehicle) {
       el('ul', { class: 'warr-terms' }, ...cert.terms.map((term) => el('li', { text: term }))),
       el('p', { class: 'd-caption', text: cert.note }),
     ) : null,
-    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'A captured OASIS warranty start date takes priority; otherwise the date is an AutoCheck estimate. Coverage calculations remain estimates.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
+    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'A captured OASIS warranty start date takes priority; otherwise the date is an AutoCheck or CARFAX estimate. Coverage calculations remain estimates.' : outlook.inService.source === 'CARFAX estimate' ? 'Review the captured CARFAX dates in Records. Coverage calculations remain estimates.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
     outlook.verify.url ? el('button', { type: 'button', class: 'btn btn-sm', onclick: () => openUrl(outlook.verify.url) }, icon(outlook.verify.source === 'oasis' ? 'wrench' : 'shield', { size: 13 }), outlook.verify.source === 'oasis' ? 'Open OASIS' : 'Open AutoCheck report', icon('external', { size: 12 })) : null,
   )
   return card
@@ -1319,7 +1347,7 @@ function frequentFacts(vehicle) {
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
     pricingFact(prices.original, false),
     pricingFact(prices.base, true),
-    fact(start.source === 'OASIS' ? 'Warranty in-service · OASIS' : start.raw ? 'Warranty in-service · estimate' : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
+    fact(start.source ? `Warranty in-service · ${start.source}` : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
   )
 }
 
@@ -1349,10 +1377,12 @@ function readOnlyNote() {
 /* Hold & custody tab */
 function holdTab(vehicle) {
   const hold = vehicle.hold
+  const providerHoldReports = (vehicle.inventoryDecision?.evidence ?? vehicle.operationalEvidence?.records ?? [])
+    .filter((record) => record.provider !== 'legacy-dealermail')
   const primary = hold.evidence.find((item) => item.position === 'primary')
   const headline = hold.lastKnownActiveHold ? fmt.joinFacts(['Last verified hold', primary?.salesperson]) : hold.tone === 'held'
     ? fmt.joinFacts([hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'Primary hold', primary?.salesperson])
-    : hold.tone === 'clear' ? 'No active hold' : 'Hold status needs review'
+    : hold.tone === 'clear' ? 'No current DealerMail hold found' : 'Hold status needs review'
   const facts = hold.tone === 'held' || hold.lastKnownActiveHold ? kv([
     ['Placed', primary?.holdDate ? fmt.formatDate(primary.holdDate) : null],
     ['Expected', primary?.expectedDate ? fmt.formatDate(primary.expectedDate) : null],
@@ -1420,7 +1450,31 @@ function holdTab(vehicle) {
     vehicle.managerLog.dataState !== 'current' ? el('p', { class: 'd-caption d-caption-warn', text: 'Review this manager update before relying on it.' }) : null,
   ], { iconName: 'file', pill: vehicle.managerLog.dataState !== 'current' ? el('span', { class: 'pill pill-moving', text: 'Not current' }) : null }) : null
 
-  return [holdCard, locSection, moveSection, managerSection]
+  const sourceHoldStatus = (record) => record.dataState === 'current' && record.complete === true
+    ? record.holdState === 'held' ? 'Reports a hold' : record.holdState === 'not_observed' ? 'No hold reported' : 'Hold status not established'
+    : record.observedHoldState === 'held' ? 'Previously reported a hold · not current' : 'Hold status not established'
+  const operationalHoldSection = providerHoldReports.length ? section('Read-only provider hold observations', [
+    el('ul', { class: 'rec-list' }, ...providerHoldReports.map((record) => el('li', {},
+      el('div', { class: 'rec-line' }, el('b', { text: record.sourceLabel || record.provider }), el('span', { text: sourceHoldStatus(record) })),
+      record.reportedDisposition && record.reportedDisposition !== 'unknown' && record.reportedDisposition !== 'not_observed'
+        ? el('p', { class: 'rec-note', text: `Reported disposition · ${record.reportedDisposition.replaceAll('_', ' ')}` }) : null,
+      record.comparison === 'conflict' ? el('p', { class: 'd-caption d-caption-warn', text: 'Records disagree; review each source separately.' }) : null,
+      el('details', { class: 'rec-source-details' }, el('summary', { text: 'Source details' }), el('p', { class: 'd-caption', text: fmt.joinFacts([
+        record.dataState === 'current' && record.complete ? 'Current complete observation' : `Not current · ${record.dataState}`,
+        record.readOnly ? 'Read-only source' : null,
+        record.capturedAt ? `Captured ${fmt.formatDateTime(record.capturedAt)}` : null,
+      ]) })),
+    ))),
+    el('p', { class: 'd-caption', text: 'These source observations remain separate from DealerMail. Incomplete or older evidence does not establish current availability.' }),
+  ]) : null
+  const manualHoldSection = ['active', 'requested'].includes(vehicle.manualHold?.state) ? section(vehicle.manualHold.state === 'requested' ? 'Inventory Flow hold request' : 'Inventory Flow reservation', [
+    el('p', { text: vehicle.manualHold.state === 'requested'
+      ? 'Waiting for manager approval. This request is not an approved hold; DealerMail and provider reports remain separate.'
+      : 'An app-owned reservation is active. It is separate from DealerMail and provider reports.' }),
+    vehicle.manualHold.expectedDeliveryDate ? kv([['Expected', fmt.formatDate(vehicle.manualHold.expectedDeliveryDate)]]) : null,
+  ]) : null
+
+  return [holdCard, operationalHoldSection, manualHoldSection, locSection, moveSection, managerSection]
 }
 
 /* Equipment tab */
@@ -1506,6 +1560,18 @@ function recordsTab(vehicle) {
   const sourceNote = () => null
   const note = (text) => text ? el('p', { class: 'rec-note', text }) : null
   const hasNumber = (value) => typeof value === 'number' && Number.isFinite(value)
+  const serviceReports = docs.serviceHistory ?? []
+  const providerName = (provider) => ({ oem: 'OEM service history', autocheck: 'AutoCheck service history', carfax: 'CARFAX service history' })[provider] ?? 'Service history'
+  const renderServiceReport = (report, { expandable = false } = {}) => {
+    const entries = report.entries ?? []
+    const timeline = entries.length ? el('ol', { class: 'rec-service-history' }, ...entries.map((entry) => el('li', {},
+      el('div', { class: 'rec-line' }, el('b', { text: entry.date ? fmt.formatDate(entry.date) : fmt.joinFacts([entry.openDate ? fmt.formatDate(entry.openDate) : null, entry.closeDate && entry.closeDate !== entry.openDate ? fmt.formatDate(entry.closeDate) : null]) }), hasNumber(entry.odometer) ? el('span', { class: 'num', text: sourceDistanceText(`${fmt.formatNumber(entry.odometer)}${entry.odometerUnit ? ` ${entry.odometerUnit}` : ''}`) }) : null),
+      el('p', { text: entry.services.join(' · ') || 'Service visit reported' }),
+    ))) : el('p', { class: 'rec-empty', text: report.historyStatus === 'not_reported' ? 'No service events reported by this source.' : 'No service events supplied by this source.' })
+    const provenance = el('details', { class: 'rec-source-details' }, el('summary', { text: 'Source details' }), note(fmt.joinFacts([report.sourceLabel, report.dataState, report.capturedAt ? `Captured ${fmt.formatDate(report.capturedAt)}` : null, report.vin])))
+    const section = recordSection(providerName(report.provider), [timeline, provenance])
+    return expandable ? el('details', { class: 'rec-history-secondary' }, el('summary', {}, el('span', { text: providerName(report.provider) }), icon('chevron-down')), section) : section
+  }
   const referencePrice = (value) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)
   const recordPrices = (rows, format) => {
     const present = rows.filter(([, value]) => hasNumber(value))
@@ -1574,7 +1640,7 @@ function recordsTab(vehicle) {
       ['Months in service', hasNumber(oasis.monthsInService) ? String(oasis.monthsInService) : null], ['Sale mileage', hasNumber(oasis.saleMileage) ? fmt.formatMileage(oasis.saleMileage) : null],
     ]) : null,
     oasis?.openFieldServiceActions.length ? recordSection(oasis.openActionsCaptured === false ? `At least ${oasis.openFieldServiceActions.length} captured actions · result incomplete` : 'Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDistanceText(sourceDisplayText(item.description))))))]) : el('p', { class: 'rec-empty', text: oasis?.openActionsCaptured === true ? 'No open Ford service actions in the captured report.' : 'Verify current actions in OASIS.' }),
-    oasis?.serviceHistory ? recordSection(`Ford service history · ${oasis.serviceHistory.repairOrderCount} repair ${oasis.serviceHistory.repairOrderCount === 1 ? 'order' : 'orders'}`, [
+    oasis?.serviceHistory && !serviceReports.length && !oasis.serviceHistory.repairOrderTimeline?.length ? recordSection(`Ford service history · ${oasis.serviceHistory.repairOrderCount} repair ${oasis.serviceHistory.repairOrderCount === 1 ? 'order' : 'orders'}`, [
       oasis.serviceHistory.certifiedInspection ? el('p', { class: 'rec-service-certification' }, icon('check', { size: 15 }), el('strong', { text: 'Certified Blue Oval inspection' }), ` · ${fmt.formatDate(oasis.serviceHistory.certifiedInspection.closeDate)}`) : null,
       oasis.serviceHistory.recentRepairOrders.length
         ? el('ol', { class: 'rec-service-history' }, ...oasis.serviceHistory.recentRepairOrders.map((order) => el('li', {},
@@ -1587,19 +1653,41 @@ function recordsTab(vehicle) {
     oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDistanceText(sourceDisplayText(item.description))}` : '')))]) : null,
     recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations?.map(value => fmt.formatSourceDateText(value))),
   ))
+  const timelineVisits = oasis?.serviceHistory?.repairOrderTimeline ?? []
+  const legacyOrders = timelineVisits.length ? timelineVisits : oasis?.serviceHistory?.recentRepairOrders ?? []
+  const legacyOem = legacyOrders.length ? { provider: 'oem', sourceLabel: oasis.sourceLabel ?? 'Ford OASIS', capturedAt: oasis.serviceHistory.checkedAt, dataState: oasis.dataState === 'current' ? oasis.serviceHistory.dataState : oasis.dataState, historyStatus: 'reported', entries: legacyOrders.map((order) => ({ openDate: order.openDate, closeDate: order.closeDate, date: timelineVisits.length ? null : order.closeDate || order.openDate, odometer: order.odometer, odometerUnit: 'mi', services: order.services.length ? order.services : [order.inspection || order.summary || 'Service work recorded'] })) } : null
+  const allServiceReports = legacyOem ? [...serviceReports, legacyOem] : serviceReports
+  const serviceRank = (report) => (report.dataState === 'current' ? 0 : 3) + ({ oem: 0, carfax: 1, autocheck: 2 }[report.provider] ?? 2)
+  const primaryServiceReport = allServiceReports.filter((report) => report.historyStatus === 'reported' && report.entries.length).sort((a, b) => serviceRank(a) - serviceRank(b))[0] ?? null
+  if (serviceReports.length || timelineVisits.length) {
+    const primary = primaryServiceReport ? renderServiceReport(primaryServiceReport) : recordSection('Service history', [el('p', { class: 'rec-empty', text: 'Service history not supplied.' })])
+    const secondary = allServiceReports.filter((report) => report !== primaryServiceReport).map((report) => renderServiceReport(report, { expandable: true }))
+    children.push(el('section', { class: 'card rec rec-service', dataset: { record: 'service-history' }, tabindex: '-1' }, recordHead('Service history'), primary, ...secondary))
+  } else if (!oasis?.serviceHistory) {
+    children.push(el('section', { class: 'card rec rec-service', dataset: { record: 'service-history' }, tabindex: '-1' }, recordHead('Service history'), recordSection('Service history', [el('p', { class: 'rec-empty', text: 'Service history not supplied.' })])))
+  }
   const warranty = docs.warrantyCheck
-  const coverageBlock = (title, block) => block?.coverages.length ? recordSection(title, [
-    kv([['Warranty start', block.warrantyStartDate ? fmt.formatDate(block.warrantyStartDate) : null], ['In service (estimate)', block.inServiceDate ? fmt.formatDate(block.inServiceDate) : null], ['Months in service', hasNumber(block.monthsInService) ? String(block.monthsInService) : hasNumber(block.inServiceAgeMonths) ? String(block.inServiceAgeMonths) : null], ['AutoCheck default mileage', hasNumber(block.defaultMileage) ? fmt.formatMileage(block.defaultMileage) : null]]),
-    ...block.coverages.map((coverage) => el('div', { class: 'rec-coverage' }, el('div', { class: 'rec-line' }, el('b', { text: coverage.type }), el('span', { text: coverage.status })),
-      kv([['Printed term', sourceDistanceText(coverage.termText)], ['Remaining time', coverage.remainingTimeText], ['Remaining miles', sourceDistanceText(coverage.remainingMilesText)]]), note(coverage.note))),
+  const coverageBlock = (title, block, provider) => block?.coverages.length ? recordSection(title, [
+    kv([['Warranty start', block.warrantyStartDate ? fmt.formatDate(block.warrantyStartDate) : null], ['In service (estimate)', block.inServiceDate ? fmt.formatDate(block.inServiceDate) : null], ['Months in service', hasNumber(block.monthsInService) ? String(block.monthsInService) : hasNumber(block.inServiceAgeMonths) ? String(block.inServiceAgeMonths) : null], [`${provider} default mileage`, hasNumber(block.defaultMileage) ? fmt.formatMileage(block.defaultMileage) : null]]),
+    ...block.coverages.map((coverage) => {
+      const calculatedMiles = calculatedWarrantyMiles(coverage, vehicle.mileage)
+      return el('div', { class: 'rec-coverage' }, el('div', { class: 'rec-line' }, el('b', { text: coverage.type }), coverage.status ? el('span', { text: coverage.status }) : null),
+        kv([
+          ['Printed term', sourceDistanceText(coverage.termText)], ['Coverage limit', hasNumber(coverage.termMiles) ? fmt.formatMileage(coverage.termMiles) : null],
+          ['Current vehicle mileage', hasNumber(vehicle.mileage) ? fmt.formatMileage(vehicle.mileage) : null],
+          ['Calculated miles remaining', calculatedMiles !== null ? fmt.formatMileage(calculatedMiles) : null],
+          ['Report time remaining', coverage.remainingTimeText], ['Report miles remaining', sourceDistanceText(coverage.remainingMilesText)],
+        ]), note(coverage.note))
+    }),
   ]) : null
-  if (warranty && (warranty.fordOasis || warranty.autoCheck)) children.push(el('section', { class: 'card rec rec-warranty', dataset: { record: 'warranty' }, tabindex: '-1' },
-    recordHead('Warranty check', { iconName: 'shield', dataState: warranty.dataState, url: warranty.fordOasis ? vehicle.links.oasis : ac?.url, action: warranty.fordOasis ? 'Open OASIS' : 'Open AutoCheck report', missing: 'Warranty details unavailable.' }),
-    note(sourceNote(warranty, warranty.fordOasis ? 'oasis' : 'autocheck')),
-    kv([['Mileage', hasNumber(warranty.mileageEntered) ? fmt.formatMileage(warranty.mileageEntered) : null]]),
-    coverageBlock('Ford OASIS coverage', warranty.fordOasis),
-    coverageBlock('AutoCheck warranty estimate', warranty.autoCheck),
-    note('Verify current coverage with the store before quoting a customer.'),
+  if (warranty && (warranty.fordOasis || warranty.autoCheck || warranty.carfax)) children.push(el('section', { class: 'card rec rec-warranty', dataset: { record: 'warranty' }, tabindex: '-1' },
+    recordHead('Warranty check', { iconName: 'shield', dataState: warranty.dataState, url: warranty.fordOasis ? vehicle.links.oasis : warranty.autoCheck ? ac?.url : null, action: warranty.fordOasis ? 'Open OASIS' : 'Open AutoCheck report', missing: 'Warranty details unavailable.' }),
+    note(sourceNote(warranty, warranty.fordOasis ? 'oasis' : warranty.carfax ? 'carfax' : 'autocheck')),
+    kv([['Mileage basis', hasNumber(warranty.mileageEntered) ? `${fmt.formatMileage(warranty.mileageEntered)}${warranty.mileageSource ? ` · ${warranty.mileageSource}` : ''}` : null]]),
+    coverageBlock('Ford OASIS coverage', warranty.fordOasis, 'OASIS'),
+    coverageBlock('CARFAX warranty estimate', warranty.carfax, 'CARFAX'),
+    coverageBlock('AutoCheck warranty estimate', warranty.autoCheck, 'AutoCheck'),
+    note('Calculated miles use the report limit and current listed mileage, with a minimum of zero. They do not determine time remaining or warranty eligibility. Verify current coverage with the store before quoting a customer.'),
   ))
   const scan = vehicle.publicScan
   const listing = vehicle.listing
@@ -1624,14 +1712,14 @@ function recordsTab(vehicle) {
     ))
   }
   if (vehicle.changeSummary) children.push(section('Last change', [line('history', null, vehicle.changeSummary)], { iconName: 'history' }))
-  if (!ac && !sticker && !label) children.push(el('p', { class: 'd-caption', text: 'No vehicle records are available.' }))
-  const recordOrder = ['autocheck', 'oasis', 'warranty', 'window-sticker', 'vauto']
+  if (!ac && !sticker && !label && !docs.fordOasis && !docs.warrantyCheck && !docs.serviceHistory) children.push(el('p', { class: 'd-caption', text: 'No vehicle records are available.' }))
+  const recordOrder = ['autocheck', 'oasis', 'service-history', 'warranty', 'window-sticker', 'vauto']
   children.sort((left, right) => {
     const leftIndex = recordOrder.indexOf(left?.dataset?.record)
     const rightIndex = recordOrder.indexOf(right?.dataset?.record)
     return (leftIndex < 0 ? recordOrder.length : leftIndex) - (rightIndex < 0 ? recordOrder.length : rightIndex)
   })
-  const labels = { autocheck: 'AutoCheck', 'window-sticker': 'Sticker', vauto: 'Equipment', oasis: 'OASIS & warranty', warranty: 'Warranty check' }
+  const labels = { autocheck: 'AutoCheck', 'window-sticker': 'Sticker', vauto: 'Equipment', oasis: 'OASIS & warranty', 'service-history': 'Service history', warranty: 'Warranty check' }
   const records = children.filter((node) => node?.dataset?.record)
   if (records.length) children.unshift(el('nav', { class: 'record-jumps', 'aria-label': 'Jump to vehicle record' }, ...records.map((node) => el('button', { type: 'button', class: 'btn', onclick: () => openRecord(node.dataset.record) }, labels[node.dataset.record]))))
   children.unshift(frequentFacts(vehicle))

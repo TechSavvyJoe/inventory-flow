@@ -19,6 +19,21 @@ describe('deal desk store scope', () => {
     expect(scopeCounts(matches.filter((m) => m.vehicle.vin === 'F1'), { workingStore: 'Howell' })).toEqual({ inventory: 0, held: 0, moving: 0 })
   })
 
+  it('includes current and retained provider holds plus active app reservations', () => {
+    const observed = match('provider-held', 'Howell', false)
+    observed.vehicle.operationalEvidence = { records: [{ provider: 'autocheck', dataState: 'current', complete: true, holdState: 'held' }] }
+    const reserved = match('manual-held', 'Howell', false)
+    reserved.vehicle.manualHold = { state: 'active' }
+    const genericDealerMail = match('generic-dealermail', 'Howell', false)
+    genericDealerMail.vehicle.operationalEvidence = { records: [{ provider: 'dealermail', dataState: 'current', complete: true, holdState: 'held' }] }
+    const legacyDealerMail = match('legacy-dealermail', 'Howell', false)
+    legacyDealerMail.vehicle.operationalEvidence = { records: [{ provider: 'legacy-dealermail', dataState: 'current', complete: true, holdState: 'held' }] }
+    const stale = match('stale-only', 'Howell', false)
+    stale.vehicle.operationalEvidence = { records: [{ provider: 'carfax', dataState: 'stale_unverified', complete: false, holdState: 'held' }] }
+    const held = scopeMatches([observed, reserved, genericDealerMail, legacyDealerMail, stale], { workingStore: 'Howell', view: 'held' }).map(({ vehicle }) => vehicle.vin)
+    expect(held).toEqual(['provider-held', 'manual-held', 'generic-dealermail', 'stale-only'])
+  })
+
   it('keeps Moving local until expansion and uses normalized movement rather than service or hold', () => {
     const moving = matches.map(item => ({ vehicle: {...item.vehicle, movement: ['H1','F1'].includes(item.vehicle.vin) ? {state:'in_transit'} : null, serviceReadiness: {status:'in_service'} } }))
     expect(scopeMatches(moving, {workingStore:'Howell', view:'moving'}).map(item=>item.vehicle.vin)).toEqual(['H1'])

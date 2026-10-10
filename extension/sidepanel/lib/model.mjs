@@ -224,9 +224,10 @@ const documentState = (value, fallback) => value === 'stale' ? 'stale' : value =
 const entries = (value) => Array.isArray(value) ? value : []
 
 function warrantyCoverages(value) {
-  return entries(value).filter((item) => text(item?.type) && text(item?.termText) && text(item?.remainingMilesText) && text(item?.remainingTimeText) && ['ACTIVE', 'EXPIRED', 'N/A'].includes(item?.status))
+  const statuses = ['ACTIVE', 'EXPIRED', 'N/A']
+  return entries(value).filter((item) => text(item?.type) && (statuses.includes(item.status) || text(item?.termText) || text(item?.remainingMilesText) || text(item?.remainingTimeText) || number(item?.termMonths) !== null || number(item?.termMiles) !== null || number(item?.remainingMonths) !== null || number(item?.remainingMiles) !== null))
     .map((item) => ({
-      type: text(item.type), termText: text(item.termText), status: item.status,
+      type: text(item.type), termText: text(item.termText), status: ['ACTIVE', 'EXPIRED', 'N/A'].includes(item.status) ? item.status : null,
       remainingMilesText: text(item.remainingMilesText), remainingTimeText: text(item.remainingTimeText), note: text(item.note),
       termMonths: number(item.termMonths), termMiles: number(item.termMiles), remainingMiles: number(item.remainingMiles), remainingMonths: number(item.remainingMonths),
       unlimitedMiles: typeof item.unlimitedMiles === 'boolean' ? item.unlimitedMiles : null,
@@ -240,12 +241,17 @@ function capturedWarranty(record, fallback) {
     inServiceDate: text(record.autoCheck.inServiceDate), inServiceAgeMonths: number(record.autoCheck.inServiceAgeMonths), defaultMileage: number(record.autoCheck.defaultMileage),
     coverages: warrantyCoverages(record.autoCheck.coverages),
   } : null
+  const carfax = record.carfax ? {
+    inServiceDate: text(record.carfax.inServiceDate), inServiceAgeMonths: number(record.carfax.inServiceAgeMonths), defaultMileage: number(record.carfax.defaultMileage),
+    coverages: warrantyCoverages(record.carfax.coverages),
+  } : null
+  const hasCarfaxEvidence = carfax && (carfax.inServiceDate || carfax.inServiceAgeMonths !== null || carfax.defaultMileage !== null || carfax.coverages.length)
   const fordOasis = record.fordOasis && text(record.fordOasis.warrantyStartDate) && number(record.fordOasis.monthsInService) !== null ? {
     warrantyStartDate: text(record.fordOasis.warrantyStartDate), monthsInService: number(record.fordOasis.monthsInService), coverages: warrantyCoverages(record.fordOasis.coverages),
   } : null
-  return autoCheck || fordOasis ? {
+  return autoCheck || hasCarfaxEvidence || fordOasis ? {
     dataState: documentState(record.dataState, fallback), capturedAt: text(record.capturedAt), sourceLabel: text(record.sourceLabel),
-    mileageEntered: number(record.mileageEntered), mileageSource: text(record.mileageSource), autoCheck, fordOasis,
+    mileageEntered: number(record.mileageEntered), mileageSource: text(record.mileageSource), autoCheck, carfax: hasCarfaxEvidence ? carfax : null, fordOasis,
   } : null
 }
 
@@ -253,9 +259,8 @@ function capturedServiceOrder(value) {
   const repairOrderNumber = text(value?.repairOrderNumber)
   const openDate = text(value?.openDate)
   const closeDate = text(value?.closeDate)
-  if (!repairOrderNumber || !openDate || !closeDate) return null
+  if (!repairOrderNumber && !openDate && !closeDate) return null
   return {
-    repairOrderNumber,
     openDate,
     closeDate,
     odometer: number(value.odometer),
@@ -265,10 +270,97 @@ function capturedServiceOrder(value) {
   }
 }
 
+function capturedServiceTimelineVisit(value) {
+  const openDate = text(value?.openDate)
+  const closeDate = text(value?.closeDate)
+  if (!openDate && !closeDate) return null
+  return { openDate, closeDate, odometer: number(value?.odometer), services: list(value?.services) }
+}
+
+function capturedProviderHistory(value, vin, fallback) {
+  const providers = ['oem', 'autocheck', 'carfax']
+  const states = ['current', 'stale_unverified', 'incomplete', 'unknown']
+  const reports = entries(value?.reports).slice(0, 12).filter((report) => providers.includes(report?.provider) && (!text(report?.vin) || report.vin === vin)).map((report) => ({
+    vin: text(report.vin) || vin,
+    provider: report.provider,
+    sourceLabel: text(report.sourceLabel),
+    capturedAt: text(report.capturedAt),
+    dataState: states.includes(report.dataState) ? report.dataState : 'unknown',
+    historyStatus: ['reported', 'not_reported', 'unavailable'].includes(report.historyStatus) ? report.historyStatus : 'unavailable',
+    entries: entries(report.entries).slice(0, 250).filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item?.date ?? '') && Array.isArray(item.services)).map((item) => ({
+      date: item.date, odometer: number(item.odometer), odometerUnit: ['mi', 'km'].includes(item.odometerUnit) ? item.odometerUnit : null,
+      services: list(item.services),
+    })),
+  }))
+  return reports.length ? reports : null
+}
+
+function capturedOperationalEvidence(value, vin) {
+  const providers = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+  const states = ['current', 'stale_unverified', 'incomplete', 'unknown']
+  return entries(value?.records).slice(0, 12).filter((record) => record?.readOnly === true
+    && typeof record.provider === 'string' && providers.test(record.provider)
+    && (!text(record.vin) || record.vin === vin)).map((record) => {
+    const state = states.includes(record.dataState) ? record.dataState : 'unknown'
+    const complete = record.complete === true
+    return {
+      vin: text(record.vin) || vin,
+      provider: record.provider,
+      sourceLabel: text(record.sourceLabel),
+      capturedAt: text(record.capturedAt),
+      dataState: state,
+      readOnly: true,
+      complete,
+      observedHoldState: ['held', 'not_observed'].includes(record.holdState) ? record.holdState : 'unknown',
+      // A stale or incomplete positive must not be represented as a current
+      // hold. Preserve the original source result separately for provenance.
+      holdState: state === 'current' && complete && ['held', 'not_observed'].includes(record.holdState) ? record.holdState : 'unknown',
+      ...( ['sold_pending', 'delivered', 'other', 'not_observed', 'unknown'].includes(record.reportedDisposition)
+        ? { reportedDisposition: state === 'current' && complete ? record.reportedDisposition : 'unknown' } : {}),
+    }
+  })
+}
+
+function capturedInventoryDecision(value, vin) {
+  if (!value || typeof value !== 'object') return null
+  const statuses = ['sold_pending', 'delivered', 'other', 'wholesale', 'transfer_out', 'held', 'hold_requested', 'unconfirmed']
+  const comparisons = ['agreement', 'conflict', 'manual_only', 'source_only', 'unverified']
+  const dispositions = ['sold_pending', 'delivered', 'other', 'not_observed', 'unknown']
+  // Inventory-decision evidence may contain the twelve bounded provider
+  // observations plus the separately reserved legacy DealerMail signal.
+  const records = entries(value.evidence).slice(0, 13).filter((record) => record?.readOnly === true
+    && typeof record.provider === 'string' && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(record.provider)
+    && (!text(record.vin) || record.vin === vin)).map((record) => {
+    const state = ['current', 'stale_unverified', 'incomplete', 'unknown'].includes(record.dataState) ? record.dataState : 'unknown'
+    const complete = record.complete === true
+    const held = state === 'current' && complete && record.holdState === 'held'
+    const notObserved = state === 'current' && complete && record.holdState === 'not_observed'
+    return {
+      vin, provider: record.provider, sourceLabel: text(record.sourceLabel), capturedAt: text(record.capturedAt), dataState: state,
+      readOnly: true, complete,
+      observedHoldState: ['held', 'not_observed'].includes(record.holdState) ? record.holdState : 'unknown',
+      holdState: held ? 'held' : notObserved ? 'not_observed' : 'unknown',
+      effectiveHoldState: held ? 'held' : notObserved ? 'not_observed' : 'unknown',
+      comparison: comparisons.includes(record.comparison) ? record.comparison : 'unverified',
+      ...(dispositions.includes(record.reportedDisposition) ? { reportedDisposition: state === 'current' && complete ? record.reportedDisposition : 'unknown' } : {}),
+    }
+  })
+  return {
+    status: statuses.includes(value.status) ? value.status : 'unconfirmed',
+    comparison: comparisons.includes(value.comparison) ? value.comparison : 'unverified',
+    label: text(value.label),
+    manualHold: ['requested', 'active', 'released', 'rejected', 'cancelled'].includes(value.manualHold) ? value.manualHold : null,
+    importedHold: typeof value.importedHold === 'boolean' ? value.importedHold : null,
+    reviewRequired: value.reviewRequired === true,
+    evidence: records,
+  }
+}
+
 function capturedServiceHistory(value, fallback) {
   if (!value || number(value.repairOrderCount) === null || number(value.detailScanCount) === null) return null
   const latest = capturedServiceOrder(value.latestRepairOrder)
   const recent = entries(value.recentRepairOrders).map(capturedServiceOrder).filter(Boolean)
+  const timeline = entries(value.repairOrderTimeline).map(capturedServiceTimelineVisit).filter(Boolean).slice(0, 250)
   const certified = capturedServiceOrder(value.certifiedInspection)
   const certifiedInspection = certified && /^certified blue oval inspection$/i.test(certified.inspection || '') ? certified : null
   return {
@@ -276,6 +368,7 @@ function capturedServiceHistory(value, fallback) {
     repairOrderCount: number(value.repairOrderCount), detailScanCount: number(value.detailScanCount),
     latestRepairOrder: latest,
     ...(certifiedInspection ? { certifiedInspection } : {}),
+    repairOrderTimeline: timeline,
     recentRepairOrders: recent.length ? recent : latest ? [latest] : [],
   }
 }
@@ -339,6 +432,7 @@ function documentsFor(record, publicState, dealerMailState, origin) {
       extendedCoverageExpirations: list(oasis.extendedCoverageExpirations),
       ...(oasis.serviceHistory ? { serviceHistory: capturedServiceHistory(oasis.serviceHistory, dealerMailState) } : {}),
     } : null,
+    serviceHistory: capturedProviderHistory(record.serviceHistory, record.vin, dealerMailState),
     warrantyCheck: capturedWarranty(record.warrantyCheck, dealerMailState),
   }
 }
@@ -414,6 +508,12 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now(), origin = n
       ...(savedInvoice ? { invoiceSaved: true, invoiceCapturedAt: text(record.fordInvoice.capturedAt) } : {}),
     },
     hold: holdSignal(record, dealerMailState),
+    manualHold: {
+      state: ['requested', 'active', 'released', 'rejected', 'cancelled'].includes(record.manualHold?.state) ? record.manualHold.state : null,
+      expectedDeliveryDate: text(record.manualHold?.expectedDeliveryDate),
+    },
+    operationalEvidence: record.operationalEvidence ? { records: capturedOperationalEvidence(record.operationalEvidence, record.vin) } : null,
+    inventoryDecision: capturedInventoryDecision(record.inventoryDecision, record.vin),
     location: resolveLocation(record, transfer),
     movement: movementSignal(record, transfer, now),
     // The server's own createTransfer decision (service-core vehicleView

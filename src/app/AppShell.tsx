@@ -136,6 +136,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     .filter((item) => mobileNavigationIds.includes(item.id))
     .sort((left, right) => mobileNavigationIds.indexOf(left.id) - mobileNavigationIds.indexOf(right.id))
   const mobileUtilityItems = availableMobileItems.filter((item) => !mobileNavigationIds.includes(item.id))
+  const utilityRouteCurrent = mobileUtilityItems.some(({ to }) => location.pathname === to || location.pathname.startsWith(`${to}/`))
   // When Actions is not in the rail, its count rides on More so it is never lost.
   const moreAttentionCount = mobileUtilityItems.some((item) => item.id === 'today') ? attentionCount : 0
   const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
@@ -408,8 +409,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
         <button
           type="button"
-          className={utilityOpen ? 'is-active' : ''}
+          className={utilityOpen || utilityRouteCurrent ? 'is-active' : ''}
           aria-label="More app controls"
+          aria-current={utilityRouteCurrent ? 'page' : undefined}
           aria-haspopup="dialog"
           aria-expanded={utilityOpen}
           aria-controls="app-utility-dialog"

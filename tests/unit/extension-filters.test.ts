@@ -62,7 +62,30 @@ describe('matching', () => {
   it('reads "no hold" strictly as a snapshot that found none', () => {
     const noHold = vehicles.filter((vehicle) => matchesFilters(vehicle, normalizeFilters({ noHold: true }))).map((item) => item.vin)
     expect(noHold).toEqual(['VIN', 'V4'])
+    const providerHeld = v({ operationalEvidence: { records: [{ provider: 'carfax', dataState: 'current', complete: true, holdState: 'held' }] } })
+    const providerUnknown = v({ operationalEvidence: { records: [{ provider: 'carfax', dataState: 'stale_unverified', complete: false, holdState: 'held' }] } })
+    const appHeld = v({ manualHold: { state: 'active' } })
+    expect(matchesFilters(providerHeld, normalizeFilters({ noHold: true }))).toBe(false)
+    expect(matchesFilters(providerUnknown, normalizeFilters({ noHold: true }))).toBe(false)
+    expect(matchesFilters(appHeld, normalizeFilters({ noHold: true }))).toBe(false)
     expect(vehicles.filter((vehicle) => matchesFilters(vehicle, normalizeFilters({ listed: true, photos: true }))).map((item) => item.vin)).toEqual(['VIN', 'V4'])
+  })
+
+  it('requires every supplied provider observation to be current, complete, and explicitly negative', () => {
+    const noHold = normalizeFilters({ noHold: true })
+    const makeEvidence = (record) => v({ operationalEvidence: { records: [record] } })
+    const unknownState = makeEvidence({ provider: 'autocheck', dataState: 'current', complete: true, holdState: 'unknown' })
+    const unknownSource = makeEvidence({ provider: 'carfax', dataState: 'unknown', complete: true, holdState: 'not_observed' })
+    const incompleteSource = makeEvidence({ provider: 'oem', dataState: 'current', complete: false, holdState: 'not_observed' })
+    const currentNegative = makeEvidence({ provider: 'carfax', dataState: 'current', complete: true, holdState: 'not_observed' })
+    const emptyEvidence = v({ operationalEvidence: { records: [] } })
+
+    expect(matchesFilters(unknownState, noHold)).toBe(false)
+    expect(matchesFilters(unknownSource, noHold)).toBe(false)
+    expect(matchesFilters(incompleteSource, noHold)).toBe(false)
+    expect(matchesFilters(emptyEvidence, noHold)).toBe(false)
+    expect(matchesFilters(currentNegative, noHold)).toBe(true)
+    expect(matchesFilters(v(), noHold)).toBe(true)
   })
 
   it('normalizes junk into the empty filter set', () => {

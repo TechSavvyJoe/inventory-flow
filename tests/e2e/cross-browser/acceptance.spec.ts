@@ -106,11 +106,24 @@ async function expectNoOverflow(page: Page) {
 
 
 async function expectOpenFilterGeometry(page: Page, width: number) {
+  const scope = page.getByRole('group', { name: 'Inventory location scope' })
+  const quickFilters = page.getByRole('group', { name: 'Inventory quick filters' })
+  const serviceFilters = page.getByRole('group', { name: 'Inventory service status' })
+  const serviceButtons = [
+    serviceFilters.getByRole('button', { name: /^All service: \d+ vehicles$/ }),
+    serviceFilters.getByRole('button', { name: /^Waiting for service: \d+ vehicles$/ }),
+    serviceFilters.getByRole('button', { name: /^In service: \d+ vehicles$/ }),
+    serviceFilters.getByRole('button', { name: /^Ready: \d+ vehicles$/ }),
+  ]
   const sections = [
-    page.getByRole('group', { name: 'Inventory search and location scope' }),
-    page.getByRole('group', { name: 'Inventory quick filters' }),
-    page.getByRole('group', { name: 'Inventory service status' }),
-    page.getByRole('group', { name: 'Inventory location scope' }),
+    page.getByRole('combobox', { name: 'Search inventory' }),
+    scope.getByRole('button', { name: /^Howell inventory, \d+ of \d+ group vehicles$/ }),
+    scope.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^No hold: \d+ vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^All: \d+ vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^Held: \d+ vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^(?:Offsite|Away from home): \d+ vehicles$/ }),
+    ...serviceButtons,
     page.getByRole('button', { name: /^Filters/ }),
     page.getByRole('button', { name: /^Sort inventory\./ }),
   ]
@@ -131,9 +144,11 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     }
   }
   if (width <= 760) {
-    expect(boxes[2]!.box.y, `${width}px service filters follow the quick filters`).toBeGreaterThanOrEqual(boxes[1]!.box.y + boxes[1]!.box.height)
+    const quickFiltersBox = (await quickFilters.boundingBox())!
+    const serviceFiltersBox = (await serviceFilters.boundingBox())!
+    expect(serviceFiltersBox.y, `${width}px service filters follow the quick filters`).toBeGreaterThanOrEqual(quickFiltersBox.y + quickFiltersBox.height)
   }
-  for (const button of await sections[2]!.getByRole('button').all()) {
+  for (const button of serviceButtons) {
     const target = (await button.boundingBox())!
     expect(target.height).toBeGreaterThanOrEqual(44)
     expect(target.width).toBeGreaterThanOrEqual(44)
@@ -216,7 +231,7 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await page.getByLabel('Sort priority 1 field').selectOption('price')
     await page.getByRole('button', { name: 'Close sort options' }).click()
     await expect(sortPanel).toBeHidden()
-    const search = page.getByRole('group', { name: 'Inventory search and location scope' })
+    const search = page.getByRole('combobox', { name: 'Search inventory' })
     const quickFilters = page.getByRole('group', { name: 'Inventory quick filters' })
     const closedSearch = (await search.boundingBox())!
     const closedQuickFilters = (await quickFilters.boundingBox())!
@@ -499,21 +514,24 @@ test('five-column comparison uses each row for a clear photo and high-value scan
       expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
     expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
-    // A held/moving vehicle needs up to 180px for real evidence and its actions.
-    // Budget the full group too, so a short primary row cannot hide a tall report strip.
-    expect(dimensions.rowHeight, `${width}px comparison row stays compact`).toBeLessThanOrEqual(180)
+    // Configuration and source evidence now share the comparison row. The
+    // existing complete-record budget still governs the entire vehicle; a
+    // separate 180px primary-row limit would measure the old split layout.
+    expect(dimensions.rowHeight, `${width}px comparison record stays compact`).toBeLessThanOrEqual(width <1320 ?300 :280)
     expect(dimensions.vehicleGroupHeight, `${width}px complete vehicle including providers`).toBeLessThanOrEqual(width <1320 ?300 :280)
     for (const name of ['Copy stock number: DEMO-H01', 'Copy mileage: 12450', 'Copy VIN: TESTDATAHWELL0001']) {
       await expect(main.getByRole('button', { name, exact: true })).toBeVisible()
     }
-    // This project is a mouse (fine pointer): row actions are compact but stay
-    // above the 24px WCAG 2.5.8 floor. Touch keeps 44px; see the touch test below.
-    const actionTargets = main.locator('td[data-column="actions"] .inv-desk-actions').locator('button, a')
+    const priceActions = main.getByRole('group', { name: /^Price actions for/ })
+    await expect(priceActions.getByRole('button', { name: 'Save DEMO-H01 to shortlist', exact: true })).toBeVisible()
+    await expect(priceActions.getByRole('button', { name: /Open listing for/ })
+      .or(priceActions.getByRole('link', { name: /Open listing for/ }))).toBeVisible()
+    const actionTargets = priceActions.or(main.getByRole('group', { name: /^Movement actions for/ })).locator('button, a')
     expect(await actionTargets.count()).toBeGreaterThan(0)
     for (const target of await actionTargets.all()) {
       await expect(target).toBeVisible()
       const box = await target.boundingBox()
-      expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(24)
+      expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(44)
       expect(box!.width, `${width}px action target width`).toBeGreaterThanOrEqual(44)
     }
     expect(dimensions.photo.width, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(84)
@@ -533,6 +551,11 @@ test('five-column comparison uses each row for a clear photo and high-value scan
     await expectNoOverflow(page)
     await capture(page, testInfo, `table-width-${width}`)
   }
+  const recordsTrigger = main.getByRole('button', { name: /^Open vehicle records for/ })
+  await recordsTrigger.click()
+  await expect(page.getByRole('dialog', { name: /records$/i })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(recordsTrigger).toBeFocused()
   await main.getByRole('button', { name: /View change history/ }).click()
   await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Close vehicle details' }).click()
@@ -559,7 +582,8 @@ test.describe('touch-capable desktop', () => {
     await page.getByRole('button', { name: /^All:/ }).click()
     expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true)
     const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
-    const actionTargets = main.locator('td[data-column="actions"] .inv-desk-actions').locator('button, a')
+    const actionTargets = main.getByRole('group', { name: /^Price actions for/ })
+      .or(main.getByRole('group', { name: /^Movement actions for/ })).locator('button, a')
     expect(await actionTargets.count()).toBeGreaterThan(0)
     for (const target of await actionTargets.all()) {
       const box = await target.boundingBox()
@@ -762,8 +786,13 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await expect(dialog.getByRole('toolbar', { name: 'Vehicle actions' })).toBeVisible()
   const status = dialog.getByRole('region', { name: 'Vehicle operational summary' })
   await expect(status).toContainText('Location')
-  await expect(dialog.getByRole('link', { name: 'Service: Ready', exact: true })).toBeVisible()
-  await expect(status.getByRole('link', { name: 'Service history', exact: true })).toBeVisible()
+  // Desktop presents service in the operational summary; the duplicate header
+  // signal is reserved for the compact phone masthead.
+  const serviceLink = page.viewportSize()!.width <= 680
+    ? dialog.getByRole('link', { name: 'Service: Ready', exact: true })
+    : status.getByRole('link', { name: 'Ready. Open service status for VIN TESTDATAHWELL0001', exact: true })
+  await expect(serviceLink).toBeVisible()
+  await expect(serviceLink).toHaveAttribute('href', /\/service\?vin=TESTDATAHWELL0001(?:&|$)/)
   const statusOverflow = await status.evaluate(element => [...element.querySelectorAll<HTMLElement>('button,a')].map(control => ({
     clientHeight: control.clientHeight, scrollHeight: control.scrollHeight,
     clientWidth: control.clientWidth, scrollWidth: control.scrollWidth,
@@ -1087,4 +1116,66 @@ test('simple moves use one manager decision and physical location updates throug
   await expect(tracker.getByRole('button', { name: /close|driver|dispatch/i })).toHaveCount(0)
   await expectNoOverflow(page)
   await capture(page, testInfo, 'simple-back-home')
+})
+
+test('service deep link keeps vehicle identity above current status and source history at every canonical viewport', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('maxey-role', 'manager')
+    localStorage.setItem('maxey-home-store', 'Lincoln')
+  })
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1024, height: 768 },
+    { width: 1320, height: 820 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/service?vin=TESTDATALNCN00002&returnTo=%2Foverview')
+
+    const summary = page.getByRole('region', { name: 'Vehicle summary', exact: true })
+    const configuration = summary.getByLabel('Vehicle configuration', { exact: true })
+    const identification = summary.getByLabel('Vehicle identification', { exact: true })
+    const status = page.getByRole('region', { name: 'Recorded service status', exact: true })
+    const sourceRecords = page.getByRole('region', { name: 'Vehicle service records', exact: true })
+    const actions = page.getByRole('group', { name: 'Service actions', exact: true })
+
+    await expect(summary).toHaveCount(1)
+    await expect(summary).toBeVisible()
+    await expect(summary.getByRole('heading', { name: '2022 Lincoln Corsair Grand Touring', exact: true })).toBeVisible()
+    await expect(summary.getByRole('button', { name: /^Open photo gallery for 2022 Lincoln Corsair Grand Touring$/ })).toBeVisible()
+    await expect(configuration).toContainText('2.5L Plug-In Hybrid')
+    await expect(configuration).toContainText('AWD')
+    await expect(identification).toContainText('DEMO-L02')
+    await expect(identification).toContainText('TESTDATALNCN00002')
+    await expect(status).toContainText('Waiting for service')
+    await expect(sourceRecords).toContainText('8 service visits reported')
+    await expect(sourceRecords).toContainText('Used-car inspection')
+    await expect(actions).toBeVisible()
+
+    const summaryBounds = (await summary.boundingBox())!
+    const statusBounds = (await status.boundingBox())!
+    const historyBounds = (await sourceRecords.boundingBox())!
+    expect(summaryBounds.x).toBeGreaterThanOrEqual(0)
+    expect(summaryBounds.x + summaryBounds.width).toBeLessThanOrEqual(viewport.width + 1)
+    expect(summaryBounds.y).toBeGreaterThanOrEqual(0)
+    expect(summaryBounds.y + summaryBounds.height).toBeLessThanOrEqual(viewport.height)
+    expect(summaryBounds.y + summaryBounds.height).toBeLessThanOrEqual(statusBounds.y)
+    expect(summaryBounds.y + summaryBounds.height).toBeLessThanOrEqual(historyBounds.y)
+    for (const identityArea of [summary, configuration, identification]) {
+      const overflow = await identityArea.evaluate(element => ({
+        horizontal: element.scrollWidth - element.clientWidth,
+        vertical: element.scrollHeight - element.clientHeight,
+      }))
+      expect(overflow.horizontal, 'vehicle identity horizontal clipping').toBeLessThanOrEqual(1)
+      expect(overflow.vertical, 'vehicle identity vertical clipping').toBeLessThanOrEqual(1)
+    }
+
+    for (const action of await actions.getByRole('button').all()) {
+      const bounds = (await action.boundingBox())!
+      expect(bounds.height, 'active service action touch target height').toBeGreaterThanOrEqual(44)
+      expect(bounds.width, 'active service action touch target width').toBeGreaterThanOrEqual(44)
+    }
+    await expectNoOverflow(page)
+  }
 })

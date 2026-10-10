@@ -1,0 +1,282 @@
+# Dealership-hosted collector bridge
+
+The first adapter connects the existing dealership-hosted **DealerMail hold
+refresh** to Software Admin's pull queue. It is a reviewed implementation
+candidate, with execution disabled by default. This document does not authorize
+a deployment, data pull, credential installation or Windows scheduled task.
+
+## What the first adapter does
+
+- Refreshes DealerMail hold evidence for the exact four-store profile already
+  used by the existing pipeline: Howell, Fowlerville, Ford Detroit and Lincoln.
+  Every store must have an explicit enrolled dealership and source grant.
+- Requires an exact same-day verified local/cloud baseline before browser use.
+  Retains that baseline's public inventory, equipment and resource facts. Their
+  retained provenance is not presented as a fresh capture.
+- Requires an observed DealerMail-origin tab in the dedicated running host
+  browser and fixed installed capture/build dependencies. The preflight does not
+  prove sign-in or page readiness; the reviewed helper may reopen a stale
+  same-origin tab, while the capture itself rejects an unready session. The
+  bridge does not launch a browser, automate vendor sign-in, run remote commands,
+  write to the source or install a scheduled task.
+- Stages, validates and encrypts one immutable candidate. Publication passes
+  through the platform's registered tenant service binding. Success requires
+  the tenant's exact saved receipt and independent current-release readiness.
+- Preserves the last verified inventory when capture, validation or publication
+  fails. An uncertain outcome retains the exact encrypted candidate and blocks
+  new work until reconciliation.
+
+FMCDealer, DealerConnection, OASIS, PTS, invoices, warranty lookups and Ford merge
+builders are excluded. This adapter does **not** run the ordinary daily runner,
+refresh public/vAuto/AutoCheck data, implement direct API/file execution, or
+cold-start another dealership. A different store/provider setup needs its own
+reviewed adapter and permissions.
+
+## Setup in Software Admin
+
+Open **Dealer groups → selected group → Data connections → Collector hosts**.
+
+1. Configure a DealerMail connection for every named dealership, with method
+   **Dealership collector**, no remote endpoint and a local credential reference.
+   Enabled preference, cadence and schedule remain separate choices.
+2. Install and review the fixed local profile on the permitted Windows host.
+   Run its local profile check. Enter the service client ID, installed profile ID,
+   computed fingerprint and credential reference from that profile check in
+   **Register host**. Review all four source grants
+   and give an administrative reason. Every selected connection must have the exact
+   nonempty credential reference from the installed profile. Registration starts paused.
+3. Confirm the enrolled identity's separate machine Access audience, local
+   protected credentials, vendor session, dependency fingerprints and verified
+   baseline. **Enable host** only after that review.
+4. Separately activate the execution flag and tenant service binding in the
+   authorized pilot release. Planner activation does not enable execution.
+5. Request a pull, or use the reviewed daily/hourly planner. Run the installed
+   host once or its separately installed daemon. Review capture and publication
+   independently in the attempt ledger.
+
+**Host contacted** means the enrolled computer contacted the platform; it does
+not verify source sign-in. **Reported complete** means the host submitted its
+capture receipt. **Verified exact release** requires the backend's tenant-origin
+receipt/readiness proof. **Check saved publication** performs readback only. If
+it remains unknown, preserve the candidate and investigate; do not clear or
+rebuild it to manufacture success.
+
+## Local installation contract
+
+The bridge CLI is `node scripts/collector-host.mjs`:
+
+```text
+doctor --profile group-dealermail-v1
+doctor --profile group-dealermail-v1 --remote
+run-once --profile group-dealermail-v1
+daemon --profile group-dealermail-v1
+```
+
+The default doctor performs local checks only. `--remote` explicitly contacts the
+enrolled control plane; it does not read DealerMail. Run-once/daemon can collect
+and publish when all grants, flags and baseline checks permit them. Do not run
+those against a live host before the separately named pilot is authorized.
+
+The profile lives outside Git at
+`<approved-workspace>/runtime/collector/profiles/group-dealermail-v1.json`.
+It binds schema/adapter version, group/profile identity, exact dealership/source
+IDs and legacy store mappings, fixed control-plane origin, workspace root,
+credential/key reference names and the three installed capture/build dependency
+SHA-256 values. Its computed fingerprint also binds the normalized absolute
+workspace root and includes the bridge's installed code and the resolved
+relative-import dependency graph. An adapter/dependency/workspace change
+therefore requires a reviewed new enrollment.
+The profile loader rejects unsupported adapters/origins, extra fields, foreign
+store sets, path traversal and symlinked required directories/files.
+
+Collector Access credentials and the tenant encryption key are separate local
+DPAPI-protected files for the designated Windows account, under
+`runtime/collector/credentials/<reference>.dpapi`. Provision them with the
+approved local secret-installation process. Never pass secrets as CLI arguments,
+put them in a job, paste them into Software Admin, commit them or transfer an
+existing browser profile. The host does not hold a tenant publisher token.
+
+Dependency hashes identify the reviewed installed DealerMail capture, snapshot
+builder and finalizer. Missing or changed dependencies fail closed. The capture
+uses fixed commands without a shell and receives no collector service secret or
+encryption key. Cancellation stops only its owned child process; it does not
+terminate an employee's browser.
+
+The dependency review follows relative imports recursively, rejects unresolved,
+dynamic and bare-package imports, and permits only its reviewed Node built-in
+allowlist. It checks nested helpers for excluded source references. This admits
+trusted, reviewed installed code; it is not a sandbox for arbitrary or hostile
+programs. The operational capture/build files are not shipped in this
+repository and must be reviewed and fingerprinted on the authorized host before
+enrollment. Synthetic fixtures do not establish their compatibility.
+
+The tracked shared CDP helper has one hash-pinned exception because it also
+contains a fixed PTS read-only POST allowlist used by other pipeline paths. Only
+the exact hashes of two reviewed revisions (original and best-effort duplicate-tab
+cleanup), each in LF and Windows CRLF form, qualify. The installed byte hash remains
+part of the enrollment fingerprint. That constant
+does not grant this collector a PTS source scope. The installed capture
+call graph and its exact helper hashes must still be reviewed on the authorized
+host; this repository cannot verify the absent operational bundle.
+
+## Control plane and tenant boundaries
+
+Owner administration continues to use the owner Access audience and enabled
+owner record. Machine routes require a separate collector audience and the
+enrolled JWT service `common_name`; email/owner identity cannot grant machine
+authority. Group, full dealership/source set, installed profile and grant
+generation are immutable or fenced server-side. The enrolled scope fingerprint
+also binds the reviewed profile credential reference; a changed reference is
+rejected before enabling a host or admitting a lease. Enrollments created before
+this binding must be revoked and enrolled again after review with a fresh Access
+service client identity/ID: revoked IDs remain uniquely reserved. Never rewrite
+the stored scope fingerprint or reuse a revoked identity. Jobs contain no caller-selected
+commands, filesystem paths, browser targets, tenant binding or publication URL.
+
+| Machine path | Purpose |
+| --- | --- |
+| `/api/collector/contact` | Attest installed hash/version and record sanitized host contact |
+| `/api/collector/claim` | Atomically lease eligible queued work in the enrolled scope |
+| `/api/collector/heartbeat` | Recheck current authority/configuration and extend a bounded lease |
+| `/api/collector/receipts` | Store allowlisted capture or failure evidence; no raw reports/logs |
+| `/api/collector/publication` | Submit the retained encrypted candidate to the server-selected tenant |
+
+Lease lifetime is 120 seconds, heartbeat interval 30 seconds and maximum attempt
+duration 45 minutes. The platform freezes configuration and scope hashes and
+issues a fence. Concurrent claims, duplicate request keys and stale receipts
+cannot grant another worker an active attempt in the same group. Source edits are blocked
+for unresolved work. Group suspension, source pause, host revocation and stale
+leases stop further admission. An already admitted publication may finish;
+cross-service instantaneous rollback is not promised.
+
+An expired capture can be retried at most twice automatically, for three total
+attempts. A tenant publication with an unknown result is never dispatched again.
+The bridge may retry the same retained request only after a positive tenant RPC
+result proves either preflight rejection before publication or the exact atomic
+D1 revision-guard rollback. The latter can leave an immutable staged R2 object,
+but no committed release pointer or publication receipt. Its `revision_retryable`
+proof binds the attempt, fence, candidate hash and report date; it retains the
+same candidate and idempotency state without extending the lease, deadline or
+original three-attempt budget. Other RPC, database or network failures remain
+unknown and use readback only. Neither retry path performs another capture.
+
+The platform signs short-lived tenant admission/read tickets. The tenant
+rechecks its singleton identity, active group, enrollment, grants, configuration,
+lease/fence and exact candidate hash/date. Public/resource fields must equal the
+verified baseline. Its publication receipt is stored with the tenant release
+mutation. Readback independently verifies the exact accepted immutable version,
+encrypted artifact, bindings, counts and application read pipeline. That proof
+remains valid after a newer release supersedes it; reconciliation leaves the
+current release pointer untouched. Receipt readiness proves the accepted
+artifact is readable, not that it remains current or that a vehicle is Ready.
+Missing or invalid archived evidence remains unknown. An unrelated same-date
+release or a host-reported HTTP success does not satisfy this check.
+
+Control-plane D1 contains sanitized enrollments, jobs, attempts and receipts.
+Encrypted candidates are transient at the platform and retained only in the
+authorized host/tenant stores. Customer labels, VIN lists, source reports,
+credentials, browser cookies and raw error output are excluded from the owner
+ledger and audit. Local capture/candidate artifacts remain private and are
+deleted only after exact publication verification and verified local promotion.
+
+After the tenant verifies the exact candidate, the host advances its canonical
+DealerMail input, release, manifest and existing verified receipt under the same
+publication lock. It writes the receipt last and verifies readback. This is the
+baseline for the next same-day pull. A private durable backup permits recovery
+after a local interruption. If local promotion fails, the previous files are
+restored where storage permits, and the exact candidate, backup and pending
+marker stay available for a verified retry. An unrelated later local receipt or
+unrecoverable storage failure requires review; it is not cleared as success.
+
+Before capture can overwrite canonical inputs, the host writes a private,
+durable `collector-attempts/capture-rollback.json` journal containing the exact
+receipt-bound manifest, release, receipt and fixed DealerMail input slots. The
+journal is synchronized before capture starts. Recovery runs under the existing
+publication lock before baseline inspection, writer work or verified promotion,
+restores exact prior bytes and file absence, and verifies source binding before
+retiring the backup. Recovery does not remove unrelated pending candidates or
+promotion artifacts. Malformed, partial, oversized or unsafe journals, a changed
+receipt, and incomplete rollback stop for reconciliation while preserving
+evidence. A reviewed child bootstrap waits for durable PID/nonce admission before
+importing a capture entrypoint. Recovery preserves the journal while an admitted
+child is alive, its PID cannot be conclusively checked, or its identity is
+uncertain; it never kills a process discovered through recovery. A pending launch
+cannot receive a start grant after its original owner is gone. Older journals
+without this admission record fail closed because they cannot exclude an orphan
+writer. Standalone publishing and reconciliation also refuse any remaining
+journal or temporary journal before reading canonical data; recovery belongs to
+the daily runner. Limits are 25 MiB per file and 128 MiB per journal. Existing Windows
+directory-sync behavior remains unchanged; a real Windows power interruption
+is not covered by the synthetic process-interruption tests.
+
+A positively verified preflight rejection or atomic rollback proves that no
+publication occurred. If the owner cancelled the request or revoked the
+collector during that RPC, the exact request and attempt settle as cancelled
+and release the group fence without becoming runnable again. A lost or malformed
+reply cannot supply this proof and remains readback-only. Hold-only publication
+also compares nullable public and resource evidence for every baseline VIN;
+omitting a retained record cannot bypass this check. Genuinely new DealerMail-only
+VINs remain allowed.
+
+After verified settlement, cleanup atomically retires the pending marker before
+removing that attempt's exact artifact paths. An interruption during removal can
+leave private orphan files, but cannot leave a pending marker pointing to deleted
+evidence or recreate one after an artifact-removal failure. If marker retirement
+fails, evidence remains intact and the host stops for reconciliation. Directory
+retirement is synchronized where supported; Windows retains its existing
+filesystem behavior. Unknown publication outcomes keep their pending marker and
+exact candidate for receipt readback; cleanup never clears them as success.
+
+## Release and rollback
+
+Use `cloudflare/platform.wrangler.example.jsonc` and
+`cloudflare/collector-tenant.wrangler.example.jsonc` as examples, not deployed
+configuration. The owner requires separate collector audience/signing key and
+an explicit group-to-tenant service-binding map. The tenant requires its
+singleton identity, platform D1 gate, bridge verification key and execution flag.
+Platform migrations `0004_collector_execution.sql` and the forward
+`0005_collector_group_serialization.sql` are required before deploying
+the collector-capable owner Worker, even with execution disabled: Data
+connections reads its collector tables. Neither migration activates collection.
+Migration 0005 adds group-wide active-attempt uniqueness without rewriting 0004,
+dropping its index or deleting history. Existing overlapping active attempts
+make it fail closed. Stop new admission and separately reconcile every overlap
+before an authorized migration retry; never discard an unknown publication.
+A missing group-exclusion index refuses claims with `COLLECTOR_SCHEMA_REQUIRED`
+(503), leaving queued requests unchanged. Roll back by disabling execution,
+revoking the affected enrollment and stopping its host; preserve the forward
+index, attempts, receipts and audit history. Tenant
+migration `0016_collector_publication_receipts.sql` is a separate prerequisite
+for the collector pilot. Apply each through the documented migration-ledger
+process only in its authorized release. Do not run a generic migration command
+or reuse another dealership's database, R2 bucket, credentials or keys.
+
+The named pilot must identify the exact group, all four permitted stores,
+Windows host/account, continuing DealerMail permission, local verified baseline,
+service identity/audience, dependency/profile hashes and tenant publication
+binding. Complete repository checks, synthetic race/failure tests and browser
+QA before activation. Then separately verify a permitted live capture, exact
+saved tenant release and role-filtered employee readback. Synthetic tests alone
+do not prove live vendor sessions or deployment readiness.
+
+Rollback turns bridge execution off, revokes/disables its enrollment and stops
+only the new bridge task. Keep the migrations, queued work, audit/receipts and
+last verified release. Allow an already admitted publication to reach a known
+or unknown result, then reconcile before another attempt. Do not downgrade the
+schema, reset the operational ledger, overwrite data or alter legacy publisher
+tasks implicitly.
+
+## Current execution limits
+
+This first adapter uses `America/New_York` for its report date and accepts only
+connections configured in that timezone. It reads the complete four-store hold
+snapshot for each queued connection request. Requests are bounded and isolated,
+but simultaneous requests for several stores are not yet coalesced into one pull.
+All enabled profiles for one group share one active-attempt exclusion: claimed,
+captured, publishing and reconciliation-required attempts block another claim.
+A positively undispatched retry remains captured and retains the same exclusion.
+Only a terminal attempt releases it; another group may execute independently.
+An expired capture is recovered only by matching immutable profile authority;
+a different profile cannot retire it or bypass a parked unknown publication.
+Review cadence before enabling a real group; enrollment and a passing synthetic
+check do not establish installed source access or production activation.

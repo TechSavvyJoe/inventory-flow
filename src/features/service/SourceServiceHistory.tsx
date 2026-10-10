@@ -1,11 +1,12 @@
 import { CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Gauge, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { FordServiceHistoryVisitRecord, FordServiceRepairOrderRecord, VehicleRecord } from '../../types'
+import type { FordServiceHistoryVisitRecord, FordServiceRepairOrderRecord, SourceFreshness, VehicleRecord } from '../../types'
 import { formatDate, formatDateTime, formatMileage } from '../inventory/inventory-utils'
 import { fordServiceHistoryUrl, officialVehicleDocumentUrl } from '../inventory/vehicle-document-utils'
 import { sourceDisplayText } from '../../lib/source-text'
 import { qualifyingAutoCheckInspection } from '../../lib/service-inspection-evidence'
+import { ProviderServiceHistoryReports, rankedServiceReports, serviceReportStateLabel } from '../inventory/ServiceHistory'
 
 function fordOrders(vehicle: VehicleRecord): FordServiceRepairOrderRecord[] {
   const history = vehicle.fordOasis?.serviceHistory
@@ -98,25 +99,47 @@ function FordRecordedVisit({ visit }: { visit: FordServiceHistoryVisitRecord }) 
   </li>
 }
 
+function providerEvidenceSummary(vehicle: VehicleRecord): string | null {
+  const report = rankedServiceReports(vehicle.serviceHistory?.reports ?? [])[0]
+  if (!report) return null
+  const detail = report.entries.length
+    ? `${report.entries.length} reported event${report.entries.length === 1 ? '' : 's'}`
+    : report.historyStatus === 'not_reported' ? 'No service events reported' : 'Service history unavailable'
+  const state = report.dataState === 'current' ? '' : ` · ${serviceReportStateLabel(report)}`
+  return `${report.sourceLabel} · ${detail}${state}`
+}
+
+function fordHistoryState(vehicle: VehicleRecord): SourceFreshness {
+  const outerState = vehicle.fordOasis?.dataState
+  // Retained or unverified OASIS cannot promote a nested history to current.
+  return outerState && outerState !== 'current' ? outerState : vehicle.fordOasis?.serviceHistory?.dataState ?? 'unknown'
+}
+
 export function serviceEvidenceSummary(vehicle: VehicleRecord): string | null {
   const fordFamily = /^(ford|lincoln|linc)$/i.test(String(vehicle.make || '').trim())
+  const providerSummary = providerEvidenceSummary(vehicle)
   if (fordFamily) {
     const history = vehicle.fordOasis?.serviceHistory
+    const historyState = fordHistoryState(vehicle)
+    const historyStateLabel = serviceReportStateLabel({ dataState: historyState })
     const evidence = vehicle.serviceReadiness?.status === 'serviced' && vehicle.serviceReadiness.readinessEvidence?.source === 'ford_service_history'
       ? vehicle.serviceReadiness.readinessEvidence
       : null
     if (evidence?.inspectionDate) return `${evidence.types?.[0] || 'Certified Blue Oval inspection'} · ${formatDate(evidence.inspectionDate)}`
-    if (history?.repairOrderCount) return `${history.repairOrderCount} Ford service visits reported`
-    return history?.historyCaptured ? 'No Ford service visits reported' : null
+    if (history?.repairOrderCount && historyState === 'current') return `${history.repairOrderCount} Ford service visits reported`
+    if (providerSummary) return providerSummary
+    if (history?.repairOrderCount) return `${history.repairOrderCount} Ford service visits reported · ${historyStateLabel}`
+    return history?.historyCaptured ? `No Ford service visits reported${historyState === 'current' ? '' : ` · ${historyStateLabel}`}` : null
   }
   const inspection = qualifyingAutoCheckInspection(vehicle.serviceReadiness, vehicle.autoCheckReport)
   if (inspection) return `AutoCheck inspection · ${formatDate(inspection.date)}`
-  return serviceRecordText(vehicle)
+  return providerSummary ?? serviceRecordText(vehicle)
 }
 
 export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: VehicleRecord; recordsHref: string }) {
   const fordFamily = /^(ford|lincoln|linc)$/i.test(String(vehicle.make || '').trim())
   const history = vehicle.fordOasis?.serviceHistory
+  const historyState = fordHistoryState(vehicle)
   const visits = fordVisits(vehicle)
   const documentedVisits = visits.filter((visit) => visit.services?.length)
   const recordedOnlyVisits = visits.filter((visit) => !visit.services?.length)
@@ -126,18 +149,24 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
   const autoCheckInspection = qualifyingAutoCheckInspection(vehicle.serviceReadiness, autoCheck)
   const hasHistoricalAutoCheckInspection = Boolean(autoCheck?.recentInspection)
   const hasAutoCheckService = Boolean(autoCheckService || autoCheckInspection || hasHistoricalAutoCheckInspection)
+  const reports = vehicle.serviceHistory?.reports ?? []
+  const hasOemHistory = fordFamily && historyState === 'current' && Boolean(history?.repairOrderCount || visits.length)
+  const primaryReport = rankedServiceReports(reports)[0]
+  const providerFirst = Boolean(primaryReport && !hasOemHistory)
   const sourceUrl = fordFamily ? fordServiceHistoryUrl(vehicle.vin) : officialVehicleDocumentUrl(autoCheck?.url, 'autocheck', vehicle.listingUrl)
 
   return <section className="service-source-history" aria-labelledby="source-service-history-title">
     <header className="service-source-history-heading">
-      <div className="service-source-history-title"><span className="service-source-history-icon" aria-hidden="true"><Wrench size={17} /></span><div><h3 id="source-service-history-title">Vehicle service records</h3><p>{fordFamily ? 'Ford dealer repair history' : 'AutoCheck history'}</p></div></div>
-      <span className="service-source-history-source">{fordFamily ? 'FORD' : 'AUTOCHECK'}</span>
+      <div className="service-source-history-title"><span className="service-source-history-icon" aria-hidden="true"><Wrench size={17} /></span><div><h3 id="source-service-history-title">Vehicle service records</h3><p>{providerFirst ? `${primaryReport?.sourceLabel} service history` : fordFamily ? 'Ford dealer repair history' : 'AutoCheck history'}</p></div></div>
+      <span className="service-source-history-source">{providerFirst ? primaryReport?.sourceLabel : fordFamily ? 'FORD' : 'AUTOCHECK'}</span>
     </header>
+    {providerFirst ? <div className="service-autocheck-history"><ProviderServiceHistoryReports reports={reports} /></div> : null}
     {fordFamily ? <>
+      {providerFirst && history ? <h4 className="service-source-history-meta">Ford OASIS service history · {serviceReportStateLabel({ dataState: historyState })}</h4> : null}
       {history ? <div className="service-source-history-summary">
-        <strong>{history.repairOrderCount ? `${history.repairOrderCount} service visits reported` : 'No service visits reported'}</strong>
+        <strong>{history.repairOrderCount ? `${history.repairOrderCount} service visits reported` : history.historyCaptured ? 'No service visits reported' : 'Ford service history unavailable'}</strong>
         <span className={documentedVisits.length ? 'service-source-history-summary--documented' : ''}>{documentedVisits.length ? `${documentedVisits.length} visits with work documented` : recordedOnlyVisits.length ? 'Visit dates and mileage on file' : 'Ford repair history'}</span>
-      </div> : <p className="service-source-history-empty">Ford has not reported a dealer service history for this vehicle.</p>}
+      </div> : reports.length ? null : <p className="service-source-history-empty">Ford has not reported a dealer service history for this vehicle.</p>}
       {visits.length ? <>
         {documentedVisits.length ? <ol className="service-source-orders">{documentedVisits.map((visit, index) => <FordVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index}`} visit={visit} />)}</ol> : null}
         {recordedOnlyVisits.length ? <>
@@ -152,16 +181,18 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
           </ol> : null}
         </> : null}
       </> : null}
-      {history?.checkedAt ? <p className="service-source-history-meta">Checked {formatDateTime(history.checkedAt)}</p> : null}
+      {history ? <p className="service-source-history-meta">{serviceReportStateLabel({ dataState: historyState })}{history.checkedAt ? ` · Checked ${formatDateTime(history.checkedAt)}` : ''}</p> : null}
     </> : <>
       {hasAutoCheckService ? <div className="service-autocheck-history">
+        {reports.length ? <h4 className="service-source-history-meta">AutoCheck service and inspection evidence</h4> : null}
         {autoCheckService ? <p><strong>{autoCheckService}</strong></p> : null}
-        {autoCheckInspection ? <dl><div><dt>Inspection since intake</dt><dd>{formatDate(autoCheckInspection.date)}</dd></div><div><dt>Recorded as</dt><dd>{autoCheckInspection.types.map(sourceDisplayText).join(' · ')}</dd></div></dl> : hasHistoricalAutoCheckInspection ? <p className="service-autocheck-history-note">Historic AutoCheck inspection details remain available in the full report and are not used for this vehicle's current service status.</p> : <p className="service-autocheck-history-note">No inspection since intake was identified in the captured report.</p>}
-      </div> : <p className="service-source-history-empty">No AutoCheck service or inspection detail was captured.</p>}
+        {autoCheckInspection ? <dl><div><dt>Inspection since intake</dt><dd>{formatDate(autoCheckInspection.date)}</dd></div><div><dt>Recorded as</dt><dd>{autoCheckInspection.types.map(sourceDisplayText).join(' · ')}</dd></div></dl> : hasHistoricalAutoCheckInspection ? <p className="service-autocheck-history-note">Historic AutoCheck inspection details remain available in the full report and are not used for this vehicle's current service status.</p> : reports.length ? null : <p className="service-autocheck-history-note">No inspection since intake was identified in the captured report.</p>}
+      </div> : reports.length ? null : <p className="service-source-history-empty">No AutoCheck service or inspection detail was captured.</p>}
     </>}
+    {reports.length && !providerFirst ? <div className="service-autocheck-history"><ProviderServiceHistoryReports reports={reports} hasOemHistory={hasOemHistory} /></div> : null}
     <nav className="service-source-history-actions" aria-label="Service record actions">
       <Link to={recordsHref}>View in Records</Link>
-      {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer">Open source <ExternalLink size={14} aria-hidden="true" /></a> : null}
+      {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer">{providerFirst ? fordFamily ? 'Open Ford history' : 'Open AutoCheck report' : 'Open source'} <ExternalLink size={14} aria-hidden="true" /></a> : null}
     </nav>
   </section>
 }

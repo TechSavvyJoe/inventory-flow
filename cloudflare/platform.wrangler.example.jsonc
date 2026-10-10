@@ -11,12 +11,21 @@
     {"binding":"PLATFORM_DB","database_name":"inventory-flow-platform-staging","database_id":"REPLACE_WITH_SEPARATE_CONTROL_PLANE_DB_ID","migrations_dir":"platform-migrations"},
     {"binding":"TENANT_DEMO_DB","database_name":"isolated-tenant-staging","database_id":"REPLACE_WITH_ISOLATED_TENANT_DB_ID"}
   ],
+  "services": [
+    {"binding":"TENANT_DEMO_PUBLISHER","service":"REPLACE_WITH_ISOLATED_TENANT_WORKER","entrypoint":"CollectorPublication"}
+  ],
   "vars": {
     "PRIVATE_HOSTNAME":"REPLACE_WITH_OWNER_HOSTNAME",
     "ACCESS_ISSUER":"REPLACE_WITH_VERIFIED_ACCESS_ISSUER",
     "ACCESS_AUDIENCE":"REPLACE_WITH_SEPARATE_OWNER_ACCESS_AUDIENCE",
+    "ACCESS_COLLECTOR_AUDIENCE":"REPLACE_WITH_SEPARATE_MACHINE_ACCESS_AUDIENCE",
     "PLATFORM_TENANT_BINDINGS":"{\"REPLACE_WITH_GROUP_ID\":\"TENANT_DEMO_DB\"}",
+    "PLATFORM_COLLECTOR_PUBLICATION_BINDINGS":"{\"REPLACE_WITH_GROUP_ID\":\"TENANT_DEMO_PUBLISHER\"}",
+    "PLATFORM_COLLECTOR_EXECUTION_ENABLED":"false",
     "PLATFORM_SCHEDULER_ENABLED":"false",
     "PLATFORM_SCHEDULER_BATCH_SIZE":"8"
   }
+  // Secret COLLECTOR_PUBLICATION_PRIVATE_KEY: reviewed Ed25519 private JWK.
+  // Keep feature off until tenant schema, identity, Access and host enrollment
+  // are verified in the separately approved named release. No host publisher token.
 }

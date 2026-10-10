@@ -110,7 +110,7 @@ export interface SourceReadiness {
 
 export function sourceReadiness(item: PlatformConnection, data: PlatformConnections, group: PlatformGroup): SourceReadiness {
   const dealership = item.groupId === group.id ? group.dealerships.find(candidate => candidate.id === item.dealershipId && candidate.groupId === group.id) : undefined
-  const queued = item.groupId === group.id && data.groupId === group.id && data.requests.some(request => request.connectionId === item.id && request.state === 'queued')
+  const queued = item.groupId === group.id && data.groupId === group.id && data.requests.some(request => request.connectionId === item.id && ['queued','running','reconciliation_required'].includes(request.state))
   const sourceIdentity = Boolean(item.name.trim() && item.provider.trim() && (item.vendor ?? '').trim())
   const endpointConfigured = item.method === 'collector' || Boolean(item.endpoint.trim())
   const scheduled = item.cadence !== 'manual'

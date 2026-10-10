@@ -4,6 +4,19 @@ import type { BootstrapData, VehicleRecord } from '../types';
 import { toInventoryVehicle } from './adapters';
 
 describe('OASIS action capture provenance', () => {
+  it('retains CARFAX status-only coverage categories with unknown balances', () => {
+    const record = sourceVehicle();
+    record.warrantyCheck = { mileageEntered: 25000, carfax: { coverages: [
+      { type: 'Basic Warranty', status: 'EXPIRED' },
+      { type: 'Corrosion', status: 'N/A' },
+      { type: 'Emissions', status: 'ACTIVE', termMiles: 80000 },
+    ] } };
+    expect(toInventoryVehicle(record, sourceData()).warrantyCheck?.carfax?.coverages).toEqual([
+      expect.objectContaining({ type: 'Basic Warranty', status: 'EXPIRED', termText: 'Unknown', remainingMilesText: 'Unknown', remainingTimeText: 'Unknown' }),
+      expect.objectContaining({ type: 'Corrosion', status: 'N/A', termText: 'Unknown', remainingMilesText: 'Unknown', remainingTimeText: 'Unknown' }),
+      expect.objectContaining({ type: 'Emissions', status: 'ACTIVE', termMiles: 80000, remainingMilesText: 'Unknown' }),
+    ]);
+  });
   it('fills missing sales specifications from usable VIN documents without overriding the listing', () => {
     const record = sourceVehicle();
     record.engine = 'Published engine';
@@ -225,14 +238,16 @@ describe('official document adapter', () => {
       mileageEntered: 2052,
       mileageSource: 'listed odometer',
       autoCheck: { inServiceDate: '2024-03-14', inServiceAgeMonths: 30, coverages: [coverage] },
+      carfax: { inServiceDate: '2024-04-15', coverages: [{ ...coverage, type: 'Powertrain', termText: '5 years / 60,000 miles', termMiles: 60000 }] },
       fordOasis: { warrantyStartDate: '14-March-2024', monthsInService: 30, coverages: [coverage] },
     };
 
     const index = buildInventorySearchIndex([toInventoryVehicle(record, sourceData())]);
 
     expect(rankInventorySearch(index, '2024-03-14')).toHaveLength(1);
+    expect(rankInventorySearch(index, '2024-04-15')).toHaveLength(1);
     expect(rankInventorySearch(index, '14-March-2024')).toHaveLength(1);
-    for (const generic of ['expired', '36,000', '36000', 'Bumper-to-Bumper', 'No time left', 'listed odometer', 'warranty check coverage']) {
+    for (const generic of ['expired', '36,000', '36000', 'Bumper-to-Bumper', 'Powertrain', '60,000', '5 years', 'No time left', 'listed odometer', 'warranty check coverage']) {
       expect(rankInventorySearch(index, generic)).toEqual([]);
     }
   });
@@ -356,5 +371,35 @@ describe('official document adapter', () => {
     expect(rankInventorySearch(index, 'Synthetic vehicle transport restriction')).toHaveLength(1);
     record.hold.canViewEvidence = false;
     expect(toInventoryVehicle(record, sourceData()).dealerMailEvidence).toBeUndefined();
+  });
+});
+
+
+describe('provider report fallbacks', () => {
+  it('maps CARFAX-only warranty and service events without populating OEM coverage', () => {
+    const record = sourceVehicle();
+    record.fordOasis = undefined;
+    record.warrantyCheck = { mileageEntered: 21000, dataState: 'current', carfax: { coverages: [{ type: 'Powertrain', termText: '5 years / 60000 miles', remainingMilesText: '39000 miles', remainingTimeText: '18 months', status: 'ACTIVE' }] } };
+    record.serviceHistory = { reports: [{ vin: record.vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-08-30T14:00:00Z', dataState: 'current', historyStatus: 'reported', entries: [{ date: '2026-07-12', services: ['Synthetic oil service'] }] }] };
+    const mapped = toInventoryVehicle(record, sourceData());
+    expect(mapped.warrantyCheck?.carfax?.coverages[0].type).toBe('Powertrain');
+    expect(mapped.warrantyCheck?.fordOasis).toBeNull();
+    expect(mapped.serviceHistory?.reports[0].entries[0].services).toEqual(['Synthetic oil service']);
+    // Shared provider labels and routine work remain visible in Records but
+    // must not make a predictive search match every vehicle on the lot.
+    expect(mapped.authorizedSearchText).toContain('2026-07-12');
+    expect(mapped.authorizedSearchText).not.toContain('Synthetic oil service');
+    expect(mapped.authorizedSearchText).not.toContain('Synthetic CARFAX');
+  });
+  it('indexes provider event dates and odometers without shared labels or mechanical descriptions', () => {
+    const record = sourceVehicle();
+    record.serviceHistory = { reports: [{ vin: record.vin, provider: 'autocheck', sourceLabel: 'Experian shared inspection report', capturedAt: '2026-08-30T14:00:00Z', dataState: 'current', historyStatus: 'reported', entries: [
+      { date: '2026-07-12', odometer: 18231, services: ['Vehicle inspected'] },
+    ] }] };
+    const mapped = toInventoryVehicle(record, sourceData());
+    const index = buildInventorySearchIndex([mapped]);
+    for (const query of ['2026-07-12', '18231']) expect(rankInventorySearch(index, query)).toHaveLength(1);
+    for (const query of ['Experian', 'Vehicle inspected']) expect(rankInventorySearch(index, query)).toHaveLength(0);
+    expect(mapped.serviceHistory?.reports[0].entries[0].services).toEqual(['Vehicle inspected']);
   });
 });

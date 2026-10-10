@@ -1,6 +1,6 @@
 // @ts-nocheck -- the daily orchestrator is plain ESM.
 // @vitest-environment node
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { loadLatestCompletedRelease } from '../../server/importer.mjs'
 import { cloudBundleSha256, cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
-import { publicationFailureMessage, publicationReconciliationPath, syncCloudRelease, writePublicationReconciliation } from '../../scripts/sync-cloud-release.mjs'
+import { acquirePublicationLock, publicationFailureMessage, publicationReconciliationPath, releasePublicationLock, syncCloudRelease, writePublicationReconciliation } from '../../scripts/sync-cloud-release.mjs'
 
 let workspaceRoot: string
 let previousWorkspaceRoot: string | undefined
@@ -79,6 +79,67 @@ describe('app-first daily orchestrator helpers', () => {
     })
   })
 
+  it('runs the DealerMail snapshot builder from its work directory using its local script path', async () => {
+    const internals = await loadInternals()
+    const reportDate = internals.todayInNewYork()
+    const builderPath = path.join(workspaceRoot, 'work', 'build_v2_snapshot.mjs')
+    const target = path.join(workspaceRoot, 'work', 'dealermail-history', 'snapshots', `${reportDate}-complete-used-inventory-deep-cloud-ready.json`)
+    mkdirSync(path.dirname(target), { recursive: true })
+    writeFileSync(builderPath, '// synthetic builder path')
+    const originalRun = internals.runtime.run
+    const calls: any[] = []
+    internals.runtime.run = (command, args, options) => {
+      calls.push({ command, args, options })
+      if (options.label === 'DealerMail cloud snapshot finalizer') writeFileSync(target, '{}')
+      return { ok: true, output: '' }
+    }
+    try {
+      const steps: any[] = []
+      await expect(internals.runDealerMail(reportDate, true, [], steps, { refresh: true })).resolves.toBe(target)
+      const builder = calls.find(call => call.options.label === 'DealerMail snapshot builder')
+      expect(path.resolve(builder.options.cwd, builder.args[0])).toBe(builderPath)
+      expect(builder.options.cwd).toBe(path.join(workspaceRoot, 'work'))
+      expect(builder.args).toEqual(['build_v2_snapshot.mjs', reportDate])
+      expect(steps).toContainEqual(expect.objectContaining({ name: 'dealermail', status: 'captured' }))
+    } finally {
+      internals.runtime.run = originalRun
+    }
+  })
+
+  it('collector stage refuses a missing same-day verified baseline before invoking its injected source adapter', async () => {
+    const internals = await loadInternals()
+    const captureDealerMail = vi.fn(async () => {})
+    const reportDate = internals.todayInNewYork()
+    const lockPath = path.join(workspaceRoot, 'work', 'app-feed-status', '.publication.lock')
+    mkdirSync(path.dirname(lockPath), { recursive: true })
+    const lock = acquirePublicationLock(lockPath)
+    const ownerName = 'INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID'
+    const previousOwner = process.env[ownerName]
+    process.env[ownerName] = JSON.parse(lock.content).ownerId
+    try {
+      await expect(internals.stageIntradayHoldRefreshCandidate({
+        reportDate,
+        attemptId: 'synthetic-collector-attempt',
+        baselineBundleSha256: 'a'.repeat(64),
+        captureDealerMail,
+      })).rejects.toThrow('BASELINE_REQUIRED')
+      expect(captureDealerMail).not.toHaveBeenCalled()
+    } finally {
+      if (previousOwner === undefined) delete process.env[ownerName]
+      else process.env[ownerName] = previousOwner
+      releasePublicationLock(lock)
+    }
+  })
+
+  it('requires the installed workspace and owned publication lock before collector baseline promotion', async () => {
+    const internals = await loadInternals()
+    const claim = { attemptId: 'synthetic-promotion-attempt', reportDate: internals.todayInNewYork(), baselineBundleSha256: 'a'.repeat(64) }
+    const promote = profile => internals.promoteVerifiedCollectorCandidate({ profile, claim, candidate: {}, verification: {} })
+    expect(() => promote({ workspaceRoot: path.join(workspaceRoot, 'foreign-workspace') })).toThrow('COLLECTOR_LOCAL_PROMOTION_FAILED')
+    expect(() => promote({ workspaceRoot })).toThrow('PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW')
+    expect(() => internals.promoteVerifiedCollectorCandidate({ profile: { workspaceRoot }, claim: { ...claim, attemptId: '../escaped' } })).toThrow('COLLECTOR_LOCAL_PROMOTION_FAILED')
+  })
+
   it('defers the entire hold refresh behind an active shared pipeline writer', async () => {
     const internals = await loadInternals()
     const reportDate = '2026-09-25'
@@ -134,6 +195,39 @@ describe('app-first daily orchestrator helpers', () => {
         })
       expect(existsSync(nextPublicPath)).toBe(false)
     } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
+
+  it('blocks collector capture under its publication lock for valid and malformed retained global markers', async () => {
+    const internals = await loadInternals()
+    const markerPath = publicationReconciliationPath(workspaceRoot)
+    const lockPath = path.join(workspaceRoot, 'work', 'app-feed-status', '.publication.lock')
+    mkdirSync(path.dirname(lockPath), { recursive: true })
+    const lock = acquirePublicationLock(lockPath)
+    const ownerName = 'INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID'
+    const previousOwner = process.env[ownerName]
+    process.env[ownerName] = JSON.parse(lock.content).ownerId
+    const capture = vi.fn(async () => {})
+    const stage = () => internals.stageIntradayHoldRefreshCandidate({
+      reportDate: internals.todayInNewYork(), attemptId: 'synthetic-collector-attempt',
+      baselineBundleSha256: 'a'.repeat(64), captureDealerMail: capture,
+    })
+    try {
+      writePublicationReconciliation(workspaceRoot, {
+        reportDate: internals.todayInNewYork(), bundleSha256: 'a'.repeat(64),
+        failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+        sourceHashes: { public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64), managerDisposition: null, managerDispositionBinding: null },
+      })
+      await expect(stage()).rejects.toThrow('RECONCILIATION_REQUIRED')
+      writeFileSync(markerPath, '{truncated reconciliation marker')
+      expect(() => internals.inspectCollectorBaseline(internals.todayInNewYork())).toThrow('RECONCILIATION_REQUIRED')
+      await expect(stage()).rejects.toThrow('RECONCILIATION_REQUIRED')
+      expect(capture).not.toHaveBeenCalled()
+    } finally {
+      if (previousOwner === undefined) delete process.env[ownerName]
+      else process.env[ownerName] = previousOwner
+      releasePublicationLock(lock)
       rmSync(markerPath, { force: true })
     }
   })

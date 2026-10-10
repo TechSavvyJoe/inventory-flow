@@ -1,3 +1,4 @@
+import { validateOperationalEvidence, validateServiceHistoryEvidence } from './provider-evidence.mjs'
 import { createHash } from 'node:crypto'
 import {
   appendTransferEvent,
@@ -14,7 +15,7 @@ import {
   createRepositoryContext,
   listServiceEvents,
   insertServiceEvent,
-  manualHoldsEnabled, listManualHoldEvents, insertManualHoldEvent,
+  manualHoldsEnabled, manualHoldApprovalsEnabled, listManualHoldEvents, insertManualHoldEvent,
   dispositionsEnabled,
   listDispositionEvents,
   insertDispositionEvent,
@@ -983,6 +984,19 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
         dataState: independentResourceState(source.resourceRecord.warrantyCheck),
       }
     : undefined
+  // Revalidate the allow-list at projection time; storage is not a public API contract.
+  const operationalEvidence = source.resourceRecord?.operationalEvidence
+    ? validateOperationalEvidence(source.resourceRecord.operationalEvidence, source.vin) : undefined
+  if (operationalEvidence) operationalEvidence.records = operationalEvidence.records.map(record => ({
+    ...record, dataState: independentResourceState(record),
+    ...(independentResourceState(record) !== 'current' ? {
+      ...(record.holdState === 'not_observed' ? { holdState: 'unknown' } : {}),
+      ...(record.reportedDisposition === 'not_observed' ? { reportedDisposition: 'unknown' } : {}),
+    } : {}),
+  }))
+  const serviceHistory = source.resourceRecord?.serviceHistory
+    ? validateServiceHistoryEvidence(source.resourceRecord.serviceHistory, source.vin) : undefined
+  if (serviceHistory) serviceHistory.reports = serviceHistory.reports.map(report => ({ ...report, dataState: independentResourceState(report) }))
   const view = {
     vin: source.vin,
     stockNumber,
@@ -1052,6 +1066,8 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(fordInvoice ? { fordInvoice } : {}),
     ...(fordOasis ? { fordOasis } : {}),
     ...(warrantyCheck ? { warrantyCheck } : {}),
+    ...(operationalEvidence ? { operationalEvidence } : {}),
+    ...(serviceHistory ? { serviceHistory } : {}),
   }
   const safeSearchParts = [
     source.vin,
@@ -1168,6 +1184,9 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
     ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
     ...(fordOasis?.extendedCoverageExpirations ?? []),
+    // Report labels and common service descriptions do not narrow inventory.
+    // Keep event facts searchable while the full report remains in Records.
+    ...(serviceHistory?.reports ?? []).flatMap((report) => report.entries.flatMap((entry) => [entry.date, entry.openDate, entry.closeDate, entry.odometer])),
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions?.length ? 'open recall field service action' : null,
     warrantyCheck?.dataState,
@@ -1176,19 +1195,10 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     warrantyCheck?.mileageSource,
     warrantyCheck?.autoCheck?.inServiceDate,
     warrantyCheck?.autoCheck?.inServiceAgeMonths,
+    warrantyCheck?.carfax?.inServiceDate,
+    warrantyCheck?.carfax?.inServiceAgeMonths,
     warrantyCheck?.fordOasis?.warrantyStartDate,
     warrantyCheck?.fordOasis?.monthsInService,
-    ...[...(warrantyCheck?.autoCheck?.coverages ?? []), ...(warrantyCheck?.fordOasis?.coverages ?? [])].flatMap(
-      (coverage) => [
-        coverage.type,
-        coverage.termText,
-        coverage.remainingMilesText,
-        coverage.remainingTimeText,
-        coverage.status,
-        coverage.note,
-      ],
-    ),
-    warrantyCheck ? 'warranty check coverage' : null,
   ]
   if (context.canViewPrivateEvidence) safeSearchParts.push(privateSearchText(source))
   if (context.canViewPrivateEvidence && includePrivate) {
@@ -1339,8 +1349,20 @@ function matchesVehicleFilters(vehicle, query, privateIndex = '') {
   if (query.homeStore && vehicle.homeStore !== query.homeStore) return false
   if (query.hold) {
     const wanted = query.hold.toLowerCase()
-    if (wanted === 'yes' && !['primary', 'multiple'].includes(vehicle.hold.state)) return false
-    if (wanted === 'no' && vehicle.hold.state !== 'none_observed') return false
+    if (vehicle.operationalEvidence) {
+      // Retained positives stay findable even though reconciliation treats them
+      // as unverified. Unknown generic evidence cannot establish no hold.
+      const records = vehicle.inventoryDecision?.evidence ?? vehicle.operationalEvidence.records
+      const retainedPositive = vehicle.operationalEvidence.records.some(record => record.holdState === 'held') ||
+        ['primary', 'backup', 'multiple'].includes(vehicle.hold.state) || vehicle.hold.lastKnownActiveHold === true ||
+        vehicle.manualHold?.state === 'active'
+      const verifiedNoHold = records.length > 0 && records.every(record => record.dataState === 'current' && record.complete && record.holdState === 'not_observed')
+      if (wanted === 'yes' && !retainedPositive) return false
+      if (wanted === 'no' && (retainedPositive || !verifiedNoHold)) return false
+    } else {
+      if (wanted === 'yes' && !['primary', 'multiple'].includes(vehicle.hold.state)) return false
+      if (wanted === 'no' && vehicle.hold.state !== 'none_observed') return false
+    }
     if (!['yes', 'no'].includes(wanted) && vehicle.hold.state !== wanted) return false
   }
   return true
@@ -1853,6 +1875,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       dispositionEventsByVin.set(row.vin, values)
     }
     const manualHoldStorage = manualHoldsEnabled(database)
+    const manualHoldApprovalStorage = manualHoldApprovalsEnabled(database)
     const manualHoldEventsByVin = new Map()
     for (const row of listManualHoldEvents(database)) {
       const rows = manualHoldEventsByVin.get(row.vin) ?? []
@@ -1875,7 +1898,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       allTransferRows,
       serviceEventsByVin,
       serviceIntakeByVin: new Map((dataset.serviceIntake ?? []).map((row) => [row.vin, row])),
-      dispositionStorage, manualHoldStorage, manualHoldEventsByVin,
+      dispositionStorage, manualHoldStorage, manualHoldApprovalStorage, manualHoldEventsByVin,
       savedListsStorage: savedVehicleListsEnabled(database),
       dispositionEventsByVin,
       transfersByVin,
@@ -1907,7 +1930,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       vehicle.appDisposition = dispositionView(source, state.dispositionEventsByVin.get(source.vin)?.at(-1) ?? null, state.context, {
         enabled: state.dispositionStorage,
       })
-      vehicle.manualHold = manualHoldView(source, state.manualHoldEventsByVin.get(source.vin)?.at(-1), state.context, { enabled: state.manualHoldStorage })
+      vehicle.manualHold = manualHoldView(source, state.manualHoldEventsByVin.get(source.vin)?.at(-1), state.context, { enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage })
       vehicle.inventoryDecision = inventoryDecision(vehicle)
       vehicle.canReportIssue = vehicleIssuesEnabled(database) && canReportVehicleIssue(vehicle, state.context)
     }
@@ -2141,7 +2164,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const source = state.sources.find(candidate => candidate.vin === normalizedVin(vinInput))
       if (!source || !vehicleFromSnapshot(state, source)) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
-      return manualHoldDetail(source, state.manualHoldEventsByVin.get(source.vin) ?? [], state.context, { enabled: state.manualHoldStorage })
+      return manualHoldDetail(source, state.manualHoldEventsByVin.get(source.vin) ?? [], state.context, { enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage })
     },
 
     updateManualHold(vinInput, input, contextInput = {}, idempotencyKey) {
@@ -2149,9 +2172,9 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const source = state.sources.find(candidate => candidate.vin === normalizedVin(vinInput))
       if (!source || !vehicleFromSnapshot(state, source)) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
       const rows = state.manualHoldEventsByVin.get(source.vin) ?? []
-      const result = buildManualHoldEvent(source, rows, input, state.context, { now: state.currentNow, idempotencyKey, enabled: state.manualHoldStorage })
+      const result = buildManualHoldEvent(source, rows, input, state.context, { now: state.currentNow, idempotencyKey, enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage })
       if (result.created) { insertManualHoldEvent(database, result.row); rows.push(result.row) }
-      return { created: result.created, record: manualHoldDetail(source, rows, state.context, { enabled: state.manualHoldStorage }) }
+      return { created: result.created, record: manualHoldDetail(source, rows, state.context, { enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage }) }
     },
 
     listVehicleIssues(query = {}, contextInput = {}) {

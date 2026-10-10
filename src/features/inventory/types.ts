@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { VehicleIssueContext } from '../issues/issue-model';
 import type { DispositionContext } from '../overview/disposition-model';
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
-import type { ManualHold, InventoryDecision, AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName, UserRole } from "../../types";
+import type { ManualHold, InventoryDecision, OperationalEvidenceRecord, ProviderServiceHistory, AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName, UserRole } from "../../types";
 import type { OverviewInventorySelection } from "../overview/overview-links";
 
 export type InventoryScope = "home" | "group";
@@ -306,6 +306,7 @@ export interface WarrantyCheckResource {
   mileageEntered: number;
   mileageSource?: string | null;
   autoCheck: WarrantyCheckAutoCheckBlock | null;
+  carfax?: WarrantyCheckAutoCheckBlock | null;
   fordOasis: WarrantyCheckFordOasisBlock | null;
 }
 
@@ -489,6 +490,8 @@ export interface InventoryVehicle {
   appDisposition?: AppDisposition | null;
   manualHold?: ManualHold;
   inventoryDecision?: InventoryDecision;
+  operationalEvidence?: OperationalEvidenceRecord;
+  serviceHistory?: ProviderServiceHistory;
   dealerMail: DealerMailHoldSignal;
   location: VehicleLocationSignal;
   movement?: VehicleMovementSignal | null;

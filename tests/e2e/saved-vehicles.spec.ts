@@ -37,8 +37,9 @@ for (const [width, height] of [[390, 844], [1024, 768], [1320, 820], [1440, 900]
     await expect(page).toHaveTitle(/Inventory Flow/)
     await expect(page.locator('vite-error-overlay')).toHaveCount(0)
     if (width > 760) {
-      const copy = page.getByRole('button', { name:'Copy VIN: TESTDATAHWELL0001', exact:true }).first()
-      const contentBounds = await copy.locator('..').getByText('TESTDATAHWELL0001', { exact:true }).boundingBox()
+      const row = page.getByRole('row', { name:/TESTDATAHWELL0001/ })
+      const copy = row.getByRole('button', { name:'Copy VIN: TESTDATAHWELL0001', exact:true })
+      const contentBounds = await row.getByText('TESTDATAHWELL0001', { exact:true }).boundingBox()
       const copyBounds = await copy.boundingBox()
       expect(contentBounds).not.toBeNull()
       expect(copyBounds).not.toBeNull()

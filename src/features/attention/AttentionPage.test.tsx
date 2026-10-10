@@ -1,13 +1,15 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AttentionItem, BootstrapData, ServiceReadinessStatus, StoreName, VehicleRecord } from '../../types'
+import type { AttentionItem, BootstrapData, ServiceReadinessStatus, StoreName, VehicleIssueDetail, VehicleRecord } from '../../types'
 import { clearWorkspaceMemory } from '../../lib/workspace-memory'
 import { AttentionPage } from './AttentionPage'
 import { actionCenterItems, isActionable, openStoreActionCount } from './action-center'
+import { appendVehicleIssueEvent, getVehicleIssue } from '../../lib/api'
 
 const mocked = vi.hoisted(() => ({ context: {} as Record<string, unknown>, action: vi.fn() }))
 vi.mock('../../app/AppDataContext', () => ({ useAppData: () => mocked.context }))
+vi.mock('../../lib/api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/api')>(), getVehicleIssue: vi.fn(), appendVehicleIssueEvent: vi.fn() }))
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 function task(type: string, store: StoreName = 'Howell'): AttentionItem {
   return { id: `synthetic-${type}-${store}`, type, store, severity: 'warning', status: 'open', priority: 'normal', label: `Synthetic ${type}`, vehicleName: `Synthetic ${store} hold`, stockNumber: 'SYN-H01', vin: 'TESTDATAHWELL0001', href: '/inventory?q=old-stock', allowedActions: [], events: [] }
@@ -22,7 +24,8 @@ function data(): BootstrapData {
 }
 const howellManager = { store: 'Howell' as StoreName, role: 'manager' as const }
 beforeEach(() => { clearWorkspaceMemory(); vi.clearAllMocks(); mocked.context = { data: data(), homeStore: 'Howell', role: 'manager', currentUser: 'Synthetic Manager', addAttentionEvent: mocked.action } })
-function show() { return render(<MemoryRouter><AttentionPage/></MemoryRouter>) }
+function LocationProbe() { const location = useLocation(); return <output aria-label="Current URL">{`${location.pathname}${location.search}${location.hash}`}</output> }
+function show(path = '/') { return render(<MemoryRouter initialEntries={[path]}><AttentionPage/><LocationProbe/></MemoryRouter>) }
 function tasks() { return within(screen.getByRole('list', { name: 'Attention items' })).getAllByRole('listitem') }
 
 describe('Action center page and shared navigation count', () => {
@@ -34,6 +37,21 @@ describe('Action center page and shared navigation count', () => {
     expect(screen.getByText('No open vehicle issues')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Completed/ }))
     expect(screen.getByText('No completed issues yet')).toBeInTheDocument()
+  })
+  it('opens the requested allowed issue action without submitting it and safely defaults invalid actions', async () => {
+    const detail = { id: 'synthetic-issue', vin: 'SYNTHETIC-ISSUE-1', stockNumber: 'SYN-I1', vehicleName: 'Synthetic vehicle', category: 'cleaning', description: 'Synthetic work', priority: 'normal', status: 'awaiting_review', version: 1, assignee: 'Synthetic team', homeStore: 'Howell', reportStore: 'Howell', reportedBy: 'Synthetic employee', reportedByUserId: 'synthetic-user', reportedAt: '2026-09-14T10:00:00Z', updatedAt: '2026-09-14T10:00:00Z', completedAt: null, completedBy: null, photoCount: 0, photos: [], events: [], allowedActions: ['complete', 'add_note'] } as VehicleIssueDetail
+    vi.mocked(getVehicleIssue).mockResolvedValue(detail)
+    vi.mocked(appendVehicleIssueEvent).mockResolvedValue(detail)
+    mocked.context.data = { ...data(), vehicleIssuesEnabled: true }
+    show('/attention?issue=synthetic-issue&action=complete')
+    expect(await screen.findByRole('heading', { name: 'Cleaning issue' })).toBeInTheDocument()
+    expect(await screen.findByRole('combobox', { name: 'Action' })).toHaveValue('complete')
+    expect(appendVehicleIssueEvent).not.toHaveBeenCalled()
+    cleanup()
+    show('/attention?issue=synthetic-issue&action=not-real')
+    expect(await screen.findByRole('heading', { name: 'Cleaning issue' })).toBeInTheDocument()
+    expect(await screen.findByRole('combobox', { name: 'Action' })).toHaveValue('add_note')
+    expect(appendVehicleIssueEvent).not.toHaveBeenCalled()
   })
   it('counts only work this store and role can take, and groups the rest', () => {
     const fixture = data()
@@ -128,6 +146,23 @@ describe('Action center page and shared navigation count', () => {
     expect(screen.getByRole('button', { name: 'Lincoln' })).toHaveAttribute('aria-pressed', 'true')
     expect(tasks()).toHaveLength(2)
     expect(screen.queryByText('Synthetic Service 3')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { savedScope: 'group', requestedScope: 'home', selectedScope: 'home' },
+    { savedScope: 'home', requestedScope: 'group', selectedScope: 'group' },
+    { savedScope: 'group', requestedScope: 'invalid', selectedScope: 'group' },
+  ] as const)('applies a scope-only link over saved $savedScope scope and consumes it safely', ({ savedScope, requestedScope, selectedScope }) => {
+    show()
+    if (savedScope === 'group') fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    expect(screen.getByRole('button', { name: savedScope === 'home' ? 'Howell' : 'All stores' })).toHaveAttribute('aria-pressed', 'true')
+
+    cleanup()
+    show(`/attention?scope=${requestedScope}&keep=1#kept`)
+
+    expect(screen.getByRole('button', { name: 'Howell' })).toHaveAttribute('aria-pressed', String(selectedScope === 'home'))
+    expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', String(selectedScope === 'group'))
+    expect(screen.getByLabelText('Current URL')).toHaveTextContent(/^\/attention\?keep=1#kept$/)
   })
 
   it('protects an unfinished follow-up when a filter would remove its row', () => {

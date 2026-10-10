@@ -4,6 +4,9 @@ import { platformOwner, readPlatform, savePlatform, readTenantMembers, saveTenan
 
 import { readDataConnections, saveDataControl, readPlatformAudit } from './platform-data.mjs'
 import { planScheduledPulls } from './platform-scheduler.mjs'
+import { verifyCollectorAccess, collectorIdentity } from './collector-auth.mjs'
+import { readCollectors, saveCollector, contactCollector, claimCollector, heartbeatCollector, receiptCollector } from './collector-execution.mjs'
+import { publishCollector, reconcileCollector } from './collector-publication.mjs'
 
 const HEADERS = {
   'Cache-Control':'private, no-store', 'Referrer-Policy':'no-referrer',
@@ -15,7 +18,7 @@ const errorResponse = error => {
   const known = error instanceof AccessError || error instanceof WorkflowError
   return json(known ? error.status : 503,{code:known ? error.code : 'PLATFORM_UNAVAILABLE',error:error instanceof WorkflowError ? error.message : error?.code === 'SOFTWARE_OWNER_REQUIRED' ? 'Software-owner access is required. Sign in with your authorized owner account.' : error instanceof AccessError && error.status < 500 ? error.humanMessage : 'Software administration is unavailable. Check the deployment configuration.'})
 }
-async function inputJson(request) {
+async function inputJson(request,limit=8192) {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new WorkflowError('Send a JSON change.',{status:415,code:'JSON_REQUIRED'})
   const reader = request.body?.getReader()
   if (!reader) throw new WorkflowError('A change is required.',{status:400,code:'EMPTY_BODY'})
@@ -24,7 +27,7 @@ async function inputJson(request) {
     while (true) {
       const {done,value} = await reader.read(); if (done) break
       length += value.byteLength
-      if (length > 8192) { await reader.cancel(); throw new WorkflowError('The change is too large.',{status:413,code:'BODY_TOO_LARGE'}) }
+      if (length > limit) { await reader.cancel(); throw new WorkflowError('The change is too large.',{status:413,code:'BODY_TOO_LARGE'}) }
       chunks.push(value)
     }
     const data = new Uint8Array(length); let offset = 0
@@ -44,19 +47,37 @@ export async function handlePlatformApi(request, env, claims, now = new Date()) 
     const entity = /^\/api\/platform\/(groups|dealerships|owners)$/.exec(url.pathname)?.[1]
     const members = /^\/api\/platform\/groups\/([a-zA-Z0-9_-]+)\/members$/.exec(url.pathname)
     const connections = /^\/api\/platform\/groups\/([a-zA-Z0-9_-]+)\/(connections|pulls)$/.exec(url.pathname)
+    const collectors = /^\/api\/platform\/groups\/([a-zA-Z0-9_-]+)\/(collectors|collector-reconcile)$/.exec(url.pathname)
     const audit = /^\/api\/platform\/audit\/([a-zA-Z0-9_-]+)$/.exec(url.pathname)
     if (request.method === 'GET') {
       if (url.pathname === '/api/platform') return json(200,await readPlatform(env,claims,now))
+      if (collectors?.[2]==='collectors')return json(200,await readCollectors(env,claims,collectors[1],now))
       if (audit) return json(200,await readPlatformAudit(env,claims,audit[1]))
       if (connections?.[2] === 'connections') return json(200,await readDataConnections(env,claims,connections[1],now))
       if (members) return json(200,await readTenantMembers(env,claims,members[1]))
       throw new WorkflowError('Route not found.',{status:404,code:'NOT_FOUND'})
     }
-    if (!entity && !members && !connections) throw new WorkflowError('Route not found.',{status:404,code:'NOT_FOUND'})
+    if (!entity && !members && !connections && !collectors) throw new WorkflowError('Route not found.',{status:404,code:'NOT_FOUND'})
     if (request.headers.get('origin') !== url.origin) throw new AccessError('SAME_ORIGIN_REQUIRED',403)
     const input = await inputJson(request), key = request.headers.get('idempotency-key')
-    return json(200, connections ? await saveDataControl(env,claims,connections[1],connections[2],input,key) : members ? await saveTenantMember(env,claims,members[1],input,key) : await savePlatform(env,claims,entity,input,key))
+    return json(200, collectors ? collectors[2]==='collectors' ? await saveCollector(env,claims,collectors[1],input,key,now) : await reconcileCollector(env,claims,collectors[1],input,now) : connections ? await saveDataControl(env,claims,connections[1],connections[2],input,key) : members ? await saveTenantMember(env,claims,members[1],input,key) : await savePlatform(env,claims,entity,input,key))
   } catch (error) { return errorResponse(error) }
+}
+
+// A separately authenticated machine surface; no owner credentials, source
+// URLs, employee writes or arbitrary commands are accepted here.
+export async function handleCollectorApi(request,env,claims,testTime=null) {
+ try {
+  const url=new URL(request.url)
+  await collectorIdentity(env,claims,{allowDisabled:url.pathname==='/api/collector/contact'})
+  if(request.method!=='POST')throw new WorkflowError('Method not allowed.',{status:405,code:'METHOD_NOT_ALLOWED'})
+  if(url.search)throw new WorkflowError('Unsupported query parameters.',{status:400,code:'COLLECTOR_INPUT_INVALID'})
+  const route=/^\/api\/collector\/(contact|claim|heartbeat|receipts|publication)$/.exec(url.pathname)?.[1]
+  if(!route)throw new WorkflowError('Route not found.',{status:404,code:'NOT_FOUND'})
+  const input=await inputJson(request,route==='publication'?25*1024*1024:8192),key=request.headers.get('idempotency-key'),now=testTime??new Date()
+  const result=route==='contact'?await contactCollector(env,claims,input,now):route==='claim'?await claimCollector(env,claims,input,key,now):route==='heartbeat'?await heartbeatCollector(env,claims,input,now):route==='receipts'?await receiptCollector(env,claims,input,now):await publishCollector(env,claims,input,key,now)
+  return result===null?new Response(null,{status:204,headers:HEADERS}):json(200,result)
+ }catch(error){return errorResponse(error)}
 }
 
 export default {
@@ -67,6 +88,7 @@ export default {
     try {
       const url = new URL(request.url)
       if (!env.PRIVATE_HOSTNAME || url.hostname !== env.PRIVATE_HOSTNAME) throw new AccessError('PRIVATE_HOST_REQUIRED',403)
+      if(url.pathname.startsWith('/api/collector/')) {const claims=await verifyCollectorAccess(request,env);return await handleCollectorApi(request,env,claims)}
       const claims = await verifyAccess(request,env)
       await platformOwner(env.PLATFORM_DB,claims)
       if (url.pathname.startsWith('/api/')) return await handlePlatformApi(request,env,claims)

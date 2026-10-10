@@ -313,6 +313,17 @@ export interface WarrantyCheckAutoCheckRecord {
   coverages?: WarrantyCheckCoverageRecord[]
 }
 
+/** CARFAX can report a coverage category/status without its term or balances. */
+export interface WarrantyCheckCarfaxCoverageRecord extends Omit<WarrantyCheckCoverageRecord, 'termText' | 'remainingMilesText' | 'remainingTimeText'> {
+  termText?: string | null
+  remainingMilesText?: string | null
+  remainingTimeText?: string | null
+}
+
+export interface WarrantyCheckCarfaxRecord extends Omit<WarrantyCheckAutoCheckRecord, 'coverages'> {
+  coverages?: WarrantyCheckCarfaxCoverageRecord[]
+}
+
 /** Ford OASIS factory coverage for Ford/Lincoln VINs. Authoritative when present. */
 export interface WarrantyCheckFordOasisRecord {
   warrantyStartDate: string
@@ -321,7 +332,7 @@ export interface WarrantyCheckFordOasisRecord {
 }
 
 /**
- * Read-only per-VIN warranty coverage check. At least one of autoCheck or
+ * Read-only per-VIN warranty coverage check. At least one of autoCheck, carfax or
  * fordOasis is present. No owner data is carried.
  */
 export interface WarrantyCheckRecord {
@@ -331,6 +342,8 @@ export interface WarrantyCheckRecord {
   mileageEntered: number
   mileageSource?: string | null
   autoCheck?: WarrantyCheckAutoCheckRecord | null
+  /** CARFAX report estimate, never confirmed OEM eligibility. */
+  carfax?: WarrantyCheckCarfaxRecord | null
   fordOasis?: WarrantyCheckFordOasisRecord | null
 }
 
@@ -538,13 +551,15 @@ export interface AppDispositionInput {
 
 export interface ManualHold {
   vin: string
-  state: 'active' | 'released' | null
+  state: 'requested' | 'active' | 'released' | 'rejected' | 'cancelled' | null
   version: number
   expectedDeliveryDate: string | null
   updatedAt: string | null
   ownerStore: StoreName | null
   canManage: boolean
   enabled: boolean
+  approvalEnabled?: boolean
+  canApprove?: boolean
   customerLabel?: string | null
   note?: string | null
   updatedBy?: string | null
@@ -552,19 +567,58 @@ export interface ManualHold {
 }
 export interface ManualHoldDetail extends ManualHold { history: ManualHold[] }
 export interface ManualHoldInput {
-  state: 'active' | 'released'
+  state: Exclude<ManualHold['state'], null>
   expectedVersion: number
   customerLabel?: string
   expectedDeliveryDate?: string
   note?: string
 }
+/** Read-only provider observations; no customer or source-system writer fields. */
+export interface OperationalProviderRecord {
+  vin: string
+  provider: string
+  sourceLabel: string
+  capturedAt: string
+  dataState: SourceFreshness
+  readOnly: true
+  complete: boolean
+  holdState: 'held' | 'not_observed' | 'unknown'
+  reportedDisposition?: 'sold_pending' | 'delivered' | 'other' | 'not_observed' | 'unknown'
+}
+export interface OperationalEvidenceRecord { records: OperationalProviderRecord[] }
+export interface ProviderServiceEntry {
+  date: string
+  odometer?: number | null
+  odometerUnit?: 'mi' | 'km'
+  services: string[]
+}
+export interface ProviderServiceReport {
+  vin: string
+  provider: 'oem' | 'autocheck' | 'carfax'
+  sourceLabel: string
+  capturedAt: string
+  dataState: SourceFreshness
+  historyStatus: 'reported' | 'not_reported' | 'unavailable'
+  entries: ProviderServiceEntry[]
+}
+export interface ProviderServiceHistory { reports: ProviderServiceReport[] }
+export interface InventoryDecisionEvidence extends Omit<OperationalProviderRecord, 'capturedAt'> {
+  /** Absent only on the legacy DealerMail observation with no reliable timestamp. */
+  capturedAt?: string
+  effectiveHoldState: OperationalProviderRecord['holdState']
+  comparison: 'agreement' | 'conflict' | 'source_only' | 'unverified'
+  reasons: string[]
+}
+
 export interface InventoryDecision {
-  status: AppDispositionCode | 'held' | 'unconfirmed'
+  status: AppDispositionCode | 'held' | 'hold_requested' | 'unconfirmed'
   comparison: 'agreement' | 'conflict' | 'manual_only' | 'source_only' | 'unverified'
   reasons: string[]
   manualHold: ManualHold['state']
   importedHold: boolean | null
   label: string
+  evidence?: InventoryDecisionEvidence[]
+  reviewRequired?: boolean
 }
 
 export interface VehicleRecord {
@@ -626,6 +680,8 @@ export interface VehicleRecord {
   fordInvoice?: FordInvoiceRecord
   fordOasis?: FordOasisRecord
   warrantyCheck?: WarrantyCheckRecord
+  operationalEvidence?: OperationalEvidenceRecord
+  serviceHistory?: ProviderServiceHistory
 }
 
 export interface TransferEvent {

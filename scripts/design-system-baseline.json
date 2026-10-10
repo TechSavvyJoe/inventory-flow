@@ -41,7 +41,35 @@
       "important": 0,
       "idSelectors": 0
     },
+    "src/design-system/components.css": {
+      "smallText": 0,
+      "rawColors": 4,
+      "rgbHslColors": 1,
+      "important": 1,
+      "idSelectors": 0
+    },
+    "src/features/platform/PlatformPublication.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/platform/PlatformDataConnections.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/platform/PlatformCollectors.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/platform/PlatformSourceSetup.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,
@@ -62,20 +90,6 @@
       "important": 0,
       "idSelectors": 0
     },
-    "src/features/platform/PlatformSourceSetup.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 0
-    },
-    "src/design-system/components.css": {
-      "smallText": 0,
-      "rawColors": 4,
-      "rgbHslColors": 5,
-      "important": 1,
-      "idSelectors": 0
-    },
     "src/components/RouteLoadingState.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -91,13 +105,6 @@
       "idSelectors": 0
     },
     "src/features/attention/InventoryUpdatesPage.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 0
-    },
-    "src/styles/workflow-pages.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,
@@ -167,6 +174,13 @@
       "important": 0,
       "idSelectors": 0
     },
+    "src/features/attention/AttentionPage.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/issues/issues.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -202,6 +216,13 @@
       "important": 3,
       "idSelectors": 0
     },
+    "src/features/inventory/ServiceHistory.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/inventory/VehicleGallery.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -213,8 +234,8 @@
       "smallText": 0,
       "rawColors": 6,
       "rgbHslColors": 0,
-      "important": 7,
-      "idSelectors": 204
+      "important": 1,
+      "idSelectors": 144
     },
     "src/features/transfers/transfer-workspace-v4.css": {
       "smallText": 1,
@@ -242,14 +263,14 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 29
+      "idSelectors": 15
     },
     "src/features/transfers/transfer-simple.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 4,
-      "idSelectors": 123
+      "idSelectors": 104
     },
     "src/features/transfers/transfers.css": {
       "smallText": 22,
@@ -263,7 +284,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 38
+      "idSelectors": 33
     },
     "src/features/inventory/inventory-modern.css": {
       "smallText": 50,
@@ -305,7 +326,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 449
+      "idSelectors": 353
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,
@@ -343,6 +364,13 @@
       "idSelectors": 0
     },
     "src/features/inventory/ManualHoldDialog.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/ProviderEvidence.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,

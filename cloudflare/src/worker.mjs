@@ -14,6 +14,7 @@ import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
 import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
 import { assertTenantEnabled } from './tenant-gate.mjs'
 import { softwareAdminUrl } from './account-navigation.mjs'
+import { publicationReceiptStatement } from './collector-publication-guards.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -218,6 +219,15 @@ export async function loadAdminMembers(env) {
   return result.results
 }
 
+export function validatedReleaseCounts(bundle) {
+  // Only decryptEnvelope establishes this private cache after checking the
+  // exact plaintext hash and provenance. Resource normalization can change the
+  // decoded object afterward, so consumers must not validate that object again.
+  const counts=bundle?.[RELEASE_VALIDATION]
+  if(!counts || !Object.hasOwn(bundle,RELEASE_VALIDATION))throw new HttpError('INVALID_OR_INCOMPLETE_RELEASE')
+  return counts
+}
+
 export async function decryptEnvelope(envelope, env, format=FORMAT) {
   if(envelope?.version!==format || !/^\d{4}-\d{2}-\d{2}$/.test(envelope.reportDate??'') || !/^[a-f0-9]{64}$/.test(envelope.bundleSha256??'')) throw new HttpError('INVALID_ENVELOPE')
   if(typeof envelope.ciphertext!=='string' || envelope.ciphertext.length>MAX_UPLOAD) throw new HttpError('BODY_TOO_LARGE',413)
@@ -308,6 +318,11 @@ export async function appReadiness(env) {
   // Readiness must prove the artifact can still be read and decrypted now,
   // so it never answers from the per-isolate cache.
   const {release,bundleSha256}=await readReleaseWithIdentity(env,{fresh:true})
+  return releaseReadiness(env,release,bundleSha256)
+}
+// Receipt reconciliation exercises the same read pipeline for its immutable
+// accepted release, without substituting or changing the current pointer.
+export async function releaseReadiness(env,release,bundleSha256) {
   const repo=await loadD1Repository(env.INVENTORY_DB,release,{probeSavedLists:true})
   const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
   // Fixed least-privileged context exercises the real read pipeline without
@@ -317,9 +332,10 @@ export async function appReadiness(env) {
   // is not ready when any required write surface answers MIGRATION_REQUIRED.
   const dispositionStorage=repo.database.dispositionsEnabled===true
   const savedListsStorage=repo.database.savedVehicleListsEnabled===true
+  const manualHoldApprovalStorage=repo.database.manualHoldApprovalsEnabled===true
   const manualHoldStorage=repo.database.manualHoldsEnabled===true
   return {
-    ready:dispositionStorage&&savedListsStorage&&manualHoldStorage,dispositionStorage,savedListsStorage,manualHoldStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
+    ready:dispositionStorage&&savedListsStorage&&manualHoldStorage&&manualHoldApprovalStorage,dispositionStorage,savedListsStorage,manualHoldStorage,manualHoldApprovalStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
     counts:{inventory:bootstrap.vehicles.length,managerDispositions:bootstrap.managerDispositions?.length??0,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }
@@ -386,10 +402,27 @@ export async function savedEquipmentResponse(env, release, vin) {
 function releaseMetadata(bundle,counts) {
   return JSON.stringify({completedAt:bundle.release.completedAt,timezone:bundle.release.timezone,warningCount:bundle.release.warnings?.length??0,...counts})
 }
-async function publishRelease(request, env) {
+function collectorReleaseGuard(env,bridge,revision,{bump=true}={}) {
+  // The frozen collector baseline must still be current inside the same D1
+  // batch as its receipt and release writes. A fresh revision read alone can
+  // admit an old hold candidate after a legacy publisher replaces the baseline.
+  return env.INVENTORY_DB.prepare(`UPDATE cloud_app_revision SET revision=CASE WHEN revision=? AND EXISTS(SELECT 1 FROM cloud_release_state s JOIN cloud_release_versions v ON v.release_id=s.value WHERE s.key='current_release_id' AND v.status='current' AND v.bundle_sha256=?) THEN ${bump?'revision+1':'revision'} ELSE NULL END WHERE id=1`).bind(revision,bridge.baselineBundleSha256)
+}
+function publicationConflict(error,bridge,envelope) {
+  // Only this guard's exact SQLite constraint proves the complete atomic D1
+  // batch (including the receipt) rolled back. Network/database failures,
+  // other constraints and lost replies cannot grant another dispatch. R2
+  // may already hold the immutable candidate; it is not the release pointer.
+  if(bridge && /^(?:D1_ERROR: )?NOT NULL constraint failed: cloud_app_revision\.revision(?:: SQLITE_CONSTRAINT)?$/.test(error?.message??'')) {
+    return json(409,{status:'revision_retryable',attemptId:bridge.ticket.attemptId,fence:bridge.ticket.fence,bundleSha256:envelope.bundleSha256,reportDate:envelope.reportDate,atomicRollback:true})
+  }
+  throw new HttpError('PUBLISH_CONFLICT_RETRY',409)
+}
+export async function publishRelease(request, env, bridge=null) {
+  if(bridge)await bridge.check()
   const envelope=await readJson(request,MAX_UPLOAD)
   const bundle=await decryptEnvelope(envelope,env)
-  const counts=bundle[RELEASE_VALIDATION]??validateReleaseBundle(bundle,{degradeOptionalResources:true})
+  const counts=validatedReleaseCounts(bundle)
   const metadata=releaseMetadata(bundle,counts)
   releaseCompletionTime(bundle.release.completedAt)
   const existing=await env.INVENTORY_DB.prepare('SELECT * FROM cloud_release_versions WHERE bundle_sha256=? AND report_date=?').bind(envelope.bundleSha256,envelope.reportDate).first()
@@ -400,7 +433,16 @@ async function publishRelease(request, env) {
     // A prior retry could have retained an older derived summary even though
     // the encrypted bundle is the same. Refresh only those derived totals from
     // the just-validated immutable content; never rewrite the source release.
-    await env.INVENTORY_DB.prepare('UPDATE cloud_release_versions SET metadata_json=? WHERE release_id=? AND bundle_sha256=? AND report_date=?').bind(metadata,existing.release_id,envelope.bundleSha256,envelope.reportDate).run()
+    if(bridge)await bridge.check()
+    const revision=bridge?(await env.INVENTORY_DB.prepare('SELECT revision FROM cloud_app_revision WHERE id=1').first())?.revision:null
+    if(bridge && !Number.isSafeInteger(revision))throw new HttpError('DATABASE_NOT_CONFIGURED',503)
+    try {
+      await env.INVENTORY_DB.batch([
+        ...(bridge?[collectorReleaseGuard(env,bridge,revision,{bump:false})]:[]),
+        env.INVENTORY_DB.prepare('UPDATE cloud_release_versions SET metadata_json=? WHERE release_id=? AND bundle_sha256=? AND report_date=?').bind(metadata,existing.release_id,envelope.bundleSha256,envelope.reportDate),
+        ...(bridge?[publicationReceiptStatement(env,bridge.ticket,counts,'unchanged',bridge.now)]:[]),
+      ])
+    } catch(error) {if(!bridge)throw error;return publicationConflict(error,bridge,envelope)}
     return json(200,{status:'already_published',reportDate:envelope.reportDate})
   }
   const state=await env.INVENTORY_DB.batch([env.INVENTORY_DB.prepare('SELECT revision FROM cloud_app_revision WHERE id=1'),env.INVENTORY_DB.prepare(CURRENT_SQL)])
@@ -410,15 +452,20 @@ async function publishRelease(request, env) {
   const objectKey=`releases/${envelope.reportDate}/${envelope.bundleSha256}.json.enc`, serialized=JSON.stringify(envelope)
   await env.RELEASE_SNAPSHOTS.put(objectKey,serialized,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{reportDate:envelope.reportDate,bundleSha256:envelope.bundleSha256}})
   const id=existing?.release_id??crypto.randomUUID(), time=new Date().toISOString()
-  try {
-    await env.INVENTORY_DB.batch([
-      env.INVENTORY_DB.prepare('UPDATE cloud_app_revision SET revision=CASE WHEN revision=? THEN revision+1 ELSE NULL END WHERE id=1').bind(revision),
+  if(bridge)await bridge.check()
+  const statements=[
+      ...(bridge?[publicationReceiptStatement(env,bridge.ticket,counts,'published',bridge.now)]:[]),
+      bridge?collectorReleaseGuard(env,bridge,revision):env.INVENTORY_DB.prepare('UPDATE cloud_app_revision SET revision=CASE WHEN revision=? THEN revision+1 ELSE NULL END WHERE id=1').bind(revision),
       env.INVENTORY_DB.prepare("UPDATE cloud_release_versions SET status='superseded' WHERE status='current'"),
       env.INVENTORY_DB.prepare(`INSERT INTO cloud_release_versions (release_id,report_date,bundle_sha256,object_key,object_bytes,public_source_sha256,dealermail_source_sha256,public_row_count,dealermail_row_count,status,published_at,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,'current',?,?) ON CONFLICT(release_id) DO UPDATE SET status='current',published_at=excluded.published_at,metadata_json=excluded.metadata_json`).bind(id,envelope.reportDate,envelope.bundleSha256,objectKey,encoder.encode(serialized).length,bundle.release.sourceRuns.public.sha256,bundle.release.sourceRuns.dealerMail.sha256,counts.publicRowCount,counts.dealerMailRowCount,time,metadata),
       env.INVENTORY_DB.prepare("INSERT INTO cloud_release_state(key,value,updated_at) VALUES('current_release_id',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(id,time),
       ...serviceIntakeRows(bundle.release,time).map(row=>env.INVENTORY_DB.prepare('INSERT OR IGNORE INTO vehicle_service_intake (vin,first_arrival_date,observed_at) VALUES (?,?,?)').bind(row.vin,row.first_arrival_date,row.observed_at)),
-    ])
-  } catch {throw new HttpError('PUBLISH_CONFLICT_RETRY',409)}
+  ]
+  try {
+    await env.INVENTORY_DB.batch(statements)
+  } catch(error) {
+    return publicationConflict(error,bridge,envelope)
+  }
   return json(201,{status:'published',reportDate:envelope.reportDate})
 }
 async function appApi(request,url,env,context,claims) {

@@ -5,6 +5,8 @@ import type { BootstrapData, OverviewSummary, StoreName, TransferRecord, Vehicle
 import type { ShortlistContextValue } from '../inventory/useCustomerShortlist'
 import type { InventoryVehicle } from '../inventory/types'
 import { SalesOverview } from './SalesOverview'
+import { toInventoryVehicle } from '../../app/adapters'
+import { vehicleMatchesOverviewView } from '../inventory/inventory-utils'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 const { syncedListsMock } = vi.hoisted(() => ({ syncedListsMock: vi.fn() }))
@@ -108,10 +110,10 @@ describe('SalesOverview', () => {
     expect(savedVehicle).toHaveTextContent('VIN TESTDATASAVED0001')
     expect(savedVehicle).toHaveTextContent('$42,500')
     expect(savedVehicle).toHaveTextContent('12,345 mi')
-    expect(savedVehicle).toHaveTextContent('Powertrain3.5L V6 / 4WD')
-    expect(savedVehicle).toHaveTextContent('ColorsSynthetic Blue / Synthetic Black')
-    expect(savedVehicle).toHaveTextContent('Transmission / fuel / MPG10-Speed Automatic / Gasoline / 18 city / 24 highway')
-    expect(savedVehicle).toHaveTextContent('Standout equipment360-Degree Camera / Adaptive Cruise Control')
+    expect(savedVehicle).toHaveTextContent('Engine / drive3.5L V6 · 4WD')
+    expect(savedVehicle).toHaveTextContent('ExteriorSynthetic BlueInteriorSynthetic Black')
+    expect(savedVehicle).toHaveTextContent('Transmission / fuel10-Speed Automatic · Gasoline · 18 city / 24 hwy MPG')
+    expect(savedVehicle).toHaveTextContent('Standout equipment360-Degree Camera · Adaptive Cruise Control')
     expect(savedVehicle).toHaveTextContent('ListingPublic listing')
     expect(savedVehicle).toHaveTextContent('HoldPrimary hold')
     expect(savedVehicle).toHaveTextContent('LocationHowell')
@@ -259,6 +261,90 @@ describe('SalesOverview', () => {
     // Attention lists exceptions; this count includes ordinary active holds too.
     expect(within(metrics).getByRole('link', { name: 'Hold signals: 1' })).toHaveAttribute('href', '/inventory?scope=group&store=all&view=holds')
     expect(metrics.querySelector('a[href*="view=on-lot"]')).not.toBeInTheDocument()
+  })
+
+  it('attributes provider-only holds to home ownership and keeps counted VINs in the drilldown', () => {
+    const source = data()
+    const providerVehicle = (vin: string, changes: Partial<VehicleRecord> = {}) => vehicle(vin, {
+      homeStore: 'Lincoln', sourceReportedLocation: 'Lincoln',
+      movement: { state: 'source_reported', label: 'Source-reported', currentLocation: 'Lincoln', locationConfidence: 'reported' },
+      ...changes,
+      operationalEvidence: { records: [{ vin, provider: 'synthetic-crm', sourceLabel: 'Synthetic CRM', capturedAt: '2026-10-10T12:00:00Z', dataState: 'current', readOnly: true, complete: true, holdState: 'held' }] },
+    })
+    const home = providerVehicle('TESTDATAHOLD00001', { homeStore: 'Howell', crmStore: 'Lincoln' })
+    const visitor = providerVehicle('TESTDATAHOLD00002', { movement: { state: 'arrived', label: 'Visiting', currentLocation: 'Howell', locationConfidence: 'verified' } })
+    const sourceLocated = providerVehicle('TESTDATAHOLD00003', { sourceReportedLocation: 'Howell' })
+    const crmLocated = providerVehicle('TESTDATAHOLD00004', { crmStore: 'Howell' })
+    const dealerMail = vehicle('TESTDATAHOLD00005', { homeStore: 'Lincoln', crmStore: 'Howell', hold: { state: 'primary', label: 'Primary hold', backupCount: 0 } })
+    const both = providerVehicle('TESTDATAHOLD00006', { crmStore: 'Howell', hold: dealerMail.hold })
+    home.operationalEvidence!.records.push({ ...home.operationalEvidence!.records[0], provider: 'synthetic-dms' })
+    source.vehicles = [home, visitor, sourceLocated, crmLocated, dealerMail, both]
+    source.overview = overview(source.vehicles)
+    source.overview.stores[0].holds = 2
+    source.overview.stores.push({ ...source.overview.stores[0], store: 'Lincoln', holds: 0 })
+    source.overview.vehicleFacts[dealerMail.vin].holdActive = true
+    source.overview.vehicleFacts[both.vin].holdActive = true
+    const drilldownVins = (store: StoreName | 'all') => source.vehicles
+      .filter(item => vehicleMatchesOverviewView(toInventoryVehicle(item, source), { view: 'holds', store }))
+      .map(item => item.vin)
+    const view = render(<MemoryRouter><SalesOverview data={source} stores={stores} homeStore="Howell" role="sales" currentUserId="employee-1" /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Hold signals: 3' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=holds')
+    expect(drilldownVins('Howell')).toEqual([home.vin, dealerMail.vin, both.vin])
+    view.rerender(<MemoryRouter><SalesOverview data={source} stores={['Lincoln']} homeStore="Lincoln" role="sales" currentUserId="employee-1" /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Hold signals: 3' })).toHaveAttribute('href', '/inventory?scope=group&store=Lincoln&view=holds')
+    expect(drilldownVins('Lincoln')).toEqual([visitor.vin, sourceLocated.vin, crmLocated.vin])
+    view.rerender(<MemoryRouter><SalesOverview data={source} stores={['Howell', 'Lincoln']} homeStore="Howell" role="sales" currentUserId="employee-1" /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Hold signals: 6' })).toHaveAttribute('href', '/inventory?scope=group&store=all&view=holds')
+    expect(drilldownVins('all')).toEqual(source.vehicles.map(item => item.vin))
+    expect(screen.getByText(/does not confirm availability/)).toBeVisible()
+  })
+
+  it.each(['current', 'stale_unverified', 'incomplete'] as const)('counts %s provider positives exactly once with the held drilldown', (dataState) => {
+    const source = data(), vin = 'TESTDATARETAIN001'
+    source.vehicles = [vehicle(vin, { operationalEvidence: { records: [{ vin, provider: 'synthetic-crm', sourceLabel: 'Synthetic CRM', capturedAt: '2026-10-10T12:00:00Z', dataState, readOnly: true, complete: dataState !== 'incomplete', holdState: 'held' }] } })]
+    source.overview = overview(source.vehicles)
+    source.overview.stores[0].holds = 0
+    renderOverview('employee-1', source)
+    expect(screen.getByRole('link', { name: 'Hold signals: 1' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=holds')
+    expect(source.vehicles.filter(item => vehicleMatchesOverviewView(toInventoryVehicle(item, source), { view: 'holds', store: 'Howell' })).map(item => item.vin)).toEqual([vin])
+  })
+
+  it.each(['current', 'stale_unverified'] as const)('shows independent %s imported and manual hold signals beside the exact DealerMail fact', (dataState) => {
+    const source = data(), vin = 'TESTDATAUIHOLD001'
+    source.vehicles = [vehicle(vin, { operationalEvidence: { records: [{ vin, provider: 'synthetic-crm', sourceLabel: 'Synthetic CRM', capturedAt: '2026-10-10T12:00:00Z', dataState, readOnly: true, complete: true, holdState: 'held' }] }, manualHold: { vin, state: 'requested', version: 1, expectedDeliveryDate: null, updatedAt: null, ownerStore: 'Howell', enabled: true, canManage: false, customerLabel: 'PRIVATE MANUAL CUSTOMER' } })]
+    source.overview = overview(source.vehicles)
+    const view = renderOverview('employee-1', source)
+    const region = screen.getByRole('region', { name: 'Other vehicles in scope' })
+    expect(region).toHaveTextContent('HoldNo current DealerMail hold found')
+    expect(region).toHaveTextContent('Synthetic CRM')
+    expect(region).toHaveTextContent(dataState === 'current' ? 'Hold observed' : 'Hold status not verified')
+    expect(region).toHaveTextContent('Pending approval')
+    expect(region).not.toHaveTextContent('PRIVATE MANUAL CUSTOMER')
+    source.vehicles[0].manualHold!.state = 'active'
+    view.rerender(<MemoryRouter><SalesOverview data={{ ...source }} stores={stores} homeStore="Howell" role="sales" currentUserId="employee-1" /></MemoryRouter>)
+    expect(region).toHaveTextContent('Approved hold')
+    expect(region).not.toHaveTextContent('Pending approval')
+  })
+
+  it('keeps negative, unknown and conflicting provider facts distinct and counts only positive VINs', () => {
+    const source = data()
+    source.vehicles = ['not_observed', 'unknown', 'held'].map((holdState, index) => {
+      const vin = `TESTDATAUIFACT00${index + 1}`
+      const records = [{ vin, provider: 'synthetic-crm', sourceLabel: 'Synthetic CRM', capturedAt: '2026-10-10T12:00:00Z', dataState: 'current' as const, readOnly: true as const, complete: true, holdState: holdState as 'not_observed' | 'unknown' | 'held' }]
+      if (holdState === 'held') records.push({ ...records[0], provider: 'synthetic-dms', sourceLabel: 'Synthetic DMS', holdState: 'not_observed' })
+      return vehicle(vin, { operationalEvidence: { records } })
+    })
+    source.overview = overview(source.vehicles)
+    source.overview.stores[0].holds = 0
+    renderOverview('employee-1', source)
+    expect(screen.getByRole('link', { name: 'Hold signals: 1' })).toBeVisible()
+    const rows = within(screen.getByRole('region', { name: 'Other vehicles in scope' })).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('Synthetic CRMNo hold observed')
+    expect(rows[1]).toHaveTextContent('Synthetic CRMHold status not verified')
+    expect(rows[2]).toHaveTextContent('Synthetic CRMHold observed')
+    expect(rows[2]).toHaveTextContent('Synthetic DMSNo hold observed')
+    for (const row of rows) expect(row).toHaveTextContent('HoldNo current DealerMail hold found')
+    expect(source.vehicles.filter(item => vehicleMatchesOverviewView(toInventoryVehicle(item, source), { view: 'holds', store: 'Howell' })).map(item => item.vin)).toEqual([source.vehicles[2].vin])
   })
 
   it('keeps broad inventory totals stable when selecting a different saved list', () => {

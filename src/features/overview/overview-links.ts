@@ -67,15 +67,15 @@ export function inventoryVinsHref(vins: readonly string[]): string {
 }
 
 export function serviceStatusHref(status: ServiceWorkflowStatus, store?: StoreName): string {
-  return query('/service', [['status', status], ...(store ? [['store', store] as [string, string]] : [])])
+  return query('/service', [['status', status], store ? ['store', store] : ['scope', 'all']])
 }
 
 export function returnOverdueHref(store: StoreName): string {
   return query('/transfers', [['view', 'return-overdue'], ['store', store]])
 }
 
-export function actionCenterHref(category: 'all' | 'moves' | 'holds' | 'inventory' | 'service'): string {
-  return query('/attention', [['category', category]])
+export function actionCenterHref(category: 'all' | 'moves' | 'holds' | 'inventory' | 'service', scope?: 'home' | 'group'): string {
+  return query('/attention', [['category', category], ...(scope ? [['scope', scope] as [string, string]] : [])])
 }
 
 /** The vehicle's Records tab: AutoCheck, OASIS, sticker, invoice and Ford service history. */
@@ -144,7 +144,7 @@ export function exceptionHref(exception: Pick<OverviewException, 'kind' | 'store
     case 'stale_confirmation': return inventoryViewHref(exception.store, 'unaccounted')
     case 'return_overdue': return returnOverdueHref(exception.store)
     case 'hold_past_expected': return inventoryViewHref(exception.store, 'holds-past-expected')
-    case 'identity_review': return actionCenterHref('inventory')
+    case 'identity_review': return actionCenterHref('inventory', 'group')
     case 'records_incomplete': return inventoryViewHref(exception.store, 'records-incomplete')
     case 'source_conflict':
     case 'service_date_order': return inventoryVinsHref(exception.vins)

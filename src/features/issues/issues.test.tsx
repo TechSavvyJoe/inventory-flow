@@ -152,6 +152,23 @@ describe('vehicle issue workflow', () => {
     expect(screen.queryByRole('button', { name: 'Report issue' })).not.toBeInTheDocument()
   })
 
+  it('preserves an existing issue draft when a new report is declined', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} initialTab="issues" issueContext={{ ...context(), issues: [issue()] }} onClose={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: /Cleaning.*Synthetic mud/ }))
+    await user.type(await screen.findByLabelText('Work update'), 'Keep this unsaved work note')
+    await user.click(screen.getByRole('button', { name: /^Report issue$/ }))
+    expect(confirm).toHaveBeenCalledWith('Discard your unsaved changes?')
+    expect(screen.queryByRole('dialog', { name: /Report.*issue/ })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Work update')).toHaveValue('Keep this unsaved work note')
+    expect(createVehicleIssue).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    await user.click(screen.getByRole('button', { name: /^Report issue$/ }))
+    expect(await screen.findByLabelText('What needs attention?')).toBeInTheDocument()
+  })
+
   it('restores the issue row after returning from detail and keeps disabled-deployment history read-only', async () => {
     const user = userEvent.setup()
     render(<VehicleIssues issues={[issue()]} context={{ ...context(), enabled: false }} canReport={false} onReport={vi.fn()} onSaved={vi.fn()} />)

@@ -3,11 +3,13 @@ import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMe
 import {
   ArrowDown,
   ArrowUp,
+  CarFront,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Filter,
+  Heart,
   ListFilter,
   Plus,
   Search,
@@ -59,6 +61,7 @@ import type {
   VehicleWorkspaceTab,
 } from "./types";
 import { OVERVIEW_VIEW_LABELS } from "../overview/overview-links";
+import { FlowPageHeader } from "../../design-system";
 import "./inventory.css";
 import "./inventory-modern.css";
 import "./InventoryServiceFilter.css";
@@ -621,7 +624,7 @@ export function InventoryExperience({
   const pageVehicles = scopedVehicles.slice(pageStart, pageStart + rowsPerPage);
   // List-only filters must not discard an already open, still-authorized record.
   const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
-  const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0);
+  const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0) + (onlyShortlisted ? 1 : 0);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
   const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store === "all" ? "All stores" : filters.overviewView.store}` : null;
   const secondaryViewLabel = quickView === "moving" ? "Moving" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
@@ -668,7 +671,7 @@ export function InventoryExperience({
     return () => window.cancelAnimationFrame(frame);
   }, [selectedVehicleId]);
 
-  const resultKey = JSON.stringify([filters, query, quickView, rowsPerPage, scope, sorts]);
+  const resultKey = JSON.stringify([filters, query, quickView, onlyShortlisted, rowsPerPage, scope, sorts]);
   const previousResultKey = useRef(resultKey);
   useEffect(() => {
     if (previousResultKey.current !== resultKey) setPage(1);
@@ -685,6 +688,7 @@ export function InventoryExperience({
   const clearFilters = () => {
     setFilters({ ...DEFAULT_INVENTORY_FILTERS });
     setQuickView("all");
+    setOnlyShortlisted(false);
   };
   const clearEmptyState = () => {
     setSearchQuery("");
@@ -704,12 +708,7 @@ export function InventoryExperience({
     <section id="inventory-results-workspace" ref={captureModalBackground} data-filters-open={filtersOpen} className={`inventory-experience if-srp${selectedVehicle ? " has-workspace" : ""}`} aria-label="Inventory">
       <div className="inventory-experience__content" ref={backgroundRef}>
         <div className="if-srp-heading-grid">
-        <header className="if-srp-header">
-          <div>
-            <h1 aria-label={scope === "group" ? "All locations inventory" : title}><span className="if-srp-title-full">Inventory</span><span className="if-srp-title-mobile" aria-hidden="true">Inventory</span></h1>
-          </div>
-          <ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />
-        </header>
+        <FlowPageHeader className="if-srp-header" title="Inventory" titleLabel={scope === "group" ? "All locations inventory" : title} icon={<CarFront />} actions={<ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />} />
 
         <div className="if-srp-searchbar" role="group" aria-label="Inventory search and location scope">
           <InventoryPredictiveSearch
@@ -724,6 +723,10 @@ export function InventoryExperience({
             persistenceKey={`inventory-search:v2:${searchPersistenceKey || homeStore.id}`}
             placeholder="Search stock, VIN, vehicle, packages, or equipment…"
           />
+          {shortlist.count > 0 || onlyShortlisted ? <button type="button" className="inventory-shortlist-filter" aria-label={`Shortlist (${shortlist.count})`} title="Show saved vehicles only" aria-pressed={onlyShortlisted} onClick={() => setOnlyShortlisted(!onlyShortlisted)}>
+            <Heart aria-hidden="true" /><span className="inventory-tool-label">Shortlist</span><span aria-hidden="true">{shortlist.count}</span>
+          </button> : null}
+          <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan vehicle</span></button></span>
         </div>
 
         </div>
@@ -733,7 +736,7 @@ export function InventoryExperience({
               ["no-hold", "No hold", "No hold"],
               ["all", "All", "All"],
               ["held", "Held", "Held"],
-              ["offsite", locationScope === "home" ? "Offsite" : "Away from home", "Offsite"],
+              ["offsite", locationScope === "home" ? "Offsite" : "Away from home", locationScope === "home" ? "Offsite" : "Away"],
             ] as Array<[QuickView, string, string]>).map(([value, label, compactLabel]) => (
               <button key={value} type="button" className={quickView === value ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={quickView === value} onClick={() => chooseQuickView(value)}>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--full" aria-hidden="true">{label}</span>
@@ -758,11 +761,6 @@ export function InventoryExperience({
           </div>
 
           <div className="if-srp-tools">
-            <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan vehicle</span></button></span>
-            {shortlist.count > 0 || onlyShortlisted ? <button type="button" className="button button-secondary"
-              aria-pressed={onlyShortlisted} onClick={() => setOnlyShortlisted(!onlyShortlisted)}>
-              Shortlist ({shortlist.count})
-            </button> : null}
             <div className="inventory-toolbar__left">
               <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
                 <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}

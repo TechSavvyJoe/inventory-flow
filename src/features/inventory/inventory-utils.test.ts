@@ -135,6 +135,40 @@ describe("inventory source-safe selectors", () => {
     ).toBe(true);
   });
 
+  it("keeps an independent DealerMail positive out of the provider-negative no-hold filter", () => {
+    const record = vehicle({
+      dealerMail: { dataState: "current", hasActiveHold: true, canViewEvidence: false },
+      operationalEvidence: { records: [{ vin: "TESTDATAHOLD00001", provider: "synthetic-crm", sourceLabel: "Synthetic CRM", capturedAt: "2026-10-10T12:00:00Z", dataState: "current", readOnly: true, complete: true, holdState: "not_observed" }] },
+    });
+    const noHold = { ...DEFAULT_INVENTORY_FILTERS, dealerMail: "not-held" as const };
+    expect(vehicleMatchesFilters(record, noHold)).toBe(false);
+    expect(vehicleMatchesFilters(record, { ...noHold, dealerMail: "held" })).toBe(true);
+    expect(record.dealerMail.hasActiveHold).toBe(true);
+    expect(record.operationalEvidence!.records[0].holdState).toBe("not_observed");
+    expect(vehicleMatchesFilters({ ...record, dealerMail: { dataState: "stale", hasActiveHold: null, lastKnownActiveHold: true } }, noHold)).toBe(false);
+    expect(vehicleMatchesFilters({ ...record, dealerMail: { dataState: "current", hasActiveHold: false }, manualHold: { vin: record.vin, state: "active", version: 1, expectedDeliveryDate: null, updatedAt: null, ownerStore: "Howell", canManage: false, enabled: true } }, noHold)).toBe(false);
+  });
+
+  it("requires qualified negative provider evidence without masking retained or conflicting holds", () => {
+    const observation = { vin: "TESTDATAHOLD00001", provider: "synthetic-crm", sourceLabel: "Synthetic CRM", capturedAt: "2026-10-10T12:00:00Z", dataState: "current" as const, readOnly: true as const, complete: true, holdState: "not_observed" as const };
+    const noHold = { ...DEFAULT_INVENTORY_FILTERS, dealerMail: "not-held" as const };
+    const negative = vehicle({ operationalEvidence: { records: [observation] } });
+    expect(vehicleMatchesFilters(negative, noHold)).toBe(true);
+    expect(vehicleMatchesFilters(vehicle(), noHold)).toBe(true);
+    for (const record of [
+      { ...observation, dataState: "unknown" as const },
+      { ...observation, complete: false },
+      { ...observation, holdState: "unknown" as const },
+      { ...observation, dataState: "stale_unverified" as const, holdState: "held" as const },
+    ]) {
+      const uncertain = vehicle({ operationalEvidence: { records: [record] } });
+      expect(vehicleMatchesFilters(uncertain, noHold)).toBe(false);
+      expect(vehicleMatchesFilters(uncertain, { ...noHold, dealerMail: "unverified" })).toBe(true);
+    }
+    expect(vehicleMatchesFilters(vehicle({ operationalEvidence: { records: [observation, { ...observation, provider: "synthetic-dms", holdState: "held" }] } }), noHold)).toBe(false);
+    expect(vehicleMatchesFilters(vehicle({ operationalEvidence: { records: [] } }), noHold)).toBe(false);
+  });
+
   it("prefers an explicit app-confirmed location without discarding source location", () => {
     const record = vehicle({
       location: {
@@ -177,6 +211,27 @@ describe("inventory source-safe selectors", () => {
       "no-hold",
       "unknown",
     ]);
+  });
+
+  it("sorts uncertain provider evidence as unknown despite a current DealerMail no-hold", () => {
+    const observation = { vin: "TESTDATAHOLD00001", provider: "synthetic-crm", sourceLabel: "Synthetic CRM", capturedAt: "2026-10-10T12:00:00Z", dataState: "current" as const, readOnly: true as const, complete: true, holdState: "not_observed" as const };
+    const records = [
+      vehicle({ id: "retained", operationalEvidence: { records: [{ ...observation, dataState: "stale_unverified", holdState: "held" }] } }),
+      vehicle({ id: "incomplete", operationalEvidence: { records: [{ ...observation, complete: false }] } }),
+      vehicle({ id: "conflict", operationalEvidence: { records: [observation, { ...observation, provider: "synthetic-dms", holdState: "unknown" }] } }),
+      vehicle({ id: "no-hold", operationalEvidence: { records: [observation] } }),
+      vehicle({ id: "held", operationalEvidence: { records: [{ ...observation, holdState: "held" }] } }),
+      vehicle({ id: "dealer-mail-held", dealerMail: { dataState: "current", hasActiveHold: true } }),
+      vehicle({ id: "dealer-mail-held-with-uncertain-provider", dealerMail: { dataState: "current", hasActiveHold: true }, operationalEvidence: { records: [{ ...observation, complete: false }] } }),
+    ];
+    expect(sortVehicles(records, [{ key: "holdStatus", direction: "asc" }]).map(({ id }) => id)).toEqual([
+      "held", "dealer-mail-held", "dealer-mail-held-with-uncertain-provider", "no-hold", "retained", "incomplete", "conflict",
+    ]);
+    expect(sortVehicles(records, [{ key: "holdStatus", direction: "desc" }]).map(({ id }) => id)).toEqual([
+      "retained", "incomplete", "conflict", "no-hold", "held", "dealer-mail-held", "dealer-mail-held-with-uncertain-provider",
+    ]);
+    const manual = { vin: observation.vin, state: "active" as const, version: 1, expectedDeliveryDate: null, updatedAt: null, ownerStore: "Howell" as const, canManage: true, enabled: true };
+    expect(sortVehicles([records[3], { ...records[0], id: "manual-held", manualHold: manual }], [{ key: "holdStatus", direction: "asc" }]).map(({ id }) => id)).toEqual(["manual-held", "no-hold"]);
   });
 
   it("sorts recent activity from the latest source-backed timestamp", () => {

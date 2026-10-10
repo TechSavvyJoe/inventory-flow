@@ -68,15 +68,16 @@ function openVehicleDocuments() {
 }
 
 describe('vehicle document workspace', () => {
-  it('keeps mixed manual and DealerMail overview facts attached to their own sources', () => {
+  it('keeps app hold and reported evidence independently labeled within the unified Hold area', () => {
     const record = vehicle(false)
     record.manualHold = { vin:record.vin, state:'active', version:1, ownerStore:'Howell', canManage:true, enabled:true, customerLabel:'Synthetic manual AB', expectedDeliveryDate:'2026-09-02', note:'Synthetic manual note', updatedAt:null }
     record.dealerMail = { ...record.dealerMail, hasActiveHold:true, canViewEvidence:true, activeRecordCount:2 }
     record.holdEvidence = [{ id:'synthetic-primary', position:'primary', salesperson:'Synthetic imported salesperson', expectedDeliveryDate:'2026-08-31' }, { id:'synthetic-backup', position:'backup' }]
     render(<VehicleWorkspace vehicle={record} homeStore={record.location.homeStore} onClose={vi.fn()} />)
     const summary = screen.getByRole('region', { name:'Vehicle operational summary' })
-    const manual = within(summary).getByText('Manual hold', { exact:true }).parentElement!
-    const imported = within(summary).getByText('DealerMail', { exact:true }).parentElement!
+    const manual = within(summary).getByRole('group', { name:'Inventory Flow hold' })
+    const imported = within(summary).getByRole('group', { name:'Reported hold evidence' })
+    expect(within(summary).getAllByText('Hold', { selector:'dt' })).toHaveLength(1)
     expect(manual).toHaveTextContent('Inventory Flow')
     expect(manual).toHaveTextContent('Synthetic manual AB')
     expect(manual).toHaveTextContent('09/02/2026')

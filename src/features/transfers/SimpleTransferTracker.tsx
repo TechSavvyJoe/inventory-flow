@@ -6,6 +6,7 @@ import { awayFromHomeSummary } from './moveSummary';
 import { TransferTimeline } from './TransferTimeline';
 import { ServiceStatusLink } from '../inventory/ServiceStatusLink';
 import { CopyableValue } from '../../components/CopyableValue';
+import { flowButtonClassName, FlowButton, FlowIconButton, FlowLedgerHeading } from '../../design-system';
 import './transfer-simple.css';
 import './transfer-vehicle-context.css';
 
@@ -84,23 +85,17 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
           : 'Not set';
   return (
     <article className={`mif-transfer-feature simple-transfer-tracker simple-transfer-tracker--${mode}`}>
-      <header className="simple-move-heading">
-        {vehicle.imageUrl ? <img src={vehicle.imageUrl} alt="" /> : <span className="simple-move-photo-placeholder" aria-hidden="true"><CarFront size={32} /></span>}
-        <div className="simple-move-identity"><h2>{vehicle.vehicleLabel}</h2>
-          <p className="move-vehicle-value">{[vehicle.listedPriceLabel, vehicle.mileageLabel].filter(Boolean).join(' · ')}</p>
-          <p className="move-vehicle-specs">{[vehicle.engine, vehicle.drivetrain, vehicle.exteriorColor].filter(Boolean).join(' · ')}</p>
-        </div>
-        {onClose ? <button type="button" aria-label="Close move details" onClick={onClose}><X aria-hidden="true" size={20} /></button> : null}
-        <div className="move-vehicle-context">
-          <dl className="simple-move-identifiers">
-            <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stock} /></dd></div>
-            <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} /></dd></div>
-          </dl>
-          <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
-        </div>
-      </header>
+      <FlowLedgerHeading className="simple-move-heading" level={2} variant="plain"
+        title={<>{vehicle.imageUrl ? <img src={vehicle.imageUrl} alt="" /> : <span className="simple-move-photo-placeholder" aria-hidden="true"><CarFront size={32} /></span>}<span>{vehicle.vehicleLabel}</span></>}
+        actions={onClose ? <FlowIconButton size="md" variant="secondary" label="Close move details" onClick={onClose}><X aria-hidden="true" size={20} /></FlowIconButton> : undefined}
+        />
 
       <div className="simple-move-route"><span>{vehicle.homeStore}<small>Home store</small></span><ArrowRight aria-hidden="true" size={20} /><span>{target}<small>{directMove ? 'Destination store' : 'Requesting store'}</small></span></div>
+
+      <section className="simple-move-location" aria-label="Vehicle location and time away">
+        <div><span>Current location</span><strong><MapPin aria-hidden="true" size={16} />{vehicle.currentLocation.label}</strong><small>{locationConfidenceLabel(vehicle.currentLocation.confidence)}{vehicle.currentLocation.confirmedAt ? ` · ${formatDateTime(vehicle.currentLocation.confirmedAt)}` : ''}</small></div>
+        <div><span>Time away from home</span><strong>{away.label}</strong>{awayEvidence ? <small>{awayEvidence}</small> : null}</div>
+      </section>
 
       {transfer.exception || issue ? (
         <section className="simple-move-issue" role="status">
@@ -109,24 +104,31 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
         </section>
       ) : null}
 
-      <section className="simple-move-next" aria-label="Next step">
-        <div><span>{terminal ? 'Move status' : 'Next step'}</span><h3>{terminal ? transfer.status.movement.code === 'returned-home-confirmed' ? 'Back home · move complete' : delivered ? 'Delivered · move complete' : humanizeStatusLabel(transfer.status.request.label) : transfer.nextAction.label}</h3>{!terminal ? <p>{transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}{transfer.nextAction.dueAt ? ` · Needed ${formatDateTime(transfer.nextAction.dueAt)}` : ''}</p> : null}</div>
-        {allowed.length && onAction ? <div className="simple-move-actions" aria-label="Available move actions">
-          {primary ? <button type="button" className="mif-button mif-button--primary" onClick={() => takeAction(primary)}>{simpleTransferActionLabel(primary, transfer)}</button> : null}
-          {additional.length ? <details className="simple-move-more"><summary>Other options <ChevronDown aria-hidden="true" size={16} /></summary><div>{additional.map(action => <button type="button" key={action} onClick={() => takeAction(action)}>{simpleTransferActionLabel(action, transfer)}</button>)}</div></details> : null}
-        </div> : !terminal ? <p className="simple-move-waiting">Waiting on {transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}. Your available updates will appear here.</p> : null}
-      </section>
-
-      {vehicleLinks}
-
       {!terminal || transfer.status.movement.code === 'returned-home-confirmed' || delivered ? <ol className="simple-move-progress" aria-label="Vehicle move progress">
         {[directMove ? 'At destination' : 'Approval', finalStep].map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
       </ol> : null}
 
-      <section className="simple-move-location" aria-label="Vehicle location and time away">
-        <div><span>Current location</span><strong><MapPin aria-hidden="true" size={16} />{vehicle.currentLocation.label}</strong><small>{locationConfidenceLabel(vehicle.currentLocation.confidence)}{vehicle.currentLocation.confirmedAt ? ` · ${formatDateTime(vehicle.currentLocation.confirmedAt)}` : ''}</small></div>
-        <div><span>Time away from home</span><strong>{away.label}</strong>{awayEvidence ? <small>{awayEvidence}</small> : null}</div>
+      <section className="simple-move-next" aria-label="Next step">
+        <div><span>{terminal ? 'Move status' : 'Next step'}</span><h3>{terminal ? transfer.status.movement.code === 'returned-home-confirmed' ? 'Back home · move complete' : delivered ? 'Delivered · move complete' : humanizeStatusLabel(transfer.status.request.label) : transfer.nextAction.label}</h3>{!terminal ? <p>{transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}{transfer.nextAction.dueAt ? ` · Needed ${formatDateTime(transfer.nextAction.dueAt)}` : ''}</p> : null}</div>
+        {allowed.length && onAction ? <div className="simple-move-actions" aria-label="Available move actions">
+          {primary ? <FlowButton type="button" variant="primary" size="md" onClick={() => takeAction(primary)}>{simpleTransferActionLabel(primary, transfer)}</FlowButton> : null}
+          {additional.length ? <details className="simple-move-more"><summary className={flowButtonClassName({ variant: 'secondary', size: 'md' })}>Other options <ChevronDown aria-hidden="true" size={16} /></summary><div>{additional.map(action => <button className={flowButtonClassName({ variant: 'quiet', size: 'md' })} type="button" key={action} onClick={() => takeAction(action)}>{simpleTransferActionLabel(action, transfer)}</button>)}</div></details> : null}
+        </div> : !terminal ? <p className="simple-move-waiting">Waiting on {transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}. Your available updates will appear here.</p> : null}
       </section>
+
+      <section className="move-vehicle-support" aria-label="Vehicle reference facts">
+        <div className="move-vehicle-context">
+          <dl className="simple-move-identifiers">
+            <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stock} /></dd></div>
+            <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} /></dd></div>
+          </dl>
+          <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
+        </div>
+        <p className="move-vehicle-value">{[vehicle.listedPriceLabel, vehicle.mileageLabel].filter(Boolean).join(' · ')}</p>
+        <p className="move-vehicle-specs">{[vehicle.engine, vehicle.drivetrain, vehicle.exteriorColor].filter(Boolean).join(' · ')}</p>
+      </section>
+
+      {vehicleLinks}
 
       <section className="simple-move-details" aria-label="Request and vehicle summary">
         <h3>{directMove ? 'Move details' : 'Request details'}</h3>

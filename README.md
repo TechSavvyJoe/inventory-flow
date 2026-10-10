@@ -25,11 +25,14 @@ Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECT
 ## Manual inventory controls
 
 Dealerships can record app-owned manual holds without DealerMail. Salespeople
-manage their own home-store holds; managers manage holds and dispositions,
+request home-store holds for manager approval and manage their own approved
+holds; managers approve or reject requests, place approved holds, and manage dispositions,
 including Sold pending, Delivered and Other with notes. Imported evidence
 remains separate and discrepancies require review. Migration 0015 and the
 paired Workers were activated in the October 6 release at `72e4ca4`; see
-[Manual inventory controls](docs/MANUAL_INVENTORY_CONTROLS.md).
+[Manual inventory controls](docs/MANUAL_INVENTORY_CONTROLS.md). The approval
+workflow requires the separately reviewed 0017 migration and paired release;
+its production activation is not part of this implementation.
 
 ## Customer vehicle lists and customer documents
 

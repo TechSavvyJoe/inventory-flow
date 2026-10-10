@@ -1,3 +1,7 @@
-.vehicle-quick-facts { display:flex; flex-wrap:wrap; min-width:0; gap:var(--ifx-space-0-5) var(--ifx-space-2); color:var(--ink-700); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); text-align:left; }
-.vehicle-quick-facts__item { min-width:0; overflow-wrap:anywhere; }
-.vehicle-quick-facts__item + .vehicle-quick-facts__item { border-left:1px solid var(--border); padding-left:var(--ifx-space-2); }
+.vehicle-quick-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); min-width:0; gap:var(--ifx-space-1) var(--ifx-space-3); color:var(--ink-700); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); text-align:left; }
+.vehicle-quick-facts__item { display:grid; align-content:start; min-width:0; gap:var(--ifx-space-0-5); overflow-wrap:anywhere; }
+.vehicle-quick-facts__label { color:var(--ink-600); font-size:var(--ifx-text-xs); }
+.vehicle-quick-facts__value { color:var(--ink-900); }
+.vehicle-quick-facts__item--colors { grid-column:1 / -1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-3); }
+.vehicle-quick-facts__color { display:grid; min-width:0; gap:var(--ifx-space-0-5); }
+.vehicle-quick-facts__item--equipment { grid-column:1 / -1; }

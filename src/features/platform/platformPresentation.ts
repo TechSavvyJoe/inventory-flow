@@ -15,7 +15,7 @@ export function readiness(group:PlatformGroup) {return [
 ]}
 export function nextAccountAction(group:PlatformGroup) {
  const missing=readiness(group).find(item=>!item.ready)
- return missing?{label:missing.label,detail:missing.key==='database'?'External provisioning':missing.key==='dealerships'?'Register dealership':missing.key==='manager'?'Review employee access':'Review account state'}:{label:'Account setup complete',detail:group.health.status==='current'?'Review data activation':'Review publication'}
+ return missing?{label:missing.key==='account'?(group.status==='suspended'?'Account suspended':'Account in setup'):`Required: ${missing.label}`,detail:missing.key==='database'?'External provisioning':missing.key==='dealerships'?'Register dealership':missing.key==='manager'?'Review employee access':'Review account state'}:{label:'Account setup complete',detail:group.health.status==='current'?'Review data activation':'Review publication'}
 }
 export function groupAppHref(group:PlatformGroup) {
  return group.status==='active'&&group.health.connected===true?verifiedApplicationUrl(group.appUrl,'/inventory'):undefined

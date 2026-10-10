@@ -92,13 +92,14 @@ export function useContainedFocus({
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
       const current = document.activeElement
-      if (!container.contains(current)) {
+      const currentIndex = focusable.findIndex((element) => element === current)
+      if (currentIndex === -1) {
         event.preventDefault()
         ;(event.shiftKey ? last : first).focus()
-      } else if (event.shiftKey && current === first) {
+      } else if (event.shiftKey && currentIndex === 0) {
         event.preventDefault()
         last.focus()
-      } else if (!event.shiftKey && current === last) {
+      } else if (!event.shiftKey && currentIndex === focusable.length - 1) {
         event.preventDefault()
         first.focus()
       }

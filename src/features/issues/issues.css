@@ -1,25 +1,26 @@
 .vehicle-issues, .vehicle-issue-detail { display:grid; gap:var(--ifx-space-3); min-width:0; color:var(--app-text-primary); font-size:var(--ifx-text-body); }
 .vehicle-issue-detail__layout, .vehicle-issue-detail__summary, .vehicle-issue-detail__evidence { display:grid; align-content:start; gap:var(--ifx-space-3); min-width:0; }
 .vehicle-issues :is(h3,p,ul,ol), .vehicle-issue-detail :is(h3,p,dl,ol), .vehicle-issue-dialog :is(h2,h3,p) { margin:0; }
-.vehicle-issues button, .vehicle-issue-detail button, .vehicle-issues-summary button, .vehicle-issue-dialog button { display:inline-flex; align-items:center; justify-content:center; gap:var(--ifx-space-1-5); min-height:var(--ifx-control-height-md); min-width:var(--ifx-control-height-md); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-xs); background:var(--surface); color:var(--app-text-primary); font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.35 var(--font-app); cursor:pointer; }
-.vehicle-issues button:hover, .vehicle-issue-detail button:hover, .vehicle-issues-summary button:hover, .vehicle-issue-dialog button:hover { background:var(--ifx-info-surface); border-color:var(--ifx-info); }
-.vehicle-issues button:disabled, .vehicle-issue-detail button:disabled, .vehicle-issue-dialog button:disabled { opacity:var(--ifx-disabled-opacity); cursor:default; }
-.vehicle-issues .vehicle-issue-primary, .vehicle-issue-detail .vehicle-issue-primary, .vehicle-issue-dialog .vehicle-issue-primary { color:var(--ifx-neutral-0); border-color:var(--blue-600); background:var(--blue-600); }
-.vehicle-issues .vehicle-issue-primary:hover, .vehicle-issue-detail .vehicle-issue-primary:hover, .vehicle-issue-dialog .vehicle-issue-primary:hover { background:var(--blue-700); }
+.vehicle-issues button:not(:where(.ifx-button)), .vehicle-issue-detail button:not(:where(.ifx-button)), .vehicle-issues-summary button:not(:where(.ifx-button)), .vehicle-issue-dialog button:not(:where(.ifx-button)) { display:inline-flex; align-items:center; justify-content:center; gap:var(--ifx-space-1-5); min-height:var(--ifx-control-height-md); min-width:var(--ifx-control-height-md); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-xs); background:var(--surface); color:var(--app-text-primary); font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.35 var(--font-app); cursor:pointer; }
+.vehicle-issues button:not(:where(.ifx-button)):hover, .vehicle-issue-detail button:not(:where(.ifx-button)):hover, .vehicle-issues-summary button:not(:where(.ifx-button)):hover, .vehicle-issue-dialog button:not(:where(.ifx-button)):hover { background:var(--ifx-info-surface); border-color:var(--ifx-info); }
+.vehicle-issues button:not(:where(.ifx-button)):disabled, .vehicle-issue-detail button:not(:where(.ifx-button)):disabled, .vehicle-issue-dialog button:not(:where(.ifx-button)):disabled { opacity:var(--ifx-disabled-opacity); cursor:default; }
+.vehicle-issues .vehicle-issue-primary:not(:where(.ifx-button)), .vehicle-issue-detail .vehicle-issue-primary:not(:where(.ifx-button)), .vehicle-issue-dialog .vehicle-issue-primary:not(:where(.ifx-button)) { color:var(--ifx-neutral-0); border-color:var(--blue-600); background:var(--blue-600); }
+.vehicle-issues .vehicle-issue-primary:not(:where(.ifx-button)):hover, .vehicle-issue-detail .vehicle-issue-primary:not(:where(.ifx-button)):hover, .vehicle-issue-dialog .vehicle-issue-primary:not(:where(.ifx-button)):hover { background:var(--blue-700); }
 .vehicle-issues :focus-visible, .vehicle-issue-dialog :focus-visible, .vehicle-issues-summary :focus-visible { outline:2px solid var(--ifx-info); outline-offset:var(--ifx-space-1); }
 .vehicle-issues svg, .vehicle-issue-dialog svg { flex:none; width:var(--ifx-space-4); height:var(--ifx-space-4); }
 .vehicle-issues-summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--ifx-space-2); border-top:1px solid var(--border); padding-top:var(--ifx-space-2); margin-top:var(--ifx-space-2); }
-.vehicle-issues-summary button { padding-inline:var(--ifx-space-2); }
+.vehicle-issues-summary button:not(:where(.ifx-button)) { padding-inline:var(--ifx-space-2); }
 .vehicle-issues-summary svg { flex:none; width:var(--ifx-space-4); height:var(--ifx-space-4); }
 .vehicle-issues-summary button:first-child { border-color:transparent; background:transparent; justify-content:flex-start; }
-.vehicle-issues-heading, .vehicle-issue-detail__heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:var(--ifx-space-2); }
+.vehicle-issues-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:var(--ifx-space-2); }
+.vehicle-issue-detail__heading { display:block; }
 .vehicle-issues-heading h3, .vehicle-issue-detail h3 { font-size:var(--ifx-text-body); font-weight:var(--ifx-weight-semibold); }
-.vehicle-issues-heading p, .vehicle-issue-detail__heading p, .vehicle-issue-muted, .vehicle-issue-identity > span { color:var(--app-text-secondary); font-size:var(--ifx-text-sm); line-height:1.45; }
+.vehicle-issues-heading p, .vehicle-issue-detail__heading .ifx-ledger-heading__description, .vehicle-issue-muted, .vehicle-issue-identity > span { color:var(--app-text-secondary); font-size:var(--ifx-text-sm); line-height:1.45; }
 .vehicle-issue-action-options { display:flex; flex-wrap:wrap; gap:var(--ifx-space-1); }
 .vehicle-issue-action-options button[aria-pressed="true"] { border-color:var(--blue-600); color:var(--blue-700); background:var(--ifx-info-surface); }
 .vehicle-issue-list { list-style:none; padding:0; border-top:1px solid var(--border); }
 .vehicle-issue-list li { border-bottom:1px solid var(--border); }
-.vehicle-issue-list li > button { display:grid; grid-template-columns:minmax(0,1fr) auto auto; width:100%; gap:var(--ifx-space-3); text-align:left; border:0; border-radius:0; padding:var(--ifx-space-3) var(--ifx-space-1); }
+.vehicle-issue-list li > button:not(:where(.ifx-button)) { display:grid; grid-template-columns:minmax(0,1fr) auto auto; width:100%; gap:var(--ifx-space-3); text-align:left; border:0; border-radius:0; padding:var(--ifx-space-3) var(--ifx-space-1); }
 .vehicle-issue-list li > button > span:first-child { display:grid; min-width:0; gap:var(--ifx-space-1); }
 .vehicle-issue-list li > button > span:first-child > span { color:var(--app-text-primary); font-weight:var(--ifx-weight-regular); overflow-wrap:anywhere; }
 .vehicle-issue-list small { color:var(--app-text-secondary); font-size:var(--ifx-text-sm); font-weight:var(--ifx-weight-regular); }
@@ -28,7 +29,7 @@
 .vehicle-issue-state[data-status="completed"] { color:var(--ifx-success); }
 .vehicle-issue-urgent, .vehicle-issue-error { color:var(--ifx-danger); }
 .vehicle-issue-error { display:grid; gap:var(--ifx-space-2); font-size:var(--ifx-text-md); }
-.vehicle-issue-error button { justify-self:start; }
+.vehicle-issue-error button:not(:where(.ifx-button)) { justify-self:start; }
 .vehicle-issue-empty, .vehicle-issue-unavailable { padding:var(--ifx-space-3) 0; color:var(--app-text-secondary); }
 .vehicle-issue-overlay { position:fixed; inset:0; z-index:var(--ifx-layer-nested-modal); display:grid; place-items:center; padding:var(--ifx-space-3); background:var(--ifx-modal-scrim); }
 .vehicle-issue-dialog { display:flex; flex-direction:column; min-width:0; width:min(100%,calc(var(--ifx-space-16) * 11)); max-height:calc(100dvh - var(--ifx-space-6)); background:var(--surface); color:var(--app-text-primary); border:1px solid var(--border); border-radius:var(--ifx-radius-sm); box-shadow:var(--ifx-elevation-3); }
@@ -66,10 +67,10 @@
   .vehicle-issues .vehicle-issue-detail__layout[data-editable="true"] > .vehicle-issue-detail__evidence { grid-area:evidence; }
 }
 @media (max-width:680px) {
-  .vehicle-issue-list li > button { grid-template-columns:minmax(0,1fr) auto; gap:var(--ifx-space-2); }
+  .vehicle-issue-list li > button:not(:where(.ifx-button)) { grid-template-columns:minmax(0,1fr) auto; gap:var(--ifx-space-2); }
   .vehicle-issue-list li > button > .vehicle-issue-state { grid-column:1; }
   .vehicle-issue-list li > button > svg { grid-column:2; grid-row:1 / span 2; }
   .vehicle-issue-overlay { padding:var(--ifx-space-2); }
   .vehicle-issue-dialog { max-height:calc(100dvh - var(--ifx-space-4)); }
-  .vehicle-issue-action-options button { flex:1 0 auto; }
+  .vehicle-issue-action-options button:not(:where(.ifx-button)) { flex:1 0 auto; }
 }

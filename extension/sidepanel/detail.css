@@ -23,7 +23,7 @@
 .view-detail .dock-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--detail-space-sm); }
 .view-detail .dock-primary .btn:only-child { grid-column: 1 / -1; }
 .view-detail .dock-primary.has-reroute .btn:first-child { grid-column: 1 / -1; }
-.view-detail .dock-primary .btn { min-height: 44px; border-radius: 4px; font-size: 14px; }
+.view-detail .dock-primary .btn { min-height: var(--control-target); border-radius: var(--radius-control); font-size: var(--t-meta); }
 .view-detail .dock-note { font-size: 13px; }
 .view-detail .detail-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--detail-space-sm); padding: var(--detail-space-sm) var(--gutter); border-block: var(--detail-rule) solid var(--line); background: var(--paper); }
 .detail-tablist { display: contents; }
@@ -73,8 +73,14 @@
 .detail-identity-copy { display: grid; grid-template-columns: minmax(0,1fr) var(--control-target); grid-template-rows: auto auto; align-items: center; min-width: 0; min-height: var(--control-target); padding: 0; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .detail-identity-copy + .detail-identity-copy { border-left: var(--detail-rule) solid var(--line); padding-left: var(--detail-space-md); }
 .detail-identity-label { grid-column: 1; color: var(--ink-3); font-size: var(--t-label); line-height: 1.2; }
-.detail-identity-value { grid-column: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ink); font-size: var(--t-meta); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.detail-identity-value { grid-column: 1; min-width: 0; overflow-wrap: normal; white-space: nowrap; color: var(--ink); font-size: var(--t-meta); font-weight: var(--scan-strong-weight); font-variant-numeric: tabular-nums; line-height: 1.3; }
 .detail-identity-copy > .icon { grid-column: 2; grid-row: 1 / 3; justify-self: center; color: var(--blue); }
+.panel[data-width="narrow"] .detail-identity-band { grid-template-columns:minmax(0,1fr); gap:var(--detail-space-xs); }
+.panel[data-width="narrow"] .detail-identity-copy { grid-template-columns:auto minmax(0,1fr) var(--control-target); grid-template-rows:auto; column-gap:var(--detail-space-md); }
+.panel[data-width="narrow"] .detail-identity-copy + .detail-identity-copy { border-left:0; border-top:var(--detail-rule) solid var(--line); padding-left:0; }
+.panel[data-width="narrow"] .detail-identity-label { grid-column:1; }
+.panel[data-width="narrow"] .detail-identity-value { grid-column:2; }
+.panel[data-width="narrow"] .detail-identity-copy > .icon { grid-column:3; grid-row:1; }
 .detail-specification .d-kv { grid-template-columns: minmax(66px, 27%) minmax(0, 1fr); gap: var(--detail-space-xs) var(--detail-space-md); margin-top: var(--detail-space-sm); font-size: var(--t-meta); line-height: 1.4; }
 .detail-specification .d-kv dd { min-height: 22px; }
 .detail-specification .d-kv dt { overflow-wrap: normal; }
@@ -112,7 +118,7 @@
 .view-detail .doc-powertrain { display:grid; gap:3px; margin:7px 0 0; padding-top:6px; border-top:1px solid var(--line); }
 .view-detail .doc-powertrain strong { font-weight:500; overflow-wrap:anywhere; }
 .view-detail .doc-summary .doc-source-note { grid-column: 1 / -1; margin: 4px 0; font-size: 13px; line-height: 1.4; }
-.view-detail .doc-summary > .doc-source-open { grid-column: 2; grid-row: 1; align-self: center; min-height: 44px; max-width: 96px; padding: 4px 7px; border: 1px solid var(--line-2); border-radius: 4px; font-size: 12px; background: var(--paper); text-align: left; }
+.view-detail .doc-summary > .doc-source-open { grid-column: 2; grid-row: 1; align-self: center; min-height: 44px; max-width: 96px; padding: 4px 7px; border: 1px solid var(--line-2); border-radius: var(--radius-control); font-size: var(--t-label); background: var(--paper); text-align: left; }
 .view-detail .doc-grid--utilities { gap: var(--detail-space-sm); margin-top: var(--detail-space-sm); }
 .view-detail .doc-grid--utilities .doc { border-radius: var(--radius-control); min-height: var(--control-target); }
 .detail-calculator { border-bottom: 1px solid var(--line); padding-bottom: 6px; }

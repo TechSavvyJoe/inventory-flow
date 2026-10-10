@@ -12,7 +12,7 @@ const draft:PlatformEdit={kind:'source',title:'Add data connection',path:'/group
  {key:'method',label:'Connection method',options:[{value:'collector',label:'Collector'},{value:'api',label:'API'}]},
  {key:'endpoint',label:'Public HTTPS feed URL',showWhen:{key:'method',values:['api']}},{key:'credentialRef',label:'Credential reference (CREDENTIAL_NAME)',optional:true},
  {key:'cadence',label:'Pull schedule',options:[{value:'manual',label:'On request'},{value:'daily',label:'Daily'}]},
- {key:'localTime',label:'Local start time',type:'time',showWhen:{key:'cadence',values:['daily']}},{key:'timezone',label:'IANA timezone',showWhen:{key:'cadence',values:['daily']}},{key:'enabled',label:'Source enabled',type:'checkbox'},
+ {key:'localTime',label:'Local start time',type:'time',showWhen:{key:'cadence',values:['daily']}},{key:'timezone',label:'IANA timezone',showWhen:{key:'cadence',values:['daily']}},{key:'enabled',label:'Enable scheduling preference',type:'checkbox'},
 ]}
 afterEach(cleanup)
 it('blocks invalid scope and credential references in the visible step and saves only after review',async()=>{
@@ -33,7 +33,7 @@ it('blocks invalid scope and credential references in the visible step and saves
  await user.paste('CREDENTIAL_DEALER_FEED_KEY')
  await user.click(screen.getByRole('button',{name:'Continue to schedule & review'}))
  expect(save).not.toHaveBeenCalled()
- expect(screen.getByRole('checkbox',{name:'Source enabled'})).not.toBeChecked()
+ expect(screen.getByRole('checkbox',{name:'Enable scheduling preference'})).not.toBeChecked()
  await user.click(screen.getByRole('textbox',{name:'Reason for this change'}))
  await user.paste('Synthetic setup review')
  await user.click(screen.getByRole('button',{name:'Save change'}))
@@ -61,4 +61,44 @@ it('clears an API URL when switching to collector and repairs invalid hidden man
  fireEvent.change(screen.getByRole('textbox',{name:'Reason for this change'}),{target:{value:'Synthetic manual setup'}})
  fireEvent.submit(form)
  expect(save).toHaveBeenCalledWith(draft,expect.objectContaining({endpoint:'',cadence:'manual',localTime:'05:30',timezone:'America/Detroit'}),expect.any(String))
+})
+it('removes the previous step validation on Back while retaining the server save error',async()=>{
+ const user=userEvent.setup(),save=vi.fn(async()=>{})
+ render(<PlatformChangeDialog edit={draft} busy={false} error="Synthetic server rejected this change." save={save} cancel={()=>{}}/>)
+ await user.click(screen.getByRole('button',{name:'Continue to connection'}))
+ await user.type(screen.getByRole('textbox',{name:'Credential reference (CREDENTIAL_NAME)'}),'INVALID_REFERENCE')
+ await user.click(screen.getByRole('button',{name:'Continue to schedule & review'}))
+ expect(screen.getAllByRole('alert')).toHaveLength(2)
+ await user.click(screen.getByRole('button',{name:'Back'}))
+ expect(screen.getByRole('heading',{name:'Source & scope'})).toHaveFocus()
+ expect(screen.getByRole('alert')).toHaveTextContent('Synthetic server rejected this change.')
+ expect(screen.queryByRole('textbox',{name:'Credential reference (CREDENTIAL_NAME)'})).not.toBeInTheDocument()
+ expect(screen.queryByText(/Use a credential reference beginning/)).not.toBeInTheDocument()
+ expect(save).not.toHaveBeenCalled()
+})
+it('clears local validation after a corrective source edit without clearing the server error',async()=>{
+ const user=userEvent.setup(),save=vi.fn(async()=>{})
+ render(<PlatformChangeDialog edit={draft} busy={false} error="Synthetic server rejected this change." save={save} cancel={()=>{}}/>)
+ await user.selectOptions(screen.getByRole('combobox',{name:'Data source'}),'oem')
+ await user.click(screen.getByRole('button',{name:'Continue to connection'}))
+ expect(screen.getAllByRole('alert')).toHaveLength(2)
+ await user.selectOptions(screen.getByRole('combobox',{name:'OEM connection'}),'ford_lincoln')
+ expect(screen.getByRole('alert')).toHaveTextContent('Synthetic server rejected this change.')
+ await user.click(screen.getByRole('button',{name:'Continue to connection'}))
+ expect(screen.getByRole('heading',{name:'Connection'})).toHaveFocus()
+ expect(save).not.toHaveBeenCalled()
+})
+it('clears local validation when a provider preset changes the source values',async()=>{
+ const user=userEvent.setup(),save=vi.fn(async()=>{})
+ render(<PlatformChangeDialog edit={draft} busy={false} error="" save={save} cancel={()=>{}}/>)
+ await user.selectOptions(screen.getByRole('combobox',{name:'Data source'}),'oem')
+ await user.click(screen.getByRole('button',{name:'Continue to connection'}))
+ expect(screen.getByRole('alert')).toHaveTextContent('Choose an OEM family')
+ await user.click(screen.getByText('Choose a researched provider'))
+ await user.selectOptions(screen.getByRole('combobox',{name:'Provider catalog'}),'vinsolutions-crm')
+ expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+ expect(screen.getByRole('combobox',{name:'Data source'})).toHaveValue('crm')
+ await user.click(screen.getByRole('button',{name:'Continue to connection'}))
+ expect(screen.getByRole('heading',{name:'Connection'})).toHaveFocus()
+ expect(save).not.toHaveBeenCalled()
 })

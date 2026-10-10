@@ -28,6 +28,8 @@ const DML_FILES = [
   '0010_integration_audit_operations.sql',
   // 0015 rebuilds dispositions and copies their ledger rows before dropping the old table.
   '0015_manual_inventory_controls.sql',
+  // 0017 copies legacy manual hold history into the approval-state table rebuild.
+  '0017_manual_hold_approval.sql',
 ]
 const insertFor = (file: string) => `INSERT INTO d1_migrations (name) VALUES ('${file}');`
 
@@ -221,6 +223,107 @@ describe('read-only D1 schema verifier', () => {
     expect(migrationReport(report, '0001').differences).toEqual([
       { object: 'table app_state', result: 'different', details: ['unexpected column synthetic_note'] },
     ])
+  })
+
+  it('recognizes the complete approval rebuild but prints its ledger row only after explicit data review', () => {
+    const file = '0017_manual_hold_approval.sql'
+    const live = syntheticLive()
+    const unattested = verifyD1Schema({ liveJson: live, printLedgerSql: true })
+    expect(migrationReport(unattested, '0017')).toMatchObject({
+      status: 'APPLIED',
+      facts: { total: 4, present: 4, missing: 0, different: 0 },
+      schemaIndistinguishable: false,
+      dataReviewRequired: true,
+      dataReviewReasons: ['INSERT statement'],
+      dataReviewAttested: false,
+      delta: {
+        created: [],
+        recreated: [
+          'index vehicle_manual_hold_events_vin_idx (definition unchanged)',
+          'table vehicle_manual_hold_events',
+          'trigger vehicle_manual_hold_events_no_delete (definition unchanged)',
+          'trigger vehicle_manual_hold_events_no_update (definition unchanged)',
+        ],
+        redefined: [], columnsAdded: [], dropped: [],
+      },
+    })
+    expect(unattested.ledgerSql?.inserts).not.toContain(insertFor(file))
+    expect(unattested.ledgerSql?.skipped).toContainEqual({ file, reason: expect.stringContaining('DATA_REVIEW_REQUIRED (INSERT statement)') })
+
+    // Attesting to previous data migrations cannot attest to preservation of the hold history.
+    const previousReviewed = verifyD1Schema({ liveJson: live, printLedgerSql: true, dataReviewed: DML_FILES.filter((name) => name !== file) })
+    expect(previousReviewed.ledgerSql?.inserts).not.toContain(insertFor(file))
+    const attested = cli(['--live', 'live.json', '--print-ledger-sql', '--data-reviewed', file], { 'live.json': live })
+    expect(attested.code).toBe(0)
+    expect(attested.stdout).toContain(insertFor(file))
+    expect(attested.stdout).not.toContain(insertFor('0015_manual_inventory_controls.sql'))
+  })
+
+  it('reports the legacy manual hold schema as missing approval even when its data review is attested', () => {
+    const file = '0017_manual_hold_approval.sql'
+    const report = verifyD1Schema({ liveJson: syntheticLive({ skip: [file] }), printLedgerSql: true, dataReviewed: DML_FILES })
+    expect(report.exitCode).toBe(1)
+    expect(migrationReport(report, '0017')).toMatchObject({
+      status: 'MISSING',
+      facts: { total: 4, present: 3, missing: 1, different: 0 },
+      dataReviewRequired: true,
+      dataReviewAttested: true,
+      differences: [{ object: 'table vehicle_manual_hold_events', result: 'missing', details: [expect.stringContaining('definition from before this migration')] }],
+    })
+    expect(statusesExcept(report, ['0017'])).toEqual(new Set(['APPLIED']))
+    expect(report.ledgerSql?.inserts).not.toContain(insertFor(file))
+    expect(report.ledgerSql?.skipped).toContainEqual({ file, reason: expect.stringContaining('MISSING') })
+  })
+
+  it.each([
+    ['approval states', (sql: string) => sql.replace("'released', 'rejected', 'cancelled'", "'released', 'cancelled'"), 'table vehicle_manual_hold_events', 'column state: definition expected'],
+    ['owner identity requirement', (sql: string) => sql.replace('owner_user_id TEXT NOT NULL', 'owner_user_id TEXT'), 'table vehicle_manual_hold_events', 'column owner_user_id: NOT NULL expected'],
+    ['version uniqueness', (sql: string) => sql.replace('UNIQUE (vin, version), ', ''), 'table vehicle_manual_hold_events', 'table constraint missing: unique ( vin , version )'],
+    ['idempotency uniqueness', (sql: string) => sql.replace(', UNIQUE (vin, idempotency_key)', ''), 'table vehicle_manual_hold_events', 'table constraint missing: unique ( vin , idempotency_key )'],
+    ['VIN index order', (sql: string) => sql.replace('(vin, version DESC);', '(vin, version);'), 'index vehicle_manual_hold_events_vin_idx', 'key columns expected (vin, version DESC), found (vin, version)'],
+    ['update trigger', (sql: string) => sql.replace("BEFORE UPDATE ON vehicle_manual_hold_events BEGIN SELECT RAISE(ABORT, 'Manual hold history is append-only'); END;", 'BEFORE UPDATE ON vehicle_manual_hold_events BEGIN SELECT 1; END;'), 'trigger vehicle_manual_hold_events_no_update', 'definition expected'],
+    ['delete trigger', (sql: string) => sql.replace("BEFORE DELETE ON vehicle_manual_hold_events BEGIN SELECT RAISE(ABORT, 'Manual hold history is append-only'); END;", 'BEFORE DELETE ON vehicle_manual_hold_events BEGIN SELECT 1; END;'), 'trigger vehicle_manual_hold_events_no_delete', 'definition expected'],
+  ])('refuses an approval ledger row when %s differs from the migration', (_label, edit, object, detail) => {
+    const file = '0017_manual_hold_approval.sql'
+    const report = verifyD1Schema({ liveJson: syntheticLive({ edit: { [file]: edit } }), printLedgerSql: true, dataReviewed: DML_FILES })
+    expect(report.exitCode).toBe(1)
+    expect(migrationReport(report, '0017').status).toBe('MODIFIED')
+    expect(migrationReport(report, '0017').differences).toContainEqual({ object, result: 'different', details: expect.arrayContaining([expect.stringContaining(detail)]) })
+    expect(report.ledgerSql?.inserts).not.toContain(insertFor(file))
+  })
+
+  it('refuses an approval ledger row when a rebuilt append-only trigger is absent', () => {
+    const file = '0017_manual_hold_approval.sql'
+    const report = verifyD1Schema({
+      liveJson: syntheticLive({ after: 'DROP TRIGGER vehicle_manual_hold_events_no_delete;' }),
+      printLedgerSql: true, dataReviewed: DML_FILES,
+    })
+    expect(migrationReport(report, '0017').status).toBe('PARTIAL')
+    expect(migrationReport(report, '0017').differences).toEqual([
+      { object: 'trigger vehicle_manual_hold_events_no_delete', result: 'missing', details: ['not in the live schema'] },
+    ])
+    expect(report.ledgerSql?.inserts).not.toContain(insertFor(file))
+  })
+
+  it('requires data review for a migration with no schema delta instead of treating schema presence as data evidence', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'synthetic-d1-data-review-'))
+    try {
+      writeFileSync(path.join(directory, '0001_initial.sql'), 'CREATE TABLE synthetic_state (id TEXT PRIMARY KEY, state TEXT NOT NULL);')
+      const file = '0002_update_state.sql'
+      writeFileSync(path.join(directory, file), "UPDATE synthetic_state SET state = 'reviewed';")
+      const live = wranglerJson([{ type: 'table', name: 'synthetic_state', tbl_name: 'synthetic_state', sql: 'CREATE TABLE synthetic_state (id TEXT PRIMARY KEY, state TEXT NOT NULL)' }])
+      const report = verifyD1Schema({ liveJson: live, migrationsDirectory: directory, printLedgerSql: true })
+      expect(migrationReport(report, '0002')).toMatchObject({
+        status: 'APPLIED', facts: { total: 0, present: 0, missing: 0, different: 0 },
+        schemaIndistinguishable: true, dataReviewRequired: true, dataReviewAttested: false,
+        dataReviewReasons: ['UPDATE statement', 'schema is identical before and after this migration'],
+      })
+      expect(report.ledgerSql?.inserts).toEqual([insertFor('0001_initial.sql')])
+      expect(verifyD1Schema({ liveJson: live, migrationsDirectory: directory, printLedgerSql: true, dataReviewed: [file] }).ledgerSql?.inserts)
+        .toEqual([insertFor('0001_initial.sql'), insertFor(file)])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it('flags INSERT/UPDATE/DELETE migrations and leaves them out of ledger SQL unless attested', () => {

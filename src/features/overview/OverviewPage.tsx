@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { ChevronDown, ChevronRight, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
+import { CarFront, ChartColumnIncreasing, ChevronDown, ChevronRight, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { SourceWarning } from '../../components/SourceWarning'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
+import { FlowIconButton, FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
 import { vehicleWorkspacePath } from '../../lib/inventory-navigation'
 import { useWorkspaceState } from '../../lib/workspace-memory'
@@ -187,7 +188,7 @@ function arrivalText(service: OverviewVehicleFacts['service']): string | null {
 
 function RecordsLink({ vin, facts, name }: { vin: string; facts?: OverviewVehicleFacts; name: string }) {
   const label = facts ? `Records ${facts.recordsCaptured}/${facts.recordsApplicable}` : 'Records'
-  return <Link className="ov-row-link" to={recordsHref(vin)} aria-label={`${label} for ${name}`}><FileText aria-hidden="true" />{label}</Link>
+  return <Link className={flowButtonClassName({variant:'secondary',className:'ov-row-link'})} to={recordsHref(vin)} aria-label={`${label} for ${name}`}><FileText aria-hidden="true" />{label}</Link>
 }
 
 function WhereRow({ row, filter, holdsVerified }: { row: OverviewRow; filter: WhereFilter; holdsVerified: boolean }) {
@@ -219,7 +220,7 @@ function WhereRow({ row, filter, holdsVerified }: { row: OverviewRow; filter: Wh
         {details.length ? <span className="ov-row-details">{details.map((detail) => <span key={detail.text} className={detail.tone ? `ov-tone-${detail.tone}` : undefined}>{detail.text}</span>)}</span> : null}
       </div>
       <div className="ov-row-actions">
-        <Link className="ov-row-link" to={locationHref(vehicle.vin, transferId)} aria-label={`${transferId ? 'Move' : 'Location'} for ${vehicle.vehicleName}`}><MapPin aria-hidden="true" />{transferId ? 'Move' : 'Location'}</Link>
+        <Link className={flowButtonClassName({variant:'secondary',className:'ov-row-link'})} to={locationHref(vehicle.vin, transferId)} aria-label={`${transferId ? 'Move' : 'Location'} for ${vehicle.vehicleName}`}><MapPin aria-hidden="true" />{transferId ? 'Move' : 'Location'}</Link>
         <RecordsLink vin={vehicle.vin} facts={facts} name={vehicle.vehicleName} />
       </div>
     </li>
@@ -237,7 +238,7 @@ function ReturnVerification({ rows, store, fullAccess }: { rows: OverviewRow[]; 
           <li key={vehicle.vin} className={facts.returnOverdue ? 'ov-tone-danger' : undefined}>
             <span>{vehicle.vehicleName} · #{vehicle.stockNumber} · returning home{facts.returnDueAt ? ` · due ${formatDate(facts.returnDueAt)}` : ''}{facts.returnOverdue ? ' · Overdue' : ''}</span>
             {fullAccess && vehicle.movement.transferId
-              ? <Link className="ov-row-link" to={locationHref(vehicle.vin, vehicle.movement.transferId)} aria-label={`Confirm ${vehicle.vehicleName} back home`}>Confirm back home</Link>
+              ? <Link className={flowButtonClassName({variant:'secondary',className:'ov-row-link'})} to={locationHref(vehicle.vin, vehicle.movement.transferId)} aria-label={`Confirm ${vehicle.vehicleName} back home`}>Confirm back home</Link>
               : null}
           </li>
         ))}
@@ -301,7 +302,7 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
           {moreCounts}
         </details>
       ) : moreCounts}
-      <ReturnVerification rows={rows} store={store} fullAccess={fullAccess} />
+      <ReturnVerification rows={rows} store={store} fullAccess={fullAccess && (role === 'group_manager' || store === homeStore)} />
     </>
   )
   return (
@@ -394,10 +395,8 @@ function ServiceSection({ data, overview, stores, role, homeStore, reportMode, p
   const scopeMetrics = stores.length === 1 ? perStore[0] : service.group
   return (
     <section className={`ov-section ov-service${reportMode ? ' is-report' : ''}`} aria-labelledby="ov-service-title">
-      <header className="ov-section-heading">
-        <h2 id="ov-service-title">Service</h2>
-        <button type="button" className="ov-button" onClick={onReport}><Printer aria-hidden="true" />Open report</button>
-      </header>
+      <FlowLedgerHeading variant="plain" className="ov-section-heading" titleId="ov-service-title" title={<><Wrench aria-hidden="true" />Service</>}
+        actions={<button type="button" className={flowButtonClassName({variant:'secondary',className:'ov-button'})} onClick={onReport}><Printer aria-hidden="true" />Open report</button>} />
       <div className="ov-service-layout">
       <div className="ov-service-workload">
         <div className="ov-service-aged-summary" aria-label="Long service waits">
@@ -438,7 +437,7 @@ function ServiceSection({ data, overview, stores, role, homeStore, reportMode, p
                 </div>
                 <div className="ov-row-actions">
                   <RecordsLink vin={entry.vin} facts={entry.facts} name={name} />
-                  {serviceActionAllowed(entry.vehicle, entry.store, role, homeStore) ? <Link className="ov-row-link" to={serviceVehicleHref(entry.vin)} aria-label={`Update service for ${name}`}><Wrench aria-hidden="true" />Update service</Link> : null}
+                  {serviceActionAllowed(entry.vehicle, entry.store, role, homeStore) ? <Link className={flowButtonClassName({variant:'secondary',className:'ov-row-link'})} to={serviceVehicleHref(entry.vin)} aria-label={`Update service for ${name}`}><Wrench aria-hidden="true" />Update service</Link> : null}
                 </div>
               </li>
             )
@@ -447,8 +446,8 @@ function ServiceSection({ data, overview, stores, role, homeStore, reportMode, p
       ) : <p className="ov-empty">No vehicles waiting {waitingFrom}+ days in this scope.</p>}
       {aged.length > AGED_ROWS && !reportMode ? (
         <div className="ov-show-all">
-          {showAllAged ? null : <button type="button" className="ov-button" onClick={() => setShowAllAged(true)}>Show all {aged.length}</button>}
-          <Link className="ov-row-link" to={serviceStatusHref('needs_service', stores.length === 1 ? stores[0] : undefined)}>Open Waiting for service</Link>
+          {showAllAged ? null : <button type="button" className={flowButtonClassName({variant:'secondary',className:'ov-button'})} onClick={() => setShowAllAged(true)}>Show all {aged.length}</button>}
+          <Link className={flowButtonClassName({variant:'secondary',className:'ov-row-link'})} to={serviceStatusHref('needs_service', stores.length === 1 ? stores[0] : undefined)}>Open Waiting for service</Link>
         </div>
       ) : null}
       </div>
@@ -510,14 +509,14 @@ function ExceptionsSection({ overview, stores }: { overview: OverviewSummary; st
   const groups = exceptionGroups(exceptionRows(overview, stores), overview.thresholds)
   return (
     <section className="ov-section ov-exceptions" aria-labelledby="ov-exceptions-title">
-      <header className="ov-section-heading"><h2 id="ov-exceptions-title">Exceptions</h2></header>
+      <FlowLedgerHeading variant="plain" className="ov-section-heading" titleId="ov-exceptions-title" title={<><ClipboardCheck aria-hidden="true" />Exceptions</>} />
       {groups.length ? (
         <div className="ov-exception-groups">
           {groups.map(({ kind, label, entries }) => (
             <div key={kind} className={`ov-exception-group ov-exception-group--${EXCEPTION_TONE[kind]}`}>
               <div className="ov-exception-head">
                 <h3 id={`ov-exception-${kind}`}>{label}</h3>
-                {kind === 'hold_past_expected' ? <Link className="ov-row-link" to={actionCenterHref('holds')}>Open in Action center</Link> : null}
+                {kind === 'hold_past_expected' ? <Link className={flowButtonClassName({variant:'secondary',className:'ov-row-link'})} to={actionCenterHref('holds')}>Open in Action center</Link> : null}
               </div>
               <p className="ov-exception-why">{EXCEPTION_COPY[kind].why(overview.thresholds)}</p>
               <dl className="ov-counts" aria-labelledby={`ov-exception-${kind}`}>
@@ -545,7 +544,7 @@ function WhereSection({ rows, stores, holdsVerified, printing, filter, onFilter 
   const unprinted = matches.length - PRINT_ROWS
   return (
     <section className="ov-section ov-where" aria-labelledby="ov-where-title">
-      <header className="ov-section-heading"><h2 id="ov-where-title">Where is my inventory</h2></header>
+      <FlowLedgerHeading variant="plain" className="ov-section-heading" titleId="ov-where-title" title={<><MapPin aria-hidden="true" />Where is my inventory</>} />
       <div className="ov-chips ov-where-controls" role="group" aria-label="Show vehicles">
         {WHERE_FILTERS.map((entry) => (
           <button key={entry.value} type="button" aria-pressed={filter === entry.value} onClick={() => { onFilter(entry.value); setShowAll(false) }}>
@@ -557,7 +556,7 @@ function WhereSection({ rows, stores, holdsVerified, printing, filter, onFilter 
       {visible.length
         ? <ul className="ov-rows">{visible.map((row) => <WhereRow key={row.vehicle.vin} row={row} filter={filter} holdsVerified={holdsVerified} />)}</ul>
         : <p className="ov-empty">{filter === 'away' ? 'No vehicles away from home.' : `No vehicles in ${label.toLowerCase()}.`}</p>}
-      {matches.length > visible.length && !showAll ? <button type="button" className="ov-button ov-show-all" onClick={() => setShowAll(true)}>Show all {Math.min(matches.length, OVERVIEW_ROW_LIMIT)}</button> : null}
+      {matches.length > visible.length && !showAll ? <button type="button" className={flowButtonClassName({variant:'secondary',className:'ov-button ov-show-all'})} onClick={() => setShowAll(true)}>Show all {Math.min(matches.length, OVERVIEW_ROW_LIMIT)}</button> : null}
       {showAll && matches.length > OVERVIEW_ROW_LIMIT ? <p className="ov-footnote">Showing the first {OVERVIEW_ROW_LIMIT}. Open Inventory from a store count for the full list.</p> : null}
       {unprinted > 0 ? <p className="ov-print-only ov-print-more">and {plural(unprinted, 'more vehicle')} {filter === 'away' ? 'away from home' : `in ${label.toLowerCase()}`}</p> : null}
     </section>
@@ -613,10 +612,8 @@ function DispositionsSection({ overview, rows, stores, status, enabled, onOpen }
   const storeCounts = storeCards(overview, stores)
   return (
     <section className="ov-section ov-dispositions" aria-labelledby="ov-dispositions-title">
-      <header className="ov-section-heading">
-        <h2 id="ov-dispositions-title">Dispositions</h2>
-        <p className="ov-section-note">{DISPOSITION_QUALIFIER}</p>
-      </header>
+      <FlowLedgerHeading variant="plain" className="ov-section-heading" titleId="ov-dispositions-title" title={<><ClipboardCheck aria-hidden="true" />Dispositions</>}
+        description={<p className="ov-section-note">{DISPOSITION_QUALIFIER}</p>} />
       {enabled ? null : (
         <p className="ov-storage-note" role="status">{STORAGE_NOT_ENABLED} No disposition can be recorded or shown until it is; the manager log below is unchanged.</p>
       )}
@@ -664,7 +661,7 @@ function DispositionsSection({ overview, rows, stores, status, enabled, onOpen }
                   </span>
                 </div>
                 <div className="ov-row-actions">
-                  {action ? <button type="button" className="ov-row-link" aria-label={`${action} for ${vehicle.vehicleName}`} onClick={(event) => onOpen(vehicle.vin, event.currentTarget)}>{action}</button> : null}
+                  {action ? <button type="button" className={flowButtonClassName({variant:'secondary',className:'ov-row-link'})} aria-label={`${action} for ${vehicle.vehicleName}`} onClick={(event) => onOpen(vehicle.vin, event.currentTarget)}>{action}</button> : null}
                   <RecordsLink vin={vehicle.vin} facts={overview.vehicleFacts[vehicle.vin]} name={vehicle.vehicleName} />
                 </div>
               </li>
@@ -672,7 +669,7 @@ function DispositionsSection({ overview, rows, stores, status, enabled, onOpen }
           })}
         </ul>
       ) : <p className="ov-empty">No dispositions or manager-log sales in this scope.</p>}
-      {entries.length > DISPOSITION_ROWS && !showAll ? <button type="button" className="ov-button ov-show-all" onClick={() => setShowAll(true)}>Show all {entries.length}</button> : null}
+      {entries.length > DISPOSITION_ROWS && !showAll ? <button type="button" className={flowButtonClassName({variant:'secondary',className:'ov-button ov-show-all'})} onClick={() => setShowAll(true)}>Show all {entries.length}</button> : null}
     </section>
   )
 }
@@ -731,14 +728,13 @@ function WorkQueueRow({ vehicle, fallbackName, stockNumber, work, detail, owner,
         <p>{detail}</p>
       </div>
       <div className="ov-work-owner">
-        <span>Owner / status</span>
         <strong>{owner}</strong>
         <small className={tone ? `ov-tone-${tone}` : undefined}>{status}</small>
       </div>
       <div className="ov-work-actions">
-        {actionHref ? <Link className="ov-work-primary" to={actionHref}>{actionLabel}<ChevronRight aria-hidden="true" /></Link> : null}
-        {onAction ? <button type="button" className="ov-work-primary" onClick={(event) => onAction(event.currentTarget)}>{actionLabel}<ChevronRight aria-hidden="true" /></button> : null}
-        {showVehicleLink && vehicle ? <Link className="ov-work-secondary" to={vehicleWorkspacePath(vehicle.vin, { returnTo: '/overview' })}>Vehicle details</Link> : null}
+        {actionHref ? <Link className={flowButtonClassName({variant:'primary',className:'ov-work-primary'})} to={actionHref}>{actionLabel}<ChevronRight aria-hidden="true" /></Link> : null}
+        {onAction ? <button type="button" className={flowButtonClassName({variant:'primary',className:'ov-work-primary'})} onClick={(event) => onAction(event.currentTarget)}>{actionLabel}<ChevronRight aria-hidden="true" /></button> : null}
+        {showVehicleLink && vehicle ? <Link className={flowButtonClassName({variant:'secondary',className:'ov-work-secondary'})} to={vehicleWorkspacePath(vehicle.vin, { returnTo: '/overview' })}>Vehicle details</Link> : null}
       </div>
     </li>
   )
@@ -807,7 +803,7 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
   } else if (view === 'service') {
     content = service.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => (
       <WorkQueueRow key={vehicle.vin} vehicle={vehicle} fallbackName={vehicle.vehicleName} work="Waiting for service"
-        detail={[facts.service.waitingDays !== undefined ? `Waiting ${plural(facts.service.waitingDays, 'day')}` : null, arrivalText(facts.service)].filter(Boolean).join(' · ') || 'Arrival timing not recorded'}
+        detail={arrivalText(facts.service) || 'Arrival timing not recorded'}
         owner={facts.service.store ?? vehicle.homeStore} status={facts.service.waitingDays !== undefined ? `${plural(facts.service.waitingDays, 'day')} waiting` : 'Waiting time not recorded'}
         tone={facts.service.waitingDays !== undefined && facts.service.waitingDays >= overview.thresholds.serviceWaitingDays[1] ? 'danger' : undefined}
         actionLabel={serviceActionAllowed(vehicle, facts.service.store, role, homeStore) ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
@@ -847,10 +843,9 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
 
   return (
     <section className="ov-work-queue" aria-labelledby="ov-work-title">
-      <header className="ov-work-heading">
-        <div><h2 id="ov-work-title">Work queue</h2><p>Vehicle-level work and evidence in this scope.</p></div>
-        <Link className="ov-button" to={`/attention?${view === 'issues' ? 'category=issues&' : ''}scope=${scope}`}>{view === 'issues' ? 'Vehicle issue log' : 'Open Action center'}<ChevronRight aria-hidden="true" /></Link>
-      </header>
+      <FlowLedgerHeading className="ov-work-heading" titleId="ov-work-title" title={<><ClipboardCheck aria-hidden="true" />Work queue</>} variant="plain"
+        description="Vehicle-level work and evidence in this scope."
+        actions={<Link className={flowButtonClassName({variant:'secondary',className:'ov-button'})} to={`/attention?${view === 'issues' ? 'category=issues&' : ''}scope=${scope}`}>{view === 'issues' ? 'Vehicle issue log' : 'Open Action center'}<ChevronRight aria-hidden="true" /></Link>} />
       <div className="ov-work-tabs" role="group" aria-label="Overview work queue">
         {WORK_QUEUE_VIEWS.map((entry) => <button key={entry.value} type="button" aria-label={`${entry.label} ${queueCounts[entry.value]}`} aria-pressed={view === entry.value} onClick={() => setView(entry.value)}>{entry.label}<span>{queueCounts[entry.value]}</span></button>)}
       </div>
@@ -897,7 +892,7 @@ export function OverviewPage() {
   if (!overview) {
     return (
       <section className="ov-page" aria-labelledby="ov-title">
-        <header className="ov-header"><h1 id="ov-title">Overview</h1></header>
+        <FlowPageHeader className="ov-header" titleId="ov-title" title="Overview" icon={<ChartColumnIncreasing />} />
         <p className="ov-empty">The Overview is not available for this account.</p>
       </section>
     )
@@ -932,26 +927,22 @@ export function OverviewPage() {
   )
   return (
     <section className={`ov-page${serviceReport ? ' is-service-report' : ''}`} aria-labelledby="ov-title">
-      <header className="ov-header">
-        <div className="ov-title">
-          <h1 id="ov-title">Overview</h1>
-          {fullAccess ? null : <p className="ov-access">Read-only</p>}
-        </div>
-        <div className="ov-scope" role="group" aria-label="Overview scope">
-          <button type="button" aria-pressed={scope === 'home'} onClick={() => setScope('home')}>My store · {homeStore}</button>
-          <button type="button" aria-pressed={scope === 'group'} onClick={() => setScope('group')}>All stores</button>
-        </div>
-        <p className="ov-asof" role="status">{asOf}</p>
-        <button type="button" className="ov-button ov-print" onClick={printSnapshot}><Printer aria-hidden="true" />Print daily snapshot</button>
-      </header>
+      <FlowPageHeader className="ov-header" titleId="ov-title" title="Overview" icon={<ChartColumnIncreasing />}
+        description={fullAccess ? null : 'Read-only'}
+        facts={<p className="ov-asof" role="status">{asOf}</p>}
+        actions={<><div className="ov-scope" role="group" aria-label="Overview scope">
+          <button type="button" aria-label={`My store · ${homeStore}`} aria-pressed={scope === 'home'} onClick={() => setScope('home')}>{homeStore}</button>
+          <button type="button" aria-label="All stores" aria-pressed={scope === 'group'} onClick={() => setScope('group')}>All<span className="ov-scope-suffix"> stores</span></button>
+        </div><FlowIconButton className="ov-print" label="Print daily snapshot" variant="quiet" onClick={printSnapshot}><Printer aria-hidden="true" /></FlowIconButton></>}>
+      </FlowPageHeader>
 
       <p className="ov-print-only ov-print-header">Inventory Flow · Daily snapshot · {scopeLabel} · As of {formatDate(overview.asOfDay)} · Printed {formatDateTime(new Date().toISOString())} · {roleLabel} · Holds {freshnessWord(data.meta.dealerMailFreshness).toLowerCase()} · Website {freshnessWord(data.meta.publicFreshness).toLowerCase()}</p>
 
       <SourceWarning meta={data.meta} />
 
-      <div className="ov-scope" role="group" aria-label="Overview presentation">
-        <button type="button" aria-pressed={presentation === 'sales'} onClick={() => setPresentationChoice({ context: accessContext, value: 'sales' })}>Sales workspace</button>
-        <button type="button" aria-pressed={presentation === 'operations'} onClick={() => setPresentationChoice({ context: accessContext, value: 'operations' })}>Store operations</button>
+      <div className="ov-presentation" role="group" aria-label="Overview presentation">
+        <button type="button" aria-pressed={presentation === 'sales'} onClick={() => setPresentationChoice({ context: accessContext, value: 'sales' })}><CarFront aria-hidden="true" />Sales workspace</button>
+        <button type="button" aria-pressed={presentation === 'operations'} onClick={() => setPresentationChoice({ context: accessContext, value: 'operations' })}><Wrench aria-hidden="true" />Store operations</button>
       </div>
 
       {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} /> : <>

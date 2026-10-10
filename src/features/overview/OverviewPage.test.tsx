@@ -209,6 +209,31 @@ describe('OverviewPage (server projection)', () => {
     expect(within(exceptions).getByRole('link', { name: 'Howell: 1 vehicle · Service dates before arrival' })).toHaveAttribute('href', '/inventory?scope=group&vins=TESTDATAHWELL0001')
   })
 
+  it('keeps return confirmation local to a manager while allowing group managers to act across stores', () => {
+    const data = bootstrap('manager')
+    const returning = data.vehicles.find((item) => item.vin === 'TESTDATAHWELL0003')!
+    returning.homeStore = 'Lincoln'
+    renderAs('manager', data)
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    const foreignCard = screen.getByRole('heading', { name: 'Lincoln', level: 3 }).closest('section')!
+    expect(within(foreignCard).getByRole('heading', { name: 'Return-home verification' })).toBeVisible()
+    expect(within(foreignCard).queryByRole('link', { name: `Confirm ${returning.vehicleName} back home` })).not.toBeInTheDocument()
+
+    cleanup()
+    renderAs('group_manager', data)
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    const groupForeignCard = screen.getByRole('heading', { name: 'Lincoln', level: 3 }).closest('section')!
+    expect(within(groupForeignCard).getByRole('link', { name: `Confirm ${returning.vehicleName} back home` })).toBeVisible()
+  })
+
+  it('opens identity-review exceptions in the group Action center scope', () => {
+    const data = bootstrap('manager')
+    data.overview!.exceptions.push({ kind: 'identity_review', store: 'Lincoln', count: 1, vins: [] })
+    renderAs('manager', data)
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    expect(screen.getByRole('link', { name: 'Lincoln: 1 vehicle · Manager log needs an exact VIN' })).toHaveAttribute('href', '/attention?category=inventory&scope=group')
+  })
+
   it('groups exceptions by type: one heading and one explanation, then a count per store, most urgent first', () => {
     const data = bootstrap('group_manager')
     data.overview!.exceptions = [

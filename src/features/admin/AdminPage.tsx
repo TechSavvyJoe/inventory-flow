@@ -1,3 +1,4 @@
+import { FlowPageHeader, FlowLedgerHeading } from '../../design-system'
 import { useEffect, useState, type ReactNode } from 'react'
 import {
   Activity,
@@ -135,13 +136,8 @@ function PeopleSection({ people }: { people: AdminPerson[] }) {
 
   return (
     <section className="admin-section admin-section--people" id="admin-people" aria-labelledby="admin-people-title">
-      <header className="admin-section__header">
-        <div>
-          <h2 id="admin-people-title">People &amp; access</h2>
-          <p>Group manager access across all stores.</p>
-        </div>
-        <span>{labelCount(people.length, 'person', 'people')}</span>
-      </header>
+      <FlowLedgerHeading title="People & access" titleId="admin-people-title"
+        description="Group manager access across all stores." actions={<span>{labelCount(people.length, 'person', 'people')}</span>} />
 
       <div className="admin-table-wrap">
         <table className="admin-table">
@@ -232,13 +228,8 @@ function PeopleSection({ people }: { people: AdminPerson[] }) {
 function FeedSection({ feeds }: { feeds: AdminFeed[] }) {
   return (
     <section className="admin-section admin-section--feeds" id="admin-feeds" aria-labelledby="admin-feeds-title">
-      <header className="admin-section__header">
-        <div>
-          <h2 id="admin-feeds-title">Feed health</h2>
-          <p>Inventory data feed status for each store.</p>
-        </div>
-        <span>{labelCount(feeds.length, 'store')}</span>
-      </header>
+      <FlowLedgerHeading title={<><Activity size={20} aria-hidden="true" />Feed health</>} titleId="admin-feeds-title"
+        description="Inventory data feed status for each store." actions={<span>{labelCount(feeds.length, 'store')}</span>} />
 
       <div className="admin-table-wrap">
         <table className="admin-table admin-feed-table">
@@ -309,13 +300,8 @@ function AuditSection({ audit }: { audit: AdminAuditEntry[] }) {
 
   return (
     <section className="admin-section admin-section--audit" id="admin-audit" aria-labelledby="admin-audit-title">
-      <header className="admin-section__header">
-        <div>
-          <h2 id="admin-audit-title">Recent audit activity</h2>
-          <p>Latest recorded system activity across your stores.</p>
-        </div>
-        <span>{labelCount(audit.length, 'event')}</span>
-      </header>
+      <FlowLedgerHeading title="Recent audit activity" titleId="admin-audit-title"
+        description="Latest recorded system activity across your stores." actions={<span>{labelCount(audit.length, 'event')}</span>} />
 
       <div className="admin-table-wrap">
         <table className="admin-table admin-audit-table">
@@ -436,12 +422,9 @@ export function AdminPage() {
 
   return (
     <section className="admin-page" aria-labelledby="admin-page-title">
-      <header className="admin-heading">
-        <h1 id="admin-page-title">Control center</h1>
-        <p>People, data health, and accountability<span className="admin-heading__desktop-copy"> across every store</span>.</p>
-      </header>
-
-      <section className="admin-summary" id="admin-overview" aria-labelledby="admin-summary-title">
+      <FlowPageHeader icon={<ClipboardCheck size={20} aria-hidden="true" />} className="admin-heading" title="Control center" titleId="admin-page-title"
+        description={<>People, data health, and accountability<span className="admin-heading__desktop-copy"> across every store</span>.</>}
+        facts={<section className="admin-summary" id="admin-overview" aria-labelledby="admin-summary-title">
         <h2 className="visually-hidden" id="admin-summary-title">Control center overview</h2>
         <article aria-label={`${labelCount(data.summary.activeUsers, 'active user')}`}>
           <Users aria-hidden="true" />
@@ -455,7 +438,7 @@ export function AdminPage() {
           <span className={`admin-summary__dot${data.summary.connectedStores > 0 && data.summary.feedsCurrent === data.summary.connectedStores ? ' is-current' : ''}`} aria-hidden="true" />
           <span><strong>{feedSummaryLabel(data)}</strong><small>Feed status<span className="admin-heading__desktop-copy"> · {verificationLabel}</span></small></span>
         </article>
-      </section>
+      </section>} />
 
       <nav className="admin-tabs" aria-label="Control center sections">
         <a {...sectionLink("#admin-overview")}>Overview</a>

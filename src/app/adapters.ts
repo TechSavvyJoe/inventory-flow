@@ -23,6 +23,7 @@ import type {
   TransferRecord,
   VehicleRecord,
   WarrantyCheckCoverageRecord,
+  WarrantyCheckCarfaxCoverageRecord,
 } from '../types'
 
 export function inventoryStore(name: StoreName | string): InventoryStore {
@@ -221,27 +222,27 @@ function fordOasisResource(
 
 const WARRANTY_CHECK_STATUSES: ReadonlySet<WarrantyCheckCoverageStatus> = new Set(['ACTIVE', 'EXPIRED', 'N/A'])
 
-function warrantyCheckCoverages(coverages: WarrantyCheckCoverageRecord[] | null | undefined): WarrantyCheckCoverage[] {
+function warrantyCheckCoverages(coverages: (WarrantyCheckCoverageRecord | WarrantyCheckCarfaxCoverageRecord)[] | null | undefined, allowMissingText = false): WarrantyCheckCoverage[] {
   return (coverages ?? []).flatMap((coverage) => {
     const type = cleanOptionalText(coverage?.type)
     const termText = cleanOptionalText(coverage?.termText)
     const remainingMilesText = cleanOptionalText(coverage?.remainingMilesText)
     const remainingTimeText = cleanOptionalText(coverage?.remainingTimeText)
     const status = coverage?.status
-    if (!type || !termText || !remainingMilesText || !remainingTimeText || !status || !WARRANTY_CHECK_STATUSES.has(status)) {
+    if (!type || (!allowMissingText && (!termText || !remainingMilesText || !remainingTimeText)) || !status || !WARRANTY_CHECK_STATUSES.has(status)) {
       return []
     }
     return [{
       type,
-      termText,
+      termText: termText ?? 'Unknown',
       termMonths: cleanOptionalNumber(coverage.termMonths),
       termMiles: cleanOptionalNumber(coverage.termMiles),
       unlimitedMiles: typeof coverage.unlimitedMiles === 'boolean' ? coverage.unlimitedMiles : null,
       unlimitedMonths: typeof coverage.unlimitedMonths === 'boolean' ? coverage.unlimitedMonths : null,
       remainingMiles: cleanOptionalNumber(coverage.remainingMiles),
       remainingMonths: cleanOptionalNumber(coverage.remainingMonths),
-      remainingMilesText,
-      remainingTimeText,
+      remainingMilesText: remainingMilesText ?? 'Unknown',
+      remainingTimeText: remainingTimeText ?? 'Unknown',
       status,
       note: cleanOptionalText(coverage.note),
     }]
@@ -265,6 +266,12 @@ function warrantyCheckResource(
         coverages: warrantyCheckCoverages(warrantyCheck.autoCheck.coverages),
       }
     : null
+  const carfax = warrantyCheck.carfax ? {
+    inServiceDate: cleanOptionalText(warrantyCheck.carfax.inServiceDate),
+    inServiceAgeMonths: cleanOptionalNumber(warrantyCheck.carfax.inServiceAgeMonths),
+    defaultMileage: cleanOptionalNumber(warrantyCheck.carfax.defaultMileage),
+    coverages: warrantyCheckCoverages(warrantyCheck.carfax.coverages, true),
+  } : null
   const oasisStart = cleanOptionalText(warrantyCheck.fordOasis?.warrantyStartDate)
   const oasisMonths = cleanOptionalNumber(warrantyCheck.fordOasis?.monthsInService)
   const fordOasis = warrantyCheck.fordOasis && oasisStart && oasisMonths !== null
@@ -275,7 +282,7 @@ function warrantyCheckResource(
         coverages: warrantyCheckCoverages(warrantyCheck.fordOasis.coverages),
       }
     : null
-  if (!autoCheck && !fordOasis) return null
+  if (!autoCheck && !carfax && !fordOasis) return null
 
   return {
     dataState: resourceDataState(warrantyCheck.dataState, fallbackState),
@@ -284,6 +291,7 @@ function warrantyCheckResource(
     mileageEntered,
     mileageSource: cleanOptionalText(warrantyCheck.mileageSource),
     autoCheck,
+    carfax,
     fordOasis,
   }
 }
@@ -392,6 +400,8 @@ function officialDocumentSearchText(
     // terms, source labels, and Active/Expired statuses repeat across the lot
     // and make predictive search return nearly every vehicle.
     warrantyCheck?.autoCheck?.inServiceDate,
+    warrantyCheck?.carfax?.inServiceDate,
+    ...(vehicle.serviceHistory?.reports ?? []).flatMap(report => report.entries.flatMap(entry => [entry.date, entry.odometer])),
     warrantyCheck?.fordOasis?.warrantyStartDate,
     warrantyCheck?.fordOasis?.monthsInService != null ? `${warrantyCheck.fordOasis.monthsInService} months in service` : null,
   ].filter((value) => value !== null && value !== undefined && String(value).trim() !== '').join(' | ')
@@ -659,6 +669,18 @@ export function toInventoryVehicle(
     fordInvoice,
     fordOasis,
     warrantyCheck,
+    ...(vehicle.operationalEvidence ? { operationalEvidence: { records: vehicle.operationalEvidence.records.map(record => ({
+      vin: record.vin, provider: record.provider, sourceLabel: record.sourceLabel,
+      capturedAt: record.capturedAt, dataState: record.dataState, readOnly: true as const,
+      complete: record.complete, holdState: record.holdState,
+      ...(record.reportedDisposition ? { reportedDisposition: record.reportedDisposition } : {}),
+    })) } } : {}),
+    ...(vehicle.serviceHistory ? { serviceHistory: { reports: vehicle.serviceHistory.reports.map(report => ({
+      vin: report.vin, provider: report.provider, sourceLabel: report.sourceLabel,
+      capturedAt: report.capturedAt, dataState: report.dataState, historyStatus: report.historyStatus,
+      entries: report.entries.map(entry => ({ date: entry.date, odometer: cleanOptionalNumber(entry.odometer),
+        odometerUnit: entry.odometerUnit, services: cleanTextList(entry.services) })),
+    })) } } : {}),
     publicListing: {
       dataState: publicState,
       isListed: isListed(vehicle.publicListing),

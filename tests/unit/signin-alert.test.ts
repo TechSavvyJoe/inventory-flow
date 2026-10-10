@@ -71,6 +71,16 @@ describe('sign-in alerts from the session keeper', () => {
     expect(calls).toHaveLength(1)
     expect(signInProblems(keeper([], { errors: ['vauto'] }), ['vauto'])).toEqual(['vauto'])
     expect(signInProblems(keeper([], { browser: 'UNAVAILABLE' }), [])).toEqual(['browser'])
+    expect(signInProblems(keeper([], { browser: 'RECOVERED' }), ['browser'])).toEqual([])
+  })
+
+  it('waits for every probe to confirm healthy before sending all-clear', async () => {
+    const { calls, send } = recorder()
+    await alert(keeper(['dealermail']), send)
+    expect((await alert(keeper([], { errors: ['vauto'] }), send, at(10))).status).toBe('unchanged')
+    expect(calls).toHaveLength(1)
+    expect((await alert(keeper([]), send, at(20))).kind).toBe('all_clear')
+    expect(calls).toHaveLength(2)
   })
 
   it('alerts again when another site breaks, stays quiet on a partial fix, and sends one all-clear', async () => {
@@ -217,8 +227,8 @@ describe('the ssh call on the publisher PC', () => {
     expect(await call('silent-hang', 1500)).toEqual({ ok: false, error: 'timeout' })
   })
 
-  it('retries a failed connection once', async () => {
-    expect(await call('connect-then-ok')).toEqual({ ok: true })
+  it('does not retry exit 255 because the remote send may already have completed', async () => {
+    expect(await call('connect-then-ok')).toEqual({ ok: false, error: 'ssh_connect_failed' })
     expect(existsSync(path.join(dir, 'fake-ssh-marker'))).toBe(true)
   })
 
@@ -226,4 +236,3 @@ describe('the ssh call on the publisher PC', () => {
     expect(await call('connect-fail')).toEqual({ ok: false, error: 'ssh_connect_failed' })
   })
 })
-

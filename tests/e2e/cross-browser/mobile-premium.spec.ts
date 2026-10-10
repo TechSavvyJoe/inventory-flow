@@ -274,8 +274,13 @@ async function openFilteredVehicle(page: Page) {
 async function openVehicleService(page: Page) {
   const workspace = page.getByRole('dialog', { name: /vehicle workspace/ })
   // Other acceptance cases may have recorded service on this synthetic VIN.
-  // Follow the real action currently offered, without manufacturing readiness.
-  await workspace.getByRole('link', { name: /^(Start service|Mark Ready|Service history)$/ }).first().click()
+  // Ready vehicles keep their service link in the masthead; the secondary
+  // history shortcut lives under More. Follow the visible status or action.
+  const action = workspace.getByRole('link', { name: /^(Start service|Mark Ready)\b/ }).first()
+  const serviceLink = await action.isVisible() ? action : workspace.getByRole('link', { name: /^Service:/ })
+  await expect(serviceLink).toBeVisible()
+  await expect(serviceLink).toHaveAttribute('href', new RegExp(`/service\\?vin=${workflowVin}(?:&|$)`))
+  await serviceLink.click()
   await expect(page).toHaveURL(url => url.pathname === '/service' && url.searchParams.get('vin') === workflowVin)
   await expect(page.getByRole('button', { name: 'Back to vehicle', exact: true })).toBeVisible()
   await expect(page.locator('.service-current')).toBeVisible()
@@ -329,11 +334,16 @@ for (const workflow of ['service', 'move'] as const) {
     const workspace = await openFilteredVehicle(page)
     if (workflow === 'service') {
       await openVehicleService(page)
-      if (!await page.getByLabel('Service note').isVisible()) await page.getByRole('button', { name: /^(Edit note|Record service completion)$/ }).click()
+      // The read-only Current service note region also contains this phrase.
+      // Select the editable control, including when a preceding test saved a note.
+      if (!await page.getByRole('textbox', { name: /^Service note(?: \(optional\))?$/ }).isVisible()) await page.getByRole('button', { name: /^(Edit note|Record completion)$/ }).click()
     } else {
       await workspace.getByRole('button', { name: 'Move vehicle', exact: true }).click()
     }
-    const note = page.getByLabel(workflow === 'service' ? 'Service note' : 'Why is it moving?')
+    const note = workflow === 'service'
+      ? page.getByRole('textbox', { name: /^Service note(?: \(optional\))?$/ })
+      : page.getByRole('textbox', { name: 'Why is it moving?' })
+    await expect(note).toBeEditable()
     await note.fill(`Synthetic unfinished ${workflow} note`)
     await expect(note).toHaveValue(`Synthetic unfinished ${workflow} note`)
     const editedUrl = page.url()

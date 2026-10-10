@@ -32,6 +32,8 @@ import {
 } from "./vehicle-document-utils";
 import { warrantyOutlook } from "./vehicle-warranty-utils";
 import { WarrantyOutlook } from "./WarrantyOutlook";
+import { ServiceHistory } from "./ServiceHistory";
+import { calculatedWarrantyMiles } from "../../../extension/sidepanel/lib/vehicle-rules-core.mjs";
 import type { DealerMailHoldEvidence, InventoryVehicle, SourceDataState, WarrantyCheckCoverage } from "./types";
 
 export function compactSourcePrice(value: number | null | undefined, sticker?: InventoryVehicle["windowSticker"]): string {
@@ -417,14 +419,15 @@ function RecordSourceAction({ href, label, accessibleLabel, unavailableLabel }: 
   </div>;
 }
 
-function CapturedWarrantyTable({ coverages, label }: { coverages: WarrantyCheckCoverage[]; label: string }) {
+function CapturedWarrantyTable({ coverages, label, mileage }: { coverages: WarrantyCheckCoverage[]; label: string; mileage?: number | null }) {
   return <table className="inventory-vehicle-document__warranty-table" aria-label={label} role="table">
-    <thead><tr><th scope="col">Coverage</th><th scope="col">Term</th><th scope="col">Miles left</th><th scope="col">Time left</th><th scope="col">Status</th></tr></thead>
+    <thead><tr><th scope="col">Coverage</th><th scope="col">Term</th><th scope="col">Report miles left</th><th scope="col">Report time left</th><th scope="col">Calculated miles left</th><th scope="col">Report status</th></tr></thead>
     <tbody>{coverages.map((coverage, index) => <tr key={`${coverage.type}-${index}`} data-status={coverage.status}>
       <th scope="row">{coverage.type}</th>
       <td data-label="Term">{sourceDistanceText(coverage.termText)}</td>
-      <td data-label="Miles left">{sourceDistanceText(coverage.remainingMilesText)}</td>
-      <td data-label="Time left">{coverage.remainingTimeText}</td>
+      <td data-label="Report miles left">{sourceDistanceText(coverage.remainingMilesText) || 'Unknown'}</td>
+      <td data-label="Report time left">{coverage.remainingTimeText || 'Unknown'}</td>
+      <td data-label="Calculated miles left">{calculatedWarrantyMiles(coverage, mileage) === null ? 'Unknown' : formatMileage(calculatedWarrantyMiles(coverage, mileage))}</td>
       <td data-label="Status"><span className={`inventory-warranty-pill inventory-warranty-pill--${coverage.status === "ACTIVE" ? "active" : coverage.status === "EXPIRED" ? "expired" : "unknown"}`}>{coverage.status === "ACTIVE" ? "Active" : coverage.status === "EXPIRED" ? "Expired" : "N/A"}</span></td>
     </tr>)}</tbody>
   </table>;
@@ -440,13 +443,16 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const warrantyCheck = vehicle.warrantyCheck ?? null;
   const inService = resolveVehicleInService(vehicle);
   // Captured OASIS coverage takes precedence; estimates stay a fallback only.
-  const warrantyPrimaryIsOasis = inService.source === "oasis";
-  const warrantyPrimary = warrantyPrimaryIsOasis ? warrantyCheck?.fordOasis ?? null : warrantyCheck?.autoCheck ?? null;
+  const warrantyPrimaryIsOasis = Boolean(warrantyCheck?.fordOasis && (warrantyCheck.fordOasis.coverages.length || (!warrantyCheck.autoCheck?.coverages.length && !warrantyCheck.carfax?.coverages.length)));
+  const warrantyEstimateIsCarfax = !warrantyCheck?.autoCheck?.coverages.length && Boolean(warrantyCheck?.carfax?.coverages.length);
+  const warrantyEstimate = warrantyEstimateIsCarfax ? warrantyCheck?.carfax : warrantyCheck?.autoCheck;
+  const warrantyPrimary = warrantyPrimaryIsOasis ? warrantyCheck?.fordOasis : warrantyEstimate;
+  const warrantyEstimateLabel = warrantyEstimateIsCarfax ? "CARFAX" : "AutoCheck";
   const warranty = warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: inService.source === "autocheck" ? inService.date : null, stickerWarranty: sticker?.warranty ?? [] });
   // The generic outlook is a fallback for records that predate the captured warranty channel.
   // Never show both versions of the same estimate on one vehicle.
   const showWarranty = inService.source !== "oasis" && !warrantyCheck && Boolean(autoCheck || sticker || factoryEquipment) && (warranty.termsKnown || Boolean(warranty.inService.date));
-  if (!autoCheck && !sticker && !factoryEquipment && !fordOasis && !warrantyCheck && !showWarranty) return null;
+  if (!autoCheck && !sticker && !factoryEquipment && !fordOasis && !warrantyCheck && !vehicle.serviceHistory?.reports.length && !showWarranty) return null;
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
   const autoCheckViaVauto = autoCheck?.accessMethod === "vauto";
   const stickerUrl = availableWindowStickerUrl(sticker, vehicle.publicListing.listingUrl);
@@ -465,7 +471,8 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     ? serviceHistory.recentRepairOrders
     : latestService ? [latestService] : [];
   const documentedRecentServiceOrders = recentServiceOrders.filter((order) => order.services.length);
-  const showServiceHistory = Boolean(serviceHistory && (latestService || !serviceHistory.historyCaptured));
+  const serviceTimeline = serviceHistory?.repairOrderTimeline ?? [];
+  const showServiceHistory = Boolean(serviceHistory && (latestService || serviceTimeline.length || !serviceHistory.historyCaptured));
   const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
   const hasCapturedRecallResult = hasCapturedOasisActionResult(fordOasis);
   // Format captured calendar dates consistently without deriving coverage eligibility.
@@ -648,8 +655,8 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           {openRecallCount ? (
             <ul className="inventory-vehicle-document__recall-list" aria-label="Open field service action details">
-              {fordOasis.openFieldServiceActions.map((action) => (
-                <li key={action.code}>
+              {fordOasis.openFieldServiceActions.map((action, index) => (
+                <li key={action.code || index}>
                   <b>{action.code}</b>
                   <span>{sourceDistanceText(sourceDisplayText(action.description)) || "Details unavailable"}</span>
                 </li>
@@ -692,7 +699,11 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                   </li>)}</ol>
                 </section> : null}
               </> : (
-                <p className="inventory-vehicle-document__empty">Ford service visits are listed in Records.</p>
+                serviceTimeline.length ? <section className="vdp-service-history-recent" aria-label="Ford reported service visits"><ol>{serviceTimeline.map((visit,index) => <li key={index}>
+                  <div><strong>{formatDate(visit.openDate)} to {formatDate(visit.closeDate)}</strong>{visit.odometer != null ? <span>{formatMileage(visit.odometer)}</span> : null}</div>
+                  <p>{(visit.services ?? []).length ? (visit.services ?? []).map(sourceDistanceText).join(" · ") : "Itemized work not supplied."}</p>
+                </li>)}</ol><p>Reported visits do not confirm current reconditioning or Ready status.</p></section> :
+                <p className="inventory-vehicle-document__empty">Service history not supplied by Ford.</p>
               )}
               <RecordSourceAction
                 href={serviceHistoryUrl}
@@ -745,6 +756,7 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           ) : null}
           <RecordSourceDetails><p>{fordOasis.capturedAt ? `Captured ${formatDateTime(fordOasis.capturedAt)}. ` : ""}Dealer login may be required. The lookup opens OASIS for this VIN; it is not a saved copy of the report.</p></RecordSourceDetails>
         </article> : null) },
+    { id: "service-history", label: "Service history", content: vehicle.serviceHistory?.reports.length ? <ServiceHistory vehicle={vehicle} /> : null },
     { id: "warranty", label: "Warranty", content: (warrantyCheck && warrantyPrimary ? <article
           className="inventory-vehicle-document inventory-vehicle-document--warranty"
           data-document-kind="warranty-check"
@@ -753,40 +765,45 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             <span className="inventory-vehicle-document__title">
               <strong>Remaining factory warranty</strong>
               <small>
-                Factory warranty coverage
+                {warrantyPrimaryIsOasis ? "OASIS coverage record" : `${warrantyEstimateLabel} estimate`}
               </small>
             </span>
             <DataState state={warrantyCheck.dataState} />
           </header>
           {warrantyPrimaryIsOasis
             ? <RecordSourceAction href={oasisUrl} label="Open OASIS coverage lookup" accessibleLabel={`Open OASIS coverage lookup for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="Ford OASIS lookup unavailable" />
-            : autoCheckUrl ? <RecordSourceAction href={autoCheckUrl} label="Open AutoCheck report" accessibleLabel={`Open AutoCheck warranty report for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="AutoCheck report unavailable" /> : null}
+            : !warrantyEstimateIsCarfax && autoCheckUrl ? <RecordSourceAction href={autoCheckUrl} label="Open AutoCheck report" accessibleLabel={`Open AutoCheck warranty report for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="AutoCheck report unavailable" /> : null}
 
           <dl className="inventory-vehicle-document__facts">
             {warrantyPrimaryIsOasis && warrantyCheck.fordOasis ? (
               <Fact label="In service">{formatDate(warrantyCheck.fordOasis.warrantyStartDate)}</Fact>
-            ) : warrantyCheck.autoCheck?.inServiceDate ? (
-              <Fact label="In service (est.)">{formatDate(warrantyCheck.autoCheck.inServiceDate)}</Fact>
+            ) : warrantyEstimate?.inServiceDate ? (
+              <Fact label="In service (est.)">{formatDate(warrantyEstimate.inServiceDate)}</Fact>
             ) : null}
             {warrantyPrimaryIsOasis && warrantyCheck.fordOasis ? (
               <Fact label="Months in service">{countLabel(warrantyCheck.fordOasis.monthsInService, "month")}</Fact>
-            ) : warrantyCheck.autoCheck?.inServiceAgeMonths != null ? (
-              <Fact label="Months in service">{countLabel(warrantyCheck.autoCheck.inServiceAgeMonths, "month")}</Fact>
+            ) : warrantyEstimate?.inServiceAgeMonths != null ? (
+              <Fact label="Months in service">{countLabel(warrantyEstimate.inServiceAgeMonths, "month")}</Fact>
             ) : null}
             <Fact label="Figured at">{formatMileage(warrantyCheck.mileageEntered)}</Fact>
-            {!warrantyPrimaryIsOasis && warrantyCheck.autoCheck?.defaultMileage != null ? <Fact label="AutoCheck default mileage">{formatMileage(warrantyCheck.autoCheck.defaultMileage)}</Fact> : null}
+            {!warrantyPrimaryIsOasis && warrantyEstimate?.defaultMileage != null ? <Fact label={`${warrantyEstimateLabel} default mileage`}>{formatMileage(warrantyEstimate.defaultMileage)}</Fact> : null}
           </dl>
 
-          <CapturedWarrantyTable coverages={warrantyPrimary.coverages} label="Remaining factory warranty by coverage" />
+          {warrantyPrimary.coverages.length ? <CapturedWarrantyTable coverages={warrantyPrimary.coverages} label="Remaining factory warranty by coverage" mileage={vehicle.mileage} /> : <p>No coverage rows supplied. Remaining coverage is unknown.</p>}
+          <p className="inventory-vehicle-document__empty">Calculated miles use the report's mileage limit minus the current listed mileage ({formatMileage(vehicle.mileage)}), with a minimum of zero. They do not determine time remaining or confirm warranty eligibility.</p>
 
           {warrantyCheck.mileageSource ? <RecordSourceDetails><p>Mileage source: {warrantyCheck.mileageSource}</p></RecordSourceDetails> : null}
 
           <p className="inventory-vehicle-document__empty">
             {warrantyPrimaryIsOasis
-              ? "Ford and Lincoln factory coverage follows the vehicle to the next owner at no cost. Remaining figures are calculated from Ford's printed term against this vehicle's listed odometer."
-              : "Experian estimate calculated from the best available in-service date against this vehicle's listed odometer."}
-            {" "}Verify with the store before quoting coverage to a customer.
+              ? "Coverage terms supplied by OASIS. Remaining figures use the captured term and mileage basis; confirm current eligibility with the manufacturer."
+              : `${warrantyEstimateLabel} estimates remaining factory coverage using the report’s date and mileage basis. Title, ownership and manufacturer restrictions may affect eligibility.`}
+            {" "}Verify with the store before quoting coverage to a customer. Certification and service plans are separate.
           </p>
+          {[{ label: "AutoCheck", block: warrantyCheck.autoCheck }, { label: "CARFAX", block: warrantyCheck.carfax }].filter(source => source.block?.coverages.length && source.block !== warrantyPrimary).map(source => <details className="vdp-record-source-details" key={source.label}>
+            <summary>{source.label} warranty estimate · {source.block!.coverages.length} coverage types<ChevronDown size={14} aria-hidden="true" /></summary>
+            <div><p>Report estimate at {formatMileage(warrantyCheck.mileageEntered)}. Confirm manufacturer eligibility before quoting.</p><CapturedWarrantyTable coverages={source.block!.coverages} label={`${source.label} factory warranty estimate`} mileage={vehicle.mileage} /></div>
+          </details>)}
         </article> : null) },
     { id: "outlook", label: "Warranty estimate", content: (showWarranty ? <WarrantyOutlook vehicle={vehicle} /> : null) },
     { id: "sticker", label: "Window sticker", content: (sticker && showStickerRecord ? <article

@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { JSDOM } from 'jsdom'
+import { validateServiceHistoryEvidence } from '../server/provider-evidence.mjs'
 import { closeOwnedTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { isMainModule } from './lib/is-main.mjs'
@@ -21,6 +22,7 @@ function workspaceRoot() {
 const BFF_ORIGIN_RE = /^https:\/\/slot\d+\.bff\.megazord\.vauto\.app\.coxautoinc\.com$/i
 const REPORT_PATH = '/api/autocheck/getReport'
 const MAX_REPORT_BYTES = 2 * 1024 * 1024
+export const VAUTO_AUTOCHECK_SERVICE_SOURCE = 'Experian AutoCheck report captured through vAuto for this VIN'
 const INSPECTION_TYPES = [
   [/\bvehicle\s+serviced\s+or\s+inspected\b/i, 'Vehicle Serviced or Inspected'],
   [/\bmultiple\s+point\s+vehicle\s+inspection\b/i, 'Multiple Point Vehicle Inspection'],
@@ -30,6 +32,66 @@ const INSPECTION_TYPES = [
   [/\bsafety\s+inspection\b/i, 'Safety Inspection'],
   [/\bvehicle\s+inspected\b/i, 'Vehicle Inspected'],
 ]
+
+// Canonical mechanical descriptions only. Narrative text is never copied or
+// treated as a completed service, even when it mentions a recognized phrase.
+const SERVICE_DESCRIPTIONS = [
+  ...INSPECTION_TYPES,
+  [/^oil\s+(?:and|&)\s+filter\s+changed$/i, 'Oil and filter changed'],
+  [/^engine\s+oil\/filter\s+changed$/i, 'Engine oil/filter changed'],
+  [/^tires\s+rotated$/i, 'Tires rotated'],
+  [/^brake\s+pads\s+replaced$/i, 'Brake pads replaced'],
+  [/^transmission\s+serviced$/i, 'Transmission serviced'],
+  [/^vehicle\s+road\s+tested$/i, 'Vehicle road tested'],
+]
+export const VAUTO_AUTOCHECK_MECHANICAL_DESCRIPTIONS = Object.freeze(SERVICE_DESCRIPTIONS.map(([, label]) => label))
+function serviceDate(value) {
+  const input = clean(value)
+  const us = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  const date = us ? `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}` : input
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(`${date}T00:00:00Z`))) return null
+  return new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date ? date : null
+}
+function serviceDescriptions(cell) {
+  const clone = cell.cloneNode(true)
+  for (const br of clone.querySelectorAll('br')) br.replaceWith('\n')
+  for (const li of clone.querySelectorAll('li')) li.append('\n')
+  const fragments = String(clone.textContent ?? '').split(/[\n;]+/).map(clean).filter(Boolean)
+  const descriptions = fragments.map(fragment => {
+    for (const [pattern, label] of SERVICE_DESCRIPTIONS) {
+      const matched = fragment.match(pattern)
+      if (matched && !clean(fragment.replace(pattern, '')).replace(/[.;:]/g, '')) return label
+    }
+    return null
+  })
+  // A mixed narrative Details cell is not a mechanical-event result.
+  if (descriptions.some(description => description === null)) return []
+  return [...new Set(descriptions)].slice(0, 12)
+}
+function capturedServiceHistory(document, vin, capturedAt) {
+  if (!capturedAt) return undefined
+  const entries = []
+  for (const table of document.querySelectorAll('table')) {
+    const headers = [...table.querySelectorAll('th')].map(cell => text(cell).toLowerCase())
+    const dateIndex = headers.indexOf('event date')
+    const detailsIndex = headers.indexOf('details')
+    if (dateIndex < 0 || detailsIndex < 0) continue
+    for (const row of table.querySelectorAll('tbody tr')) {
+      const cells = [...row.querySelectorAll(':scope > td')]
+      if (cells.length <= Math.max(dateIndex, detailsIndex)) continue
+      const date = serviceDate(text(cells[dateIndex]))
+      if (!date) continue
+      const services = serviceDescriptions(cells[detailsIndex])
+      if (services.length) entries.push({ date, services })
+    }
+  }
+  if (!entries.length) return undefined
+  const unique = [...new Map(entries.map(entry => [JSON.stringify(entry), entry])).values()]
+    .sort((left, right) => right.date.localeCompare(left.date, 'en-US')).slice(0, 250)
+  try {
+    return validateServiceHistoryEvidence({ reports: [{ vin, provider: 'autocheck', sourceLabel: VAUTO_AUTOCHECK_SERVICE_SOURCE, capturedAt, dataState: 'current', historyStatus: 'reported', entries: unique }] }, vin)
+  } catch { return undefined }
+}
 
 function clean(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim()
@@ -56,9 +118,9 @@ function sourceDate(value) {
   const us = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
   if (us) {
     const result = `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}`
-    if (new Date(`${result}T12:00:00Z`).toISOString().slice(0, 10) === result) return result
+    if (Number.isFinite(Date.parse(`${result}T12:00:00Z`)) && new Date(`${result}T12:00:00Z`).toISOString().slice(0, 10) === result) return result
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(input) && new Date(`${input}T12:00:00Z`).toISOString().slice(0, 10) === input) return input
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input) && Number.isFinite(Date.parse(`${input}T12:00:00Z`)) && new Date(`${input}T12:00:00Z`).toISOString().slice(0, 10) === input) return input
   return input || null
 }
 
@@ -86,7 +148,7 @@ function recentInspection(document) {
 }
 
 /** Parse only bounded, allow-listed report facts after exact-VIN validation. */
-export function parseVautoAutoCheckHtml(html, vin) {
+export function parseVautoAutoCheckHtml(html, vin, { capturedAt } = {}) {
   if (!isVautoVin(vin) || typeof html !== 'string' || !html.trim() || Buffer.byteLength(html, 'utf8') > MAX_REPORT_BYTES) return null
   let document
   try { document = new JSDOM(html).window.document } catch { return null }
@@ -147,6 +209,8 @@ export function parseVautoAutoCheckHtml(html, vin) {
   }
   const inspection = recentInspection(document)
   if (inspection) result.recentInspection = inspection
+  const serviceHistory = capturedServiceHistory(document, vin, capturedAt)
+  if (serviceHistory) result.serviceHistory = serviceHistory
   return result
 }
 
@@ -177,19 +241,21 @@ export async function captureVautoAutoCheck(context, vin) {
     if (response.status === 401 || response.status === 403) throw new Error(`SESSION_EXPIRED: ${response.status}`)
     if (response.status !== 200 || typeof response.text !== 'string') continue
     if (!/^text\/html\b/i.test(response.contentType ?? response.headers?.['content-type'] ?? '') && !/<html[\s>]/i.test(response.text)) continue
-    const parsed = parseVautoAutoCheckHtml(response.text, vin)
+    const parsed = parseVautoAutoCheckHtml(response.text, vin, { capturedAt: startedAt })
     if (!parsed) return { vin, startedAt, result: 'VIN_MISMATCH_OR_UNPARSEABLE' }
+    const { serviceHistory, ...reportFacts } = parsed
     return {
       vin,
       startedAt,
       result: 'OK',
+      ...(serviceHistory ? { serviceHistory } : {}),
       autoCheckReport: {
         validatedVin: vin,
         dataState: 'current',
         accessMethod: 'vauto',
         sourceLabel: 'Experian AutoCheck report captured through vAuto for this VIN',
         capturedAt: startedAt,
-        ...parsed,
+        ...reportFacts,
       },
     }
   }

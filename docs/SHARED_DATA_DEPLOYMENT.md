@@ -1,5 +1,17 @@
 # Shared data deployment and activation checklist
 
+## Historical deployment — 2026-10-07, 19:18 UTC
+
+- 2026-10-07T19:18:09.574Z | Commit: 108305e2a07c631a165eb13d2fb4a085629d911e | Tag: 108305e | App Version: 669625d0-c502-4c0c-9419-6008e2269ac1 | Integrations Version: aee172fa-13b8-488e-a66f-19a3f8363bd9
+
+The [Software Admin connection record](OWNER_ACCOUNT_CONNECTION_2026_10_07.md)
+preserves PR #71's historical owner deployments, activation, rollback versions,
+monitoring, independent integration reconciliation, temporary-grant cleanup and
+authenticated reciprocal navigation acceptance. The retained inventory publication
+was October 1. This record is historical evidence, not current deployment or
+source-freshness verification. Native new-window and hosted OAuth-client sign-in
+remained unverified.
+
 ## Deployment - 2026-10-07 (pnpm cloud:release)
 
 - 2026-10-07T02:15:20.511Z | Commit: 72e4ca4cd61820f843fed9785293264ddfdacd20 | Tag: 72e4ca4 | App Version: d6614de9-4eb4-4aee-a8eb-2d96d0c16192 | Integrations Version: 572a82ac-939b-490f-a33b-903956787ddb

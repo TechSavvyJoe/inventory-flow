@@ -2,6 +2,7 @@
 // @ts-nocheck -- dependency-free ESM; synthetic fixtures only.
 import { describe, expect, it } from 'vitest'
 import { addMonthsUtc, certifiedTerms, parseServiceDate, warrantyOutlook, vehicleInServiceSource, warrantySummary, warrantyTermsFor, wholeMonthsBetween } from '../../extension/sidepanel/lib/warranty.mjs'
+import { toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
 
 const NOW = Date.UTC(2026, 8, 12) // 2026-09-12
 
@@ -25,6 +26,23 @@ describe('authoritative in-service source', () => {
   })
   it('uses captured OASIS first regardless of make', () => {
     expect(vehicleInServiceSource({ make: 'Chevrolet', documents: { autoCheck: { inServiceDate: '2023-01-01' }, fordOasis: { warrantyStartDate: '2024-03-14' } } })).toMatchObject({ raw: '2024-03-14', source: 'OASIS', estimated: false })
+  })
+  it.each(['Ford', 'Chevrolet'])('calculates time and mileage from mapped CARFAX-only evidence for %s', (make) => {
+    const mapped = toPanelVehicle({
+      vin: 'TESTDATACARFAX001', stockNumber: 'DEMO-CF01', make, year: 2024, mileage: 21000,
+      warrantyCheck: { dataState: 'current', mileageEntered: 21000, carfax: { inServiceDate: '2024-03-14', coverages: [] } },
+    }, { meta: { publicFreshness: 'current' }, transfers: [] })
+    expect(vehicleInServiceSource(mapped)).toEqual({ raw: '2024-03-14', source: 'CARFAX estimate', estimated: true })
+    expect(warrantyOutlook(mapped, { now: NOW }).coverages.find(item => item.key === 'basic')).toMatchObject({
+      expiresOn: '2027-03-14', monthsRemaining: 6, milesRemaining: 15000, status: 'active',
+    })
+  })
+  it('keeps captured OASIS and AutoCheck dates ahead of the CARFAX fallback', () => {
+    const carfax = { inServiceDate: '2024-03-14' }
+    const autoCheck = { inServiceDate: '2023-01-01' }
+    expect(vehicleInServiceSource({ documents: { warrantyCheck: { carfax, autoCheck } } })).toMatchObject({ source: 'AutoCheck estimate', raw: '2023-01-01' })
+    expect(vehicleInServiceSource({ documents: { fordOasis: { warrantyStartDate: '2022-02-01' }, warrantyCheck: { carfax, autoCheck } } })).toMatchObject({ source: 'OASIS', estimated: false, raw: '2022-02-01' })
+    expect(vehicleInServiceSource({ documents: { autoCheck: { inServiceDate: ' ' }, warrantyCheck: { carfax } } })).toMatchObject({ source: 'CARFAX estimate' })
   })
 })
 

@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BootstrapData, TransferRecord, VehicleRecord } from '../../types';
+import { clearWorkspaceMemory } from '../../lib/workspace-memory';
 import { toTransferVehicle } from '../../app/transferAdapters';
 import { TransferTracker } from './TransferTracker';
 import { TransfersPage } from './TransfersPage';
@@ -206,7 +207,7 @@ function renderPage(data: BootstrapData, initialEntry = '/transfers', contextOve
   return { ...render(<MemoryRouter initialEntries={[initialEntry]}><TransfersPage />{withLocation ? <LocationProbe /> : null}</MemoryRouter>), submitTransfer };
 }
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); clearWorkspaceMemory(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('transfer workspace v3 layout', () => {
   beforeEach(() => {
@@ -234,6 +235,39 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByRole('textbox', { name: 'Search vehicle moves' })).toHaveValue('MOVE2');
     expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toHaveValue('stock');
     expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('opens new phone details at the top and restores independent queue and per-move positions', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    const y = vi.spyOn(window, 'scrollY', 'get').mockReturnValue(0);
+    renderPage(bootstrap(4));
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    y.mockReturnValue(200); fireEvent.scroll(window);
+    fireEvent.click(screen.getByRole('button', { name: /MOVE2.*Assign a driver/ }));
+    await waitFor(() => expect(scroll).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' }));
+    y.mockReturnValue(392); fireEvent.scroll(window);
+    y.mockReturnValue(92);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to vehicle moves' }));
+    await waitFor(() => expect(scroll).toHaveBeenLastCalledWith({ top: 200, behavior: 'instant' }));
+    fireEvent.click(screen.getByRole('button', { name: /MOVE2.*Assign a driver/ }));
+    await waitFor(() => expect(scroll).toHaveBeenLastCalledWith({ top: 392, behavior: 'instant' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to vehicle moves' }));
+    await waitFor(() => expect(scroll).toHaveBeenLastCalledWith({ top: 200, behavior: 'instant' }));
+    fireEvent.click(screen.getByRole('button', { name: /MOVE4.*Assign a driver/ }));
+    await waitFor(() => expect(scroll).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' }));
+  });
+
+  it('preserves document position on a first desktop split-pane selection', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(200);
+    renderPage(bootstrap(4));
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    fireEvent.click(screen.getByRole('button', { name: /MOVE2.*Assign a driver/ }));
+    await screen.findByRole('heading', { level: 2, name: '2025 Ford F-150 2' });
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   it('resets an empty persisted move view while preserving its sort', () => {
@@ -297,19 +331,18 @@ describe('transfer workspace v3 layout', () => {
     expect(mapped).toMatchObject({ listedPriceLabel: '$51,800', mileageLabel: '12,450 mi', exteriorColor: 'Synthetic blue', engine: 'Synthetic 3.5L engine', drivetrain: '4WD', daysListed: 43 });
     const onAction = vi.fn();
     render(<TransferTracker transfer={{ ...current, workflowMode: 'simple', vehicle: mapped }} onAction={onAction} />);
-    const link = screen.getByRole('link', { name: `${label}. Open service status for VIN ${source.vin}` });
+    const support = screen.getByRole('region', { name: 'Vehicle reference facts' });
+    const link = within(support).getByRole('link', { name: `${label}. Open service status for VIN ${source.vin}` });
     expect(link).toBeVisible();
     expect(link).toHaveAttribute('href', `/service?vin=${source.vin}`);
     expect(link).toHaveTextContent(label);
-    expect(link.closest('header')).toHaveClass('simple-move-heading');
-    const header = link.closest('header') as HTMLElement;
-    expect(header).toHaveTextContent('$51,800');
-    expect(header).toHaveTextContent('12,450 mi');
-    expect(header).toHaveTextContent('Synthetic 3.5L engine');
-    expect(header).toHaveTextContent('4WD');
-    expect(header).toHaveTextContent('Synthetic blue');
-    expect(within(header).getByRole('button', { name: 'Copy stock number: ' + source.stockNumber })).toBeVisible();
-    expect(within(header).getByRole('button', { name: 'Copy VIN: ' + source.vin })).toBeVisible();
+    expect(support).toHaveTextContent('$51,800');
+    expect(support).toHaveTextContent('12,450 mi');
+    expect(support).toHaveTextContent('Synthetic 3.5L engine');
+    expect(support).toHaveTextContent('4WD');
+    expect(support).toHaveTextContent('Synthetic blue');
+    expect(within(support).getByRole('button', { name: 'Copy stock number: ' + source.stockNumber })).toBeVisible();
+    expect(within(support).getByRole('button', { name: 'Copy VIN: ' + source.vin })).toBeVisible();
     expect(screen.getByRole('region', { name: 'Vehicle location and time away' })).toHaveTextContent('Ford Detroit');
     expect(screen.getByRole('button', { name: 'Confirm back home' })).toBeVisible();
     expect(onAction).not.toHaveBeenCalled();

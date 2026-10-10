@@ -1,9 +1,62 @@
-import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type Ref } from "react";
 import { ActionsIcon } from "./icons";
 import "./components.css";
 
+export interface FlowPageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
+  title: ReactNode;
+  titleId?: string;
+  titleLabel?: string;
+  titleRef?: Ref<HTMLHeadingElement>;
+  titleTabIndex?: number;
+  description?: ReactNode;
+  icon?: ReactNode;
+  actions?: ReactNode;
+  facts?: ReactNode;
+}
+
+export function FlowPageHeader({ title, titleId, titleLabel, titleRef, titleTabIndex, description, icon, actions, facts, children, className = "", ...props }: FlowPageHeaderProps) {
+  return <header {...props} className={`ifx-page-header ${className}`.trim()}>
+    <div className="ifx-page-header__row">
+      {icon ? <span className="ifx-page-header__icon" aria-hidden="true">{icon}</span> : null}
+      <div className="ifx-page-header__identity">
+        <h1 id={titleId} aria-label={titleLabel} ref={titleRef} tabIndex={titleTabIndex} className="ifx-page-header__title">{title}</h1>
+        {description ? <div className="ifx-page-header__description">{description}</div> : null}
+      </div>
+      {actions ? <div className="ifx-page-header__actions">{actions}</div> : null}
+    </div>
+    {children ? <div className="ifx-page-header__controls">{children}</div> : null}
+    {facts ? <div className="ifx-page-header__facts">{facts}</div> : null}
+  </header>;
+}
+
+export interface FlowLedgerHeadingProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
+  title: ReactNode;
+  titleId?: string;
+  titleRef?: Ref<HTMLHeadingElement>;
+  titleTabIndex?: number;
+  level?: 2 | 3;
+  actions?: ReactNode;
+  description?: ReactNode;
+  variant?: "accent" | "plain";
+}
+
+export function FlowLedgerHeading({ title, titleId, titleRef, titleTabIndex, level = 2, actions, description, variant = "plain", className = "", ...props }: FlowLedgerHeadingProps) {
+  const Heading = level === 3 ? "h3" : "h2";
+  return <header {...props} className={`ifx-ledger-heading ifx-ledger-heading--${variant} ${className}`.trim()}>
+    <div className="ifx-ledger-heading__row">
+      <div className="ifx-ledger-heading__label"><Heading id={titleId} ref={titleRef} tabIndex={titleTabIndex} className="ifx-ledger-heading__title">{title}</Heading></div>
+      {actions ? <div className="ifx-ledger-heading__actions">{actions}</div> : null}
+    </div>
+    {description ? <div className="ifx-ledger-heading__description">{description}</div> : null}
+  </header>;
+}
+
 type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
 type ButtonSize = "sm" | "md" | "lg";
+
+export function flowButtonClassName({ variant = "secondary", size = "md", className = "" }: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}) {
+  return `ifx-button ifx-button--${variant} ifx-button--${size} ${className}`.trim();
+}
 
 export interface FlowButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -37,7 +90,7 @@ export const FlowButton = forwardRef<HTMLButtonElement, FlowButtonProps>(functio
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={`ifx-button ifx-button--${variant} ifx-button--${size} ${className}`.trim()}
+      className={flowButtonClassName({ variant, size, className })}
     >
       <span className="ifx-button__edge" aria-hidden="true" />
       {loading ? <span className="ifx-button__spinner" aria-hidden="true" /> : iconBefore}

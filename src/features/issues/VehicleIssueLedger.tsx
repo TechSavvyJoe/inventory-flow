@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Camera, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
+import { Camera, ClipboardList, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { toInventoryVehicle } from '../../app/adapters'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
@@ -9,10 +9,11 @@ import { searchFieldsMatch } from '../../lib/search'
 import { serviceStatusLabel } from '../../lib/service-readiness'
 import { confirmUnsavedWork } from '../../lib/useUnsavedChanges'
 import { useWorkspaceState } from '../../lib/workspace-memory'
-import type { BootstrapData, StoreName, UserRole, VehicleIssueCategory } from '../../types'
+import { FlowLedgerHeading, flowButtonClassName } from '../../design-system'
+import type { BootstrapData, StoreName, UserRole, VehicleIssueAction, VehicleIssueCategory } from '../../types'
 import { IssueDialog } from './IssueDialog'
 import { IssueReportForm } from './IssueReportDialog'
-import { canReportVehicleIssue, ISSUE_CATEGORIES, ISSUE_STATUSES } from './issue-model'
+import { canReportVehicleIssue, ISSUE_CATEGORIES, ISSUE_STATUSES, issueNextAction } from './issue-model'
 import './VehicleIssueLedger.css'
 
 type IssueView = 'open' | 'review' | 'completed' | 'all'
@@ -53,9 +54,8 @@ export function VehicleIssueLedger({ data, homeStore, role, currentUser, allStor
   const pickerMatches = reportable.filter(vehicle => searchFieldsMatch(vehicleQuery, [vehicle.vehicleName, vehicle.vin, vehicle.stockNumber, vehicle.homeStore]))
 
   return <section className="issue-ledger" aria-label="Vehicle issue log">
-    <header className="issue-ledger__heading"><div><h2>Vehicle issues</h2><p>Assign work, track updates and photos, then confirm completion.</p></div>
-      {reportable.length ? <button data-issue-opener className="issue-ledger__primary" type="button" onClick={event => { opener.current = event.currentTarget; setReportVin(null); setVehicleQuery(''); setReporting(true); setNotice('') }}><Plus aria-hidden="true" />Report issue</button> : null}
-    </header>
+    <FlowLedgerHeading className="issue-ledger__heading" title={<><ClipboardList size={20} aria-hidden="true" />Ledger</>} description="Assign work, track updates and photos, then confirm completion."
+      actions={reportable.length ? <button data-issue-opener className={flowButtonClassName({ variant: "primary", className: "issue-ledger__primary" })} type="button" onClick={event => { opener.current = event.currentTarget; setReportVin(null); setVehicleQuery(''); setReporting(true); setNotice('') }}><Plus aria-hidden="true" />Report issue</button> : undefined} />
     {data.vehicleIssuesEnabled !== true ? <p className="issue-ledger__notice" role="status">Issue history is available. Reporting and updates are not enabled in this deployment.</p> : null}
     {notice ? <p className="issue-ledger__notice" role="status">{notice}</p> : null}
     <div className="issue-ledger__toolbar">
@@ -68,19 +68,20 @@ export function VehicleIssueLedger({ data, homeStore, role, currentUser, allStor
       const vehicle = vehicles.get(issue.vin)
       const location = vehicle?.movement?.locationConfidence === 'verified' ? `Confirmed at ${vehicle.movement.currentLocation}` : vehicle?.sourceReportedLocation ? `Reported at ${vehicle.sourceReportedLocation}` : null
       const value = vehicle ? [vehicle.listedPrice != null ? formatCurrency(vehicle.listedPrice) : null, vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : null, serviceStatusLabel(vehicle.serviceReadiness)].filter(Boolean).join(' · ') : null
-      const canReview = data.vehicleIssuesEnabled === true && issue.status === 'awaiting_review' && issue.allowedActions.includes('complete')
-      const canManage = data.vehicleIssuesEnabled === true && issue.allowedActions.length > 0
+      const nextAction = data.vehicleIssuesEnabled === true ? issueNextAction(issue) : null
+      const actionLabels: Partial<Record<VehicleIssueAction, string>> = { assign: 'Assign issue', start_work: 'Start work', add_note: 'Add update', request_completion: 'Send for review', complete: 'Review work', reopen: 'Reopen issue' }
+      const actionLabel = nextAction ? actionLabels[nextAction] : 'View issue'
       return <article className="issue-ledger__row" role="listitem" key={issue.id}>
         <div className="issue-ledger__vehicle"><VehicleThumbnail vehicle={vehicle} className="issue-ledger__photo"/><div><strong>{vehicle?.vehicleName ?? issue.vehicleName}</strong>{value ? <p>{value}</p> : null}<p>Stock {issue.stockNumber} · {issue.vin}</p><p>{vehicle ? location ?? 'Location not confirmed' : 'Not in current inventory'}</p></div></div>
         <div className="issue-ledger__issue"><div className="issue-ledger__labels"><strong>{ISSUE_CATEGORIES[issue.category]}</strong>{issue.priority === 'urgent' ? <span className="issue-ledger__urgent">Urgent</span> : null}</div><p className="issue-ledger__description">{issue.description}</p>{issue.photoCount ? <span className="issue-ledger__evidence"><Camera aria-hidden="true"/>{issue.photoCount} {issue.photoCount === 1 ? 'photo' : 'photos'} attached</span> : null}<small>Reported by {issue.reportedBy} · {issue.reportStore}</small></div>
         <div className="issue-ledger__progress"><span className="vehicle-issue-state" data-status={issue.status}>{ISSUE_STATUSES[issue.status]}</span><strong>{issue.assignee ?? 'Unassigned'}</strong><small>{issue.status === 'completed' ? `Confirmed by ${issue.completedBy ?? 'manager'}` : 'Updated'} · {formatDateTime(issue.completedAt ?? issue.updatedAt)}</small></div>
-        <div className="issue-ledger__actions"><Link data-issue-opener className="issue-ledger__primary" to={`?issue=${encodeURIComponent(issue.id)}${canReview ? '&action=complete' : ''}`} aria-label={`${canReview ? 'Review work' : canManage ? 'Manage issue' : 'View issue'}: ${ISSUE_CATEGORIES[issue.category]} · ${issue.stockNumber}`}>{canReview ? 'Review work' : canManage ? 'Manage issue' : 'View issue'}<ChevronRight aria-hidden="true"/></Link>{vehicle ? <Link data-inventory-vehicle-trigger={issue.vin} to={vehicleWorkspacePath(issue.vin, { tab: 'issues', returnTo })}>Vehicle details</Link> : null}</div>
+        <div className="issue-ledger__actions"><Link data-issue-opener className={flowButtonClassName({ variant: "primary", className: "issue-ledger__primary" })} to={`?issue=${encodeURIComponent(issue.id)}${nextAction ? `&action=${nextAction}` : ''}`} aria-label={`${actionLabel}: ${ISSUE_CATEGORIES[issue.category]} · ${issue.stockNumber}`}>{actionLabel}<ChevronRight aria-hidden="true"/></Link>{vehicle ? <Link data-inventory-vehicle-trigger={issue.vin} to={vehicleWorkspacePath(issue.vin, { tab: 'issues', returnTo })}>Vehicle details</Link> : null}</div>
       </article>
     })}</div>
     {!filtered.length ? <div className="issue-ledger__empty"><h3>{query || category !== 'all' ? 'No issues match these filters' : view === 'completed' ? 'No completed issues yet' : view === 'review' ? 'No issues awaiting manager review' : view === 'all' ? 'No vehicle issues reported yet' : 'No open vehicle issues'}</h3><p>{query || category !== 'all' ? 'Try another vehicle, employee or category.' : 'Reports stay attached to the vehicle, with photos, updates and completion history.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { setQuery(''); setCategory('all') }}>Clear issue filters</button> : null}</div> : null}
     <footer className="issue-ledger__footer"><span role="status">{filtered.length ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, filtered.length)} of ${filtered.length}` : '0'} {filtered.length === 1 ? 'issue' : 'issues'} · {allStores ? 'All reporting stores' : homeStore}</span>{filtered.length > PAGE_SIZE ? <div><button type="button" aria-label="Previous issue page" disabled={page === 0} onClick={() => setPaging({ key: pageKey, page: page - 1 })}><ChevronLeft aria-hidden="true"/></button><button type="button" aria-label="Next issue page" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPaging({ key: pageKey, page: page + 1 })}><ChevronRight aria-hidden="true"/></button></div> : null}</footer>
     {reporting ? <IssueDialog title="Report a vehicle issue" returnFocusRef={opener} onClose={() => setReporting(false)}>
-      {reportVehicle ? <><button className="issue-ledger__back" type="button" onClick={() => { if (confirmUnsavedWork()) setReportVin(null) }}><ChevronLeft aria-hidden="true"/>Choose another vehicle</button><IssueReportForm key={reportVehicle.vin} vehicle={toInventoryVehicle(reportVehicle, data)} context={context} onSaved={issue => { setReporting(false); setNotice(`Issue reported for stock ${issue.stockNumber}.`); const next = new URLSearchParams(params); next.set('issue', issue.id); setParams(next); void onChanged() }} /></> : <div className="issue-ledger__picker"><label>Find the vehicle<input type="search" autoFocus value={vehicleQuery} onChange={event => setVehicleQuery(event.target.value)} placeholder="Search stock, VIN or vehicle" /></label><p>{pickerMatches.length} {pickerMatches.length === 1 ? 'vehicle' : 'vehicles'} · Choose a vehicle to attach the report.</p><ul>{pickerMatches.slice(0, 25).map(vehicle => <li key={vehicle.vin}><button type="button" onClick={() => setReportVin(vehicle.vin)}><VehicleThumbnail vehicle={vehicle} className="issue-ledger__photo"/><span><strong>{vehicle.vehicleName}</strong><small>Stock {vehicle.stockNumber} · {vehicle.homeStore}</small></span><ChevronRight aria-hidden="true"/></button></li>)}</ul>{pickerMatches.length > 25 ? <p>Search to narrow the first 25 results.</p> : null}{!pickerMatches.length ? <p>No reportable vehicles match. Try another stock number or VIN.</p> : null}</div>}
+      {reportVehicle ? <><button className="issue-ledger__back" type="button" onClick={() => { if (confirmUnsavedWork()) setReportVin(null) }}><ChevronLeft aria-hidden="true"/>Choose another vehicle</button><IssueReportForm key={reportVehicle.vin} vehicle={toInventoryVehicle(reportVehicle, data)} context={context} onSaved={issue => { setReporting(false); setNotice(`Issue reported for stock ${issue.stockNumber}.`); const next = new URLSearchParams(params); next.set('issue', issue.id); setParams(next); void onChanged().catch(() => undefined) }} /></> : <div className="issue-ledger__picker"><label>Find the vehicle<input type="search" autoFocus value={vehicleQuery} onChange={event => setVehicleQuery(event.target.value)} placeholder="Search stock, VIN or vehicle" /></label><p>{pickerMatches.length} {pickerMatches.length === 1 ? 'vehicle' : 'vehicles'} · Choose a vehicle to attach the report.</p><ul>{pickerMatches.slice(0, 25).map(vehicle => <li key={vehicle.vin}><button type="button" onClick={() => setReportVin(vehicle.vin)}><VehicleThumbnail vehicle={vehicle} className="issue-ledger__photo"/><span><strong>{vehicle.vehicleName}</strong><small>Stock {vehicle.stockNumber} · {vehicle.homeStore}</small></span><ChevronRight aria-hidden="true"/></button></li>)}</ul>{pickerMatches.length > 25 ? <p>Search to narrow the first 25 results.</p> : null}{!pickerMatches.length ? <p>No reportable vehicles match. Try another stock number or VIN.</p> : null}</div>}
     </IssueDialog> : null}
   </section>
 }

@@ -1,3 +1,4 @@
+import { validateOperationalEvidence, validateServiceHistoryEvidence } from '../../server/provider-evidence.mjs'
 import { canonicalExternalAutoCheckUrl, resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
 import {
   containsForeignOasisText,
@@ -453,7 +454,7 @@ function validateFordOasis(value, vin) {
   return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 1, warrantyCheck: 0 }
 }
 
-function validateWarrantyCheckCoverages(value, label, termTextMax, allowUnlimitedMonths, requireFactoryGrammar = false) {
+function validateWarrantyCheckCoverages(value, label, termTextMax, allowUnlimitedMonths, requireFactoryGrammar = false, allowMissingEstimateText = false) {
   const coverages = value ?? []
   ensure(Array.isArray(coverages) && coverages.length > 0 && coverages.length <= 12, `${label} coverages must be a non-empty bounded array`)
   const allowed = new Set([
@@ -462,20 +463,22 @@ function validateWarrantyCheckCoverages(value, label, termTextMax, allowUnlimite
   ])
   if (allowUnlimitedMonths) allowed.add('unlimitedMonths')
   const types = new Set()
-  for (const coverage of coverages) {
+  return coverages.map(coverage => {
     onlyKeys(coverage, allowed, `${label} coverage`)
     const type = optionalText(coverage.type, `${label} coverage type`, 60)
     ensure(type, `${label} coverage type is required`)
     ensure(!types.has(type.toLowerCase()), `${label} coverages contain a duplicate type`)
     types.add(type.toLowerCase())
-    const termText = optionalText(coverage.termText, `${label} coverage termText`, termTextMax)
+    const termText = optionalText(coverage.termText, `${label} coverage termText`, termTextMax) ?? (allowMissingEstimateText ? 'Unknown' : undefined)
     ensure(termText, `${label} coverage termText is required`)
     if (requireFactoryGrammar) {
       ensure(isFactoryCoverageRow(type, termText), `${label} coverage is not a recognized factory coverage term`)
       ensure(factoryTermText(termText) === termText, `${label} coverage term is not canonical factory text`)
     }
-    ensure(optionalText(coverage.remainingMilesText, `${label} coverage remainingMilesText`, 40), `${label} coverage remainingMilesText is required`)
-    ensure(optionalText(coverage.remainingTimeText, `${label} coverage remainingTimeText`, 40), `${label} coverage remainingTimeText is required`)
+    const remainingMilesText = optionalText(coverage.remainingMilesText, `${label} coverage remainingMilesText`, 40) ?? (allowMissingEstimateText ? 'Unknown' : undefined)
+    const remainingTimeText = optionalText(coverage.remainingTimeText, `${label} coverage remainingTimeText`, 40) ?? (allowMissingEstimateText ? 'Unknown' : undefined)
+    ensure(remainingMilesText, `${label} coverage remainingMilesText is required`)
+    ensure(remainingTimeText, `${label} coverage remainingTimeText is required`)
     ensure(WARRANTY_CHECK_COVERAGE_STATUSES.has(coverage.status), `${label} coverage status is invalid`)
     optionalInteger(coverage.termMonths, `${label} coverage termMonths`, 0, 600)
     optionalInteger(coverage.termMiles, `${label} coverage termMiles`, 0, 999_999)
@@ -484,16 +487,17 @@ function validateWarrantyCheckCoverages(value, label, termTextMax, allowUnlimite
     optionalBoolean(coverage.unlimitedMiles, `${label} coverage unlimitedMiles`)
     if (allowUnlimitedMonths) optionalBoolean(coverage.unlimitedMonths, `${label} coverage unlimitedMonths`)
     optionalText(coverage.note, `${label} coverage note`, 160)
-  }
+    return { ...coverage, type, termText, remainingMilesText, remainingTimeText }
+  })
 }
 
 // Per-VIN warranty coverage check. The Ford OASIS block (Ford/Lincoln only) is
-// authoritative; the AutoCheck block carries Experian estimates figured from the
+// authoritative; AutoCheck and CARFAX blocks carry estimates figured from the
 // mileage entered. Dates and term text are validated as bounded printed text,
 // never re-parsed. The allow-list mirrors validatedWarrantyCheck() in
 // server/importer.mjs; no owner or customer field exists and none is accepted.
 function validateWarrantyCheck(value, vin) {
-  onlyKeys(value, new Set(['dataState', 'capturedAt', 'sourceLabel', 'mileageEntered', 'mileageSource', 'autoCheck', 'fordOasis']), 'warranty check record')
+  onlyKeys(value, new Set(['dataState', 'capturedAt', 'sourceLabel', 'mileageEntered', 'mileageSource', 'autoCheck', 'carfax', 'fordOasis']), 'warranty check record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'warranty check data state is invalid')
   ensure(optionalTimestamp(value.capturedAt, 'warranty check capturedAt'), 'warranty check capturedAt is required')
   const sourceLabel = optionalText(value.sourceLabel, 'warranty check sourceLabel', 160)
@@ -502,14 +506,23 @@ function validateWarrantyCheck(value, vin) {
   ensure(optionalInteger(value.mileageEntered, 'warranty check mileageEntered', 0, 999_999) !== undefined, 'warranty check mileageEntered is required')
   optionalText(value.mileageSource, 'warranty check mileageSource', 80)
   const hasAutoCheck = value.autoCheck !== undefined && value.autoCheck !== null
+  const hasCarfax = value.carfax !== undefined && value.carfax !== null
+  let normalizedWarrantyCheck
   const hasFordOasis = value.fordOasis !== undefined && value.fordOasis !== null
-  ensure(hasAutoCheck || hasFordOasis, 'warranty check record needs at least one of autoCheck or fordOasis')
+  ensure(hasAutoCheck || hasCarfax || hasFordOasis, 'warranty check record needs at least one warranty source')
   if (hasAutoCheck) {
     onlyKeys(value.autoCheck, new Set(['inServiceDate', 'inServiceAgeMonths', 'defaultMileage', 'coverages']), 'warranty check AutoCheck block')
     optionalText(value.autoCheck.inServiceDate, 'warranty check AutoCheck inServiceDate', 40)
     optionalInteger(value.autoCheck.inServiceAgeMonths, 'warranty check AutoCheck inServiceAgeMonths', 0, 600)
     optionalInteger(value.autoCheck.defaultMileage, 'warranty check AutoCheck defaultMileage', 0, 999_999)
     validateWarrantyCheckCoverages(value.autoCheck.coverages, 'warranty check AutoCheck', 80, true)
+  }
+  if (hasCarfax) {
+    onlyKeys(value.carfax, new Set(['inServiceDate', 'inServiceAgeMonths', 'defaultMileage', 'coverages']), 'warranty check CARFAX block')
+    optionalText(value.carfax.inServiceDate, 'warranty check CARFAX inServiceDate', 40)
+    optionalInteger(value.carfax.inServiceAgeMonths, 'warranty check CARFAX inServiceAgeMonths', 0, 600)
+    optionalInteger(value.carfax.defaultMileage, 'warranty check CARFAX defaultMileage', 0, 999_999)
+    normalizedWarrantyCheck = { ...value, carfax: { ...value.carfax, coverages: validateWarrantyCheckCoverages(value.carfax.coverages, 'warranty check CARFAX', 80, true, false, true) } }
   }
   if (hasFordOasis) {
     onlyKeys(value.fordOasis, new Set(['warrantyStartDate', 'monthsInService', 'coverages']), 'warranty check Ford OASIS block')
@@ -519,7 +532,7 @@ function validateWarrantyCheck(value, vin) {
     ensure(optionalInteger(value.fordOasis.monthsInService, 'warranty check Ford OASIS monthsInService', 0, 600) !== undefined, 'warranty check Ford OASIS monthsInService is required')
     validateWarrantyCheckCoverages(value.fordOasis.coverages, 'warranty check Ford OASIS', 120, false, true)
   }
-  return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 0, warrantyCheck: 1 }
+  return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 0, warrantyCheck: 1, ...(normalizedWarrantyCheck ? { normalizedWarrantyCheck } : {}) }
 }
 
 function validateFordInvoice(value, vin) {
@@ -539,9 +552,10 @@ function validateResourceRecord(value, vin, {
   degradeOptionalResources = false,
   onResourceRejected = () => {},
 } = {}) {
-  onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordInvoice', 'fordOasis', 'warrantyCheck']), 'resource record')
+  onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordInvoice', 'fordOasis', 'warrantyCheck', 'operationalEvidence', 'serviceHistory']), 'resource record')
   ensure(value.vin === vin && normalizedVin(value.vin) === vin, 'resource record VIN does not match its normalized vehicle')
-  let counts = { factoryEquipment: 0, externalAutoCheck: 0, fordInvoice: 0, fordOasis: 0, warrantyCheck: 0 }
+  let counts = { factoryEquipment: 0, externalAutoCheck: 0, fordInvoice: 0, fordOasis: 0, warrantyCheck: 0, operationalEvidence: 0, serviceHistory: 0 }
+  const normalized = {}
   const rejected = []
   if (value.factoryEquipment !== undefined && value.factoryEquipment !== null) {
     const next = validateFactoryEquipment(value.factoryEquipment, vin)
@@ -570,6 +584,7 @@ function validateResourceRecord(value, vin, {
     try {
       const next = validateWarrantyCheck(value.warrantyCheck, vin)
       counts = { ...counts, warrantyCheck: counts.warrantyCheck + next.warrantyCheck }
+      if (next.normalizedWarrantyCheck) normalized.warrantyCheck = next.normalizedWarrantyCheck
     } catch (error) {
       if (!degradeOptionalResources) throw error
       const rejection = { vin, channel: 'warrantyCheck', reason: resourceRejectionReason(error) }
@@ -577,9 +592,21 @@ function validateResourceRecord(value, vin, {
       onResourceRejected(rejection)
     }
   }
-  const usable = counts.factoryEquipment + counts.externalAutoCheck + counts.fordInvoice + counts.fordOasis + counts.warrantyCheck > 0
+  for (const [channel, validator, rows] of [['operationalEvidence', validateOperationalEvidence, 'records'], ['serviceHistory', validateServiceHistoryEvidence, 'reports']]) {
+    if (value[channel] == null) continue
+    try {
+      normalized[channel] = validator(value[channel], vin)
+      counts[channel] = normalized[channel][rows].length > 0 ? 1 : 0
+    } catch (error) {
+      if (!degradeOptionalResources) throw error
+      const rejection = { vin, channel, reason: resourceRejectionReason(error) }
+      rejected.push(rejection)
+      onResourceRejected(rejection)
+    }
+  }
+  const usable = counts.factoryEquipment + counts.externalAutoCheck + counts.fordInvoice + counts.fordOasis + counts.warrantyCheck > 0 || Object.keys(normalized).length > 0
   ensure(usable || (degradeOptionalResources && rejected.length > 0), 'resource record contains no usable resource')
-  return { counts, rejected, usable }
+  return { counts, rejected, usable, normalized }
 }
 
 function validateResourceRun(run, resourceRows, reportDate) {
@@ -597,7 +624,7 @@ function validateResourceRun(run, resourceRows, reportDate) {
   const metadata = run.metadata
   onlyKeys(metadata, new Set([
     'status', 'generatedAt', 'recordCount', 'factoryEquipmentCount', 'externalAutoCheckCount', 'fordInvoiceCount', 'fordOasisCount',
-    'warrantyCheckCount', 'path', 'sha256', 'bytes', 'matchedVehicleCount', 'unmatchedRecordCount',
+    'warrantyCheckCount', 'operationalEvidenceCount', 'serviceHistoryCount', 'path', 'sha256', 'bytes', 'matchedVehicleCount', 'unmatchedRecordCount',
   ]), 'resources source metadata')
   ensure(metadata.status === 'matched', 'resources source metadata is not matched')
   if (metadata.generatedAt !== null && metadata.generatedAt !== undefined) optionalTimestamp(metadata.generatedAt, 'resources source generatedAt')
@@ -624,6 +651,11 @@ function validateResourceRun(run, resourceRows, reportDate) {
   const attachedOasis = resourceRows.reduce((total, row) => total + row.counts.fordOasis, 0)
   const attachedWarranty = resourceRows.reduce((total, row) => total + row.counts.warrantyCheck, 0)
   ensure(attachedFactory <= factoryCount && attachedAutoCheck <= autoCheckCount && attachedInvoice <= invoiceCount && attachedOasis <= oasisCount && attachedWarranty <= warrantyCount, 'attached resource type counts exceed validated source evidence')
+  for (const channel of ['operationalEvidence', 'serviceHistory']) {
+    const count = metadata[`${channel}Count`] === undefined ? 0 : strictInteger(metadata[`${channel}Count`], `${channel} source count`, 1)
+    ensure(count <= recordCount, `${channel} source count exceeds the source record count`)
+    ensure(resourceRows.reduce((total, row) => total + row.counts[channel], 0) <= count, `${channel} attached count exceeds validated source evidence`)
+  }
   ensure(HASH.test(String(run.provenanceSha256)), 'resources source provenance checksum is invalid')
   ensure(
     String(run.provenanceSha256).toLowerCase() === resourceProvenanceSha256(run, resourceRows),
@@ -997,7 +1029,7 @@ function validateDealerMail(snapshot, run, manifest, reportDate) {
 /**
  * Validate a full decrypted bundle; return independently derived non-sensitive
  * totals. Strict is the default. The Worker opts into per-channel degradation
- * only for fordOasis/warrantyCheck so a newly tightened optional validator can
+ * for optional evidence channels so a newly tightened optional validator can
  * never make an otherwise valid stored release unreadable during deploy order.
  */
 export function validateReleaseBundle(bundle, {
@@ -1042,6 +1074,8 @@ export function validateReleaseBundle(bundle, {
   }
   ensure(sameSet(seen, expectedVins), 'normalized inventory omits source VINs')
   validateResourceRun(release.sourceRuns?.resources, resourceRows, bundle.reportDate)
+  // Normalize safe channels only after checking the original published provenance.
+  for (const row of resourceRows) Object.assign(row.record.resourceRecord, row.normalized)
   if (degradeOptionalResources) {
     const warnings = Array.isArray(release.warnings) ? release.warnings : []
     for (const row of resourceRows) {
@@ -1074,6 +1108,11 @@ export function validateReleaseBundle(bundle, {
       : {}),
     fordOasisRecordCount: resourceRows.reduce((total, row) => total + row.counts.fordOasis, 0),
     warrantyCheckRecordCount: resourceRows.reduce((total, row) => total + row.counts.warrantyCheck, 0),
+    ...(['operationalEvidence', 'serviceHistory'].reduce((result, channel) => {
+      const count = resourceRows.reduce((total, row) => total + row.counts[channel], 0)
+      if (count > 0) result[`${channel}Count`] = count
+      return result
+    }, {})),
     managerDispositionRecordCount: managerDisposition.recordCount,
     managerSoldRecordCount: managerDisposition.soldRecordCount,
     managerDeliveredRecordCount: managerDisposition.deliveredRecordCount,

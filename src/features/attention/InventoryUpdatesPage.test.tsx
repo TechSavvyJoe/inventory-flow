@@ -153,6 +153,18 @@ describe('Inventory updates workspace', () => {
     expect(within(results).getAllByRole('listitem')).toHaveLength(1)
   })
 
+  it('clears an active other-update type and search together to restore results', () => {
+    show('/updates?view=other&source=companion')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Other update type' }), { target: { value: 'store_transfer' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'no match' } })
+    expect(screen.getByText('No updates match your search')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear update filters' }))
+    expect(screen.getByRole('combobox', { name: 'Other update type' })).toHaveValue('all')
+    expect(screen.getByRole('textbox', { name: 'Search inventory updates' })).toHaveValue('')
+    expect(within(screen.getByRole('list', { name: 'Other updates results' })).getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/updates?view=other&source=companion')
+  })
+
   it('falls back to honest group totals when vehicle detail does not reconcile', () => {
     const data = fixture(); data.meta.publicChangeCounts.newArrival += 1; mocked.context.data = data
     show()

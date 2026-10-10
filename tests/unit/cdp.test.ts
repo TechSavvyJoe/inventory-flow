@@ -1,9 +1,18 @@
 // @ts-nocheck -- CDP helper is plain ESM.
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { PTS_REPAIR_ORDER_DETAILS_URL, READ_ONLY_POST_URLS, connect, fetchInTab } from '../../scripts/lib/cdp.mjs'
+import { PTS_REPAIR_ORDER_DETAILS_URL, READ_ONLY_POST_URLS, closeDuplicateTabs, connect, fetchInTab } from '../../scripts/lib/cdp.mjs'
 
 describe('CDP request timeout boundary', () => {
+  it('treats browser target lookup failure as best-effort duplicate cleanup', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic browser unavailable')))
+    try {
+      await expect(closeDuplicateTabs('https://source.example.invalid', { pathIncludes: '/workflow' })).resolves.toBe(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('lets the in-page fetch timeout before the outer CDP command timeout', async () => {
     const page = { evalJs: vi.fn().mockResolvedValue({ status: 0, error: 'AbortError' }) }
     await fetchInTab(page, 'https://example.invalid/read-only', { timeoutMs: 45_000 })

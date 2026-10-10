@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertCircle, ArrowRight, CarFront, FileText, RotateCw } from 'lucide-react'
+import { AlertCircle, ArrowLeftRight, ArrowRight, CarFront, FileText, Heart, MapPin, PauseCircle, RotateCw, Tag, UsersRound, Wrench } from 'lucide-react'
 import { toInventoryVehicle } from '../../app/adapters'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
+import { VehicleQuickFacts } from '../../components/VehicleQuickFacts'
+import { FlowButton, FlowLedgerHeading, flowButtonClassName } from '../../design-system'
 import { formatNumber } from '../../lib/format'
 import { vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
 import { serviceWorkflowStatus } from '../../lib/service-readiness'
 import type { BootstrapData, StoreName, TransferRecord, UserRole, VehicleIssue, VehicleRecord } from '../../types'
 import type { InventoryVehicle } from '../inventory/types'
 import { formatMoney, publicListingLabel, resolveCurrentLocation, vehicleDisplayName } from '../inventory/inventory-utils'
+import { hasProviderHold, providerHoldLabel } from '../inventory/provider-evidence-utils'
 import { standoutEquipment } from '../inventory/vehicle-feature-utils'
 import { useSyncedCustomerLists } from '../inventory/useSyncedCustomerLists'
 import { TakeHomeSheet } from '../inventory/TakeHomeSheet'
@@ -80,9 +83,6 @@ function scopedMetricHref(kind: 'on-lot' | 'holds' | 'service' | 'moves', stores
   return kind === 'on-lot' ? '/inventory?scope=group' : allStoreHoldsHref()
 }
 
-function joinedFact(values: Array<string | null | undefined>) {
-  return values.filter((value): value is string => Boolean(value?.trim())).join(' / ') || 'Not published'
-}
 
 function SalesVehicleRow({ vehicle, normalized, reasons = [] }: {
   vehicle: VehicleRecord
@@ -91,7 +91,6 @@ function SalesVehicleRow({ vehicle, normalized, reasons = [] }: {
 }) {
   const name = vehicleDisplayName(normalized)
   const standouts = standoutEquipment(normalized, 2).map(item => item.label)
-  const economy = [normalized.fuelType, Number.isFinite(normalized.mpgCity) && normalized.mpgCity != null && normalized.mpgCity > 0 ? `${normalized.mpgCity} city` : null, Number.isFinite(normalized.mpgHighway) && normalized.mpgHighway != null && normalized.mpgHighway > 0 ? `${normalized.mpgHighway} highway` : null]
   const location = resolveCurrentLocation(normalized).label
 
   return <li className="sales-overview__vehicle-row">
@@ -103,27 +102,25 @@ function SalesVehicleRow({ vehicle, normalized, reasons = [] }: {
           <span>Stock {vehicle.stockNumber}</span>
           <span className="sales-overview__vin">VIN {vehicle.vin}</span>
         </div>
-        <div className="sales-overview__price-mileage">
+        <div className="sales-overview__value-actions"><div className="sales-overview__price-mileage">
           <strong>{formatMoney(normalized.price)}</strong>
           <span>{normalized.mileage == null ? 'Mileage not published' : `${formatNumber(normalized.mileage)} mi`}</span>
         </div>
-        <Link className="sales-overview__open" to={vehicleWorkspacePath(vehicle.vin, { returnTo: '/overview' })} aria-label={`Open vehicle: ${name}`}>Open vehicle</Link>
+        <Link className={flowButtonClassName({variant:'primary',className:'sales-overview__open'})} to={vehicleWorkspacePath(vehicle.vin, { returnTo: '/overview' })} aria-label={`Open vehicle: ${name}`}><CarFront aria-hidden="true" />Open vehicle</Link></div>
       </div>
 
-      <dl className="sales-overview__specs">
-        <div><dt>Powertrain</dt><dd>{joinedFact([normalized.engine, normalized.drivetrain])}</dd></div>
-        <div><dt>Colors</dt><dd>{joinedFact([normalized.exteriorColor, normalized.interiorColor])}</dd></div>
-        <div><dt>Transmission / fuel / MPG</dt><dd>{joinedFact([normalized.transmission, ...economy])}</dd></div>
-        <div><dt>Standout equipment</dt><dd>{standouts.length ? standouts.join(' / ') : 'None captured'}</dd></div>
-      </dl>
+
 
       <dl className="sales-overview__operational-facts">
-        <div><dt>Listing</dt><dd>{publicListingLabel(normalized)}</dd></div>
-        <div><dt>Hold</dt><dd>{vehicle.hold.label}</dd></div>
-        <div><dt>Location</dt><dd>{location}</dd></div>
-        <div><dt>Service</dt><dd>{serviceLabel(vehicle)}</dd></div>
+        <div><dt><Tag aria-hidden="true" />Listing</dt><dd>{publicListingLabel(normalized)}</dd></div>
+        <div><dt><PauseCircle aria-hidden="true" />Hold</dt><dd>{vehicle.hold.label}</dd></div>
+        {(vehicle.inventoryDecision?.evidence ?? vehicle.operationalEvidence?.records ?? []).filter(record => record.provider !== 'legacy-dealermail').map(record => <div key={record.provider}><dt>{record.sourceLabel}</dt><dd>{providerHoldLabel(record)}{record.holdState === 'held' && (record.dataState !== 'current' || !record.complete) ? record.dataState === 'stale_unverified' ? ' · Retained hold observation' : ' · Unverified hold observation' : ''}</dd></div>)}
+        {vehicle.manualHold?.state === 'active' || vehicle.manualHold?.state === 'requested' ? <div><dt>Inventory Flow hold</dt><dd>{vehicle.manualHold.state === 'active' ? 'Approved hold' : 'Pending approval · not a confirmed hold'}</dd></div> : null}
+        <div><dt><MapPin aria-hidden="true" />Location</dt><dd>{location}</dd></div>
+        <div><dt><Wrench aria-hidden="true" />Service</dt><dd>{serviceLabel(vehicle)}</dd></div>
         {reasons.length ? <div><dt>Why shown</dt><dd>{reasons.join(', ')}</dd></div> : null}
       </dl>
+      <div className="sales-overview__specs"><VehicleQuickFacts vehicle={normalized} standouts={standouts} /></div>
     </div>
   </li>
 }
@@ -164,9 +161,13 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
     service: scopeOverview.reduce((sum, entry) => sum + entry.waitingForService, 0),
   } : null
   const fallbackHolds = data.stores.filter(entry => storeSet.has(entry.store)).reduce((sum, entry) => sum + entry.currentHolds, 0)
+  // Match the provider-only holds drilldown; location and CRM affiliation do not own a hold.
+  const providerOnlyHolds = data.vehicles.filter(vehicle => storeSet.has(vehicle.homeStore) &&
+    hasProviderHold(inventoryByVin.get(vehicle.vin)!) &&
+    !(data.overview?.vehicleFacts[vehicle.vin]?.holdActive || ['primary', 'backup', 'multiple'].includes(vehicle.hold.state))).length
   const metrics = [
     { label: stores.length === 1 ? 'On lot' : 'Browse group inventory', value: stores.length === 1 ? overviewCounts?.onLot ?? null : data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet)).length, href: scopedMetricHref('on-lot', stores) },
-    { label: 'Hold signals', value: overviewCounts?.holds ?? fallbackHolds, href: scopedMetricHref('holds', stores) },
+    { label: 'Hold signals', value: (overviewCounts?.holds ?? fallbackHolds) + providerOnlyHolds, href: scopedMetricHref('holds', stores) },
     { label: 'Waiting for service', value: overviewCounts?.service ?? data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet) && serviceWorkflowStatus(vehicle.serviceReadiness) === 'needs_service').length, href: scopedMetricHref('service', stores) },
     { label: 'Active moves', value: activeMoves.length, href: scopedMetricHref('moves', stores) },
   ]
@@ -185,18 +186,16 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
 
   return <div className="sales-overview">
     <section className="sales-overview__metrics" aria-label="Current store facts">
-      {metrics.map(metric => <Link key={metric.label} to={metric.href} className="sales-overview__metric" aria-label={`${metric.label}: ${metric.value ?? 'not provided'}`}>
-        <span>{metric.label === 'Waiting for service' ? 'Service wait' : metric.label === 'Hold signals' ? 'Holds' : metric.label === 'Active moves' ? 'Moves' : metric.label === 'Browse group inventory' ? 'Inventory' : metric.label}</span><strong>{metric.value ?? '—'}</strong><ArrowRight aria-hidden="true" />
-      </Link>)}
+      {metrics.map((metric,index) => { const MetricIcon=[CarFront,UsersRound,Wrench,ArrowLeftRight][index]!; return <Link key={metric.label} to={metric.href} className="sales-overview__metric" aria-label={`${metric.label}: ${metric.value ?? 'not provided'}`}>
+        <MetricIcon aria-hidden="true" /><strong>{metric.value ?? '—'}</strong><span>{metric.label === 'Waiting for service' ? 'Service wait' : metric.label === 'Hold signals' ? 'Holds' : metric.label === 'Active moves' ? 'Moves' : metric.label === 'Browse group inventory' ? 'Inventory' : metric.label}</span>
+      </Link>})}
     </section>
 
     <div className={`sales-overview__workspace${visibleSavedVehicles.length ? '' : ' sales-overview__workspace--no-saved'}`}>
       <div className="sales-overview__vehicle-column">
         <section className="sales-overview__panel sales-overview__saved" aria-labelledby="sales-saved-heading">
-          <header className="sales-overview__section-head">
-            <div><h2 id="sales-saved-heading">Customer saved lists</h2><p>Keep customer choices together. Open a vehicle for holds, history and equipment.</p></div>
-            {management?.loading ? <span role="status">Checking for updates…</span> : null}
-          </header>
+          <FlowLedgerHeading variant="plain" className="sales-overview__section-head" titleId="sales-saved-heading" title={<><Heart aria-hidden="true" />Customer saved lists</>}
+            actions={management?.loading ? <span role="status">Checking for updates…</span> : null} />
           {data.savedListsEnabled !== true ? <p className="sales-overview__state">Saved lists are not enabled for this service.</p>
             : !currentUserId ? <p className="sales-overview__state">Sign in with an employee identity to view customer saved lists.</p>
             : management?.accessRevoked ? <p className="sales-overview__state sales-overview__state--alert" role="alert">Your saved-list access changed. Reload or sign in again.</p>
@@ -205,11 +204,11 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
                 <div className="sales-overview__list-tabs" aria-label="Choose a customer saved list">
                   {management.lists.map(list => <button key={list.id} type="button" aria-pressed={management.activeListId === list.id} onClick={() => management.selectList(list.id)}>{list.label}<span>{list.count}</span></button>)}
                 </div>
-                {canOpenSheet && !printing ? <button ref={sheetButtonRef} className="sales-overview__sheet" type="button" onClick={() => {
+                {canOpenSheet && !printing ? <FlowButton ref={sheetButtonRef} className="sales-overview__sheet" variant="secondary" iconBefore={<FileText aria-hidden="true" />} onClick={() => {
                   if (management.activeListId) setSheetSnapshot({ context: accessContext, listId: management.activeListId, label: management.activeLabel, vehicles: visibleSavedVehicles.map(vehicle => inventoryByVin.get(vehicle.vin)!) })
-                }}><FileText size={16} aria-hidden="true" />Customer sheet</button> : null}
+                }}>Customer sheet</FlowButton> : null}
               </div> : !management?.loading && !management?.error ? <p className="sales-overview__state">No customer saved lists yet. Save vehicles from Inventory when you are working with a customer.</p> : null}
-              {management?.error ? <div className="sales-overview__error" role="alert"><span>{management.error}</span><button type="button" onClick={management.retry}><RotateCw aria-hidden="true" />Retry</button></div> : null}
+              {management?.error ? <div className="sales-overview__error" role="alert"><span>{management.error}</span><FlowButton variant="secondary" onClick={management.retry}><RotateCw aria-hidden="true" />Retry</FlowButton></div> : null}
               {unavailableSavedCount > 0 ? <p className="sales-overview__saved-note">{unavailableSavedCount} saved {unavailableSavedCount === 1 ? 'vehicle has' : 'vehicles have'} no current authorized details. {unavailableSavedCount === 1 ? 'It stays' : 'They stay'} in your list and {unavailableSavedCount === 1 ? 'is' : 'are'} excluded from customer sheets.</p> : null}
               {visibleSavedVehicles.length ? <ul className="sales-overview__vehicle-list">
                 {visibleSavedVehicles.map(vehicle => <SalesVehicleRow key={vehicle.vin} vehicle={vehicle} normalized={inventoryByVin.get(vehicle.vin)!} />)}
@@ -218,7 +217,8 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
         </section>
 
         {relevantVehicles.length || !visibleSavedVehicles.length ? <section className="sales-overview__panel sales-overview__other" aria-labelledby="sales-relevant-heading">
-          <header className="sales-overview__section-head"><div><h2 id="sales-relevant-heading">Other vehicles in scope</h2><p>Vehicles with hold, service, issue, move or location signals appear first. Saved-list vehicles are excluded from this section.</p></div></header>
+          <FlowLedgerHeading variant="plain" className="sales-overview__section-head" titleId="sales-relevant-heading" title={<><CarFront aria-hidden="true" />Other vehicles in scope</>}
+            description="Vehicles needing attention appear first." />
           {relevantVehicles.length ? <ul className="sales-overview__vehicle-list">
             {relevantVehicles.map(({ vehicle, reasons }) => <SalesVehicleRow key={vehicle.vin} vehicle={vehicle} normalized={inventoryByVin.get(vehicle.vin)!} reasons={reasons} />)}
           </ul> : <p className="sales-overview__state">{visibleSavedVehicles.length ? 'The vehicles in this scope are already in the selected list.' : 'No vehicles are in this store scope.'}</p>}
@@ -227,18 +227,20 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
 
       <aside className="sales-overview__sidebar" aria-label="Sales workspace actions">
         <section className="sales-overview__panel sales-overview__browse-panel" aria-labelledby="sales-browse-heading">
-          <div><h2 id="sales-browse-heading">Browse other stock</h2><p>Search current authorized inventory across the group.</p></div>
-          <Link className="sales-overview__browse" to="/inventory?scope=group">Browse inventory<ArrowRight aria-hidden="true" /></Link>
+          <FlowLedgerHeading variant="plain" titleId="sales-browse-heading" title={<><CarFront aria-hidden="true" />Browse other stock</>} description="Search current authorized inventory across the group." />
+          <Link className={flowButtonClassName({className:'sales-overview__browse'})} to="/inventory?scope=group">Browse inventory<ArrowRight aria-hidden="true" /></Link>
         </section>
 
         {currentUserId ? <section className="sales-overview__panel" aria-labelledby="sales-issues-heading">
-          <header className="sales-overview__section-head"><div><h2 id="sales-issues-heading">My reported issues</h2><p>Open issues reported with your employee identity.</p></div><strong>{myIssues.length}</strong></header>
-          {myIssues.length ? <ul className="sales-overview__plain-list">{myIssues.slice(0, printing ? undefined : 4).map(issue => <li key={issue.id}><div><strong>{issue.vehicleName}</strong><span>Stock {issue.stockNumber}</span><span>{issueLabel(issue)}</span></div><Link to={`/attention?category=issues&issue=${encodeURIComponent(issue.id)}&scope=group`}>Review</Link></li>)}</ul> : <p className="sales-overview__state">No open issues reported by you.</p>}
+          <FlowLedgerHeading variant="plain" className="sales-overview__section-head" titleId="sales-issues-heading" title={<><AlertCircle aria-hidden="true" />My reported issues</>}
+            description="Open issues reported with your employee identity." actions={<strong>{myIssues.length}</strong>} />
+          {myIssues.length ? <ul className="sales-overview__plain-list">{myIssues.slice(0, printing ? undefined : 4).map(issue => <li key={issue.id}><div><strong>{issue.vehicleName}</strong><span>Stock {issue.stockNumber}</span><span>{issueLabel(issue)}</span></div><Link className={flowButtonClassName()} to={`/attention?category=issues&issue=${encodeURIComponent(issue.id)}&scope=group`}>Review</Link></li>)}</ul> : <p className="sales-overview__state">No open issues reported by you.</p>}
         </section> : null}
 
         <section className="sales-overview__panel" aria-labelledby="sales-moves-heading">
-          <header className="sales-overview__section-head"><div><h2 id="sales-moves-heading">Store moves</h2><p>Read-only moves touching this store scope.</p></div><Link to={scopedMetricHref('moves', stores)}>View all</Link></header>
-          {activeMoves.length ? <ul className="sales-overview__plain-list">{activeMoves.slice(0, printing ? undefined : 3).map(move => <li key={move.id}><div><strong>{move.vehicleName}</strong><span>Stock {move.stockNumber}</span><span>Location {move.currentLocation}</span><span>Next: {move.nextAction}</span></div><Link to={withWorkspaceReturnPath(`/transfers?id=${encodeURIComponent(move.id)}`, '/overview')}>Open move</Link></li>)}</ul> : <p className="sales-overview__state"><CarFront aria-hidden="true" />No active moves in this store scope.</p>}
+          <FlowLedgerHeading variant="plain" className="sales-overview__section-head" titleId="sales-moves-heading" title={<><ArrowLeftRight aria-hidden="true" />Store moves</>}
+            description="Read-only moves touching this store scope." actions={<Link to={scopedMetricHref('moves', stores)}>View all</Link>} />
+          {activeMoves.length ? <ul className="sales-overview__plain-list">{activeMoves.slice(0, printing ? undefined : 3).map(move => <li key={move.id}><div><strong>{move.vehicleName}</strong><span>Stock {move.stockNumber}</span><span>Location {move.currentLocation}</span><span>Next: {move.nextAction}</span></div><Link className={flowButtonClassName()} to={withWorkspaceReturnPath(`/transfers?id=${encodeURIComponent(move.id)}`, '/overview')}>Open move</Link></li>)}</ul> : <p className="sales-overview__state"><CarFront aria-hidden="true" />No active moves in this store scope.</p>}
         </section>
       </aside>
     </div>

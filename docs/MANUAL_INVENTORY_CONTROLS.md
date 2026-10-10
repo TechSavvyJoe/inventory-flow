@@ -8,10 +8,15 @@ These records work without DealerMail and sit beside imported evidence.
 
 ## Employee workflow
 
-In a vehicle's **Holds & moves** section, use **Place manual hold**. Enter
+In a vehicle's **Holds & moves** section, salespeople use **Request hold**. Enter
 customer initials/a nickname or an operational reason, optional expected
-delivery date, and notes. Salespeople can manage their own active holds at
-the vehicle's home store. A home-store manager or group manager can manage
+delivery date, and notes. New salesperson submissions remain **Hold requested**
+until a home-store or group manager approves. A request is not an active hold.
+The requester can update or cancel their pending request; managers can approve
+or reject it, retaining the requesting employee as owner. Rejection and
+cancellation require a reason. Managers may place an approved hold directly.
+Salespeople can update and release their own approved holds at the vehicle's
+home store, including holds recorded before this approval workflow. A home-store manager or group manager can manage
 any hold in their permitted scope. Other stores and transport roles cannot
 write holds. A release requires a reason; it does not release an imported CRM
 hold. Expected delivery dates are planning details, not automatic expiration.
@@ -22,9 +27,10 @@ explanation. Delivered/Wholesale require a date; correcting either back to
 Keep requires a note. Disposition permission and existing source-evidence
 privacy rules are preserved. Notes do not belong in customer take-home sheets.
 
-Inventory rows show manual holds, decisions and conflicting records on both
+Inventory rows show approved holds, pending requests, decisions and conflicting records on both
 desktop and phone. Held includes manual holds; No hold excludes active manual
-holds and keeps app dispositions independent. The **Inventory decision** filter
+holds and keeps app dispositions independent. Pending requests do not count
+as held; independent imported hold evidence still does. The **Inventory decision** filter
 drills into a specific disposition or conflicting records. These filters are not an
 availability promise. All continues to retain the vehicle and independent
 listing, source hold, service, movement and location evidence.
@@ -57,7 +63,26 @@ Migration `0015_manual_inventory_controls.sql` preserves existing disposition
 events while adding Other, then creates the separate manual-hold ledger and
 append-only triggers. An older hosted database remains readable; manual writes
 return `MIGRATION_REQUIRED`, and Other is not offered when its storage is absent.
-The isolated Node demo creates/upgrades only its own database.
+The isolated Node demo creates only its own database.
+
+Migration `0017_manual_hold_approval.sql` rebuilds only the app-owned hold
+ledger to add requested/rejected/cancelled states. It copies every existing
+event unchanged and restores the version/idempotency unique constraints, VIN
+index, and append-only guards. Existing active holds remain approved. The
+Node and Worker read projections expose `approvalEnabled: false` on the old
+schema; all manual writes return `MIGRATION_REQUIRED`. Deployment readiness
+requires the approval schema as well as the original hold table. Other
+disposition storage remains governed by migration 0015.
+
+Before a separately authorized release: back up D1, apply and record migration
+0017 through the documented migration-ledger procedure, verify row counts and
+legacy event preservation, then release the paired Worker and app. Verify
+sales cannot activate their own request, home-store/group-manager decisions
+retain requester ownership, stale approvals return a conflict, and transport
+views remain redacted. An older Worker can create direct salesperson holds,
+so do not roll back to it while this approval policy is in force; preserve all
+new events and disable employee writes while preparing a compatible rollback.
+No production migration or deployment was performed for this approval change.
 
 Production needs a separately named authorization, D1 backup/rollback point,
 reviewed migration/ledger validation, Worker release and live identity/store
@@ -76,3 +101,10 @@ preserving their vehicles. A same-named list is reused to avoid another
 confusing duplicate. **Manage → Save name** remains available later. The web
 and companion retain original payload/key on an interrupted save and clear
 private drafts on account/access changes. Customer contacts stay in the CRM.
+
+## Optional provider evidence
+
+[Provider-neutral evidence](PROVIDER_NEUTRAL_EVIDENCE.md) adds independent
+CRM/DMS observations without making DealerMail a prerequisite for the app-owned
+controls. Imported holds, source dispositions, service history and warranty
+estimates remain read-only. Source observations never mutate staff decisions.

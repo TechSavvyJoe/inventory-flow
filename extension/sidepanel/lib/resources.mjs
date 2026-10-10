@@ -145,7 +145,7 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
     ...coverageFacts(warranty?.autoCheck, true),
   ])
   if (history || warranty?.autoCheck) result.push({
-    id: 'autocheck', title: 'AutoCheck', brand: 'autocheck', facts: historyFacts,
+    id: 'autocheck', title: history ? 'AutoCheck' : 'AutoCheck warranty estimate', brand: 'autocheck', facts: historyFacts,
     compactFacts: present([
       ...checks.filter((check) => check.priority <= 1).map((check) => check.compact),
       join([numeric(history?.score) ? `Score ${formatNumber(history.score)}` : null, ownership]),
@@ -157,6 +157,20 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
     ]),
     url: history?.url ?? null, sourceKind: history?.url ? 'Original source' : 'Saved data', target: 'records', hasCapturedData: historyFacts.length > 0,
   })
+
+  const carfax = warranty?.carfax
+  if (carfax) {
+    const carfaxFacts = present([
+      clean(carfax.inServiceDate) ? `In service (estimate) ${formatDate(carfax.inServiceDate, now)}` : null,
+      numeric(carfax.inServiceAgeMonths) ? `${formatNumber(carfax.inServiceAgeMonths)} months in service (estimate)` : null,
+      numeric(carfax.defaultMileage) ? `${formatNumber(carfax.defaultMileage)} mi default mileage` : null,
+      ...coverageFacts(carfax, true),
+    ])
+    result.push({ id: 'carfax', title: 'CARFAX warranty estimate', brand: 'carfax', facts: carfaxFacts, compactFacts: present(carfaxFacts, 2),
+      sourceNote: join(['Estimate only; supplied CARFAX values', sourceNote(warranty, true, { date: warranty.capturedAt, dateLabel: 'Warranty captured', now }), numeric(warranty.mileageEntered) ? `At ${formatNumber(warranty.mileageEntered)} mi entered` : null]),
+      url: null, sourceKind: 'Saved data', target: 'records', hasCapturedData: carfaxFacts.length > 0,
+    })
+  }
 
   const factory = docs.factoryEquipment
   const packages = present(entries(factory?.packages).map((pkg) => join([pkg.name, pkg.code])))
