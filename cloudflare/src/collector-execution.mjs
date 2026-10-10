@@ -137,14 +137,17 @@ export async function claimCollector(env,claims,input,key,now=new Date()) {
 
 function leaseProjection(attempt,row) {const config=JSON.parse(attempt.config_json);return {attemptId:attempt.id,requestId:attempt.request_id,fence:attempt.fence,leaseUntil:attempt.lease_until,hardDeadline:attempt.hard_deadline,configSha256:attempt.config_sha256,scopeSha256:attempt.scope_sha256,grantGeneration:attempt.grant_generation,...profileIdentity(row),groupId:attempt.group_id,dealerships:config.dealerships,connectionIds:config.connectionIds,credentialRef:config.connections.find(c=>c.id===config.targetConnectionId).credentialRef,baselineBundleSha256:config.baselineBundleSha256,reportDate:attempt.report_date}}
 
-export async function currentAttempt(env,claims,id,fence,now=new Date(),{publicationReplay=false,allowPublishing=false}={}) {
+export async function currentAttempt(env,claims,id,fence,now=new Date(),{publicationReplay=false,allowRejectedPublicationReplay=false,allowPublishing=false}={}) {
  text(id);integer(fence,1);const row=await collectorIdentity(env,claims),db=env.PLATFORM_DB
  const attempt=await db.prepare('SELECT a.*,p.state AS request_state FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id WHERE a.id=? AND a.collector_id=? AND a.group_id=?').bind(id,row.id,row.group_id).first()
  if(!attempt || attempt.fence!==fence || attempt.grant_generation!==row.generation)collectorFail('COLLECTOR_LEASE_STALE',409)
  const scope=await collectorScope(env,row,{active:true})
  const config={...profileIdentity(row),...scope,targetConnectionId:JSON.parse(attempt.config_json).targetConnectionId,grantGeneration:row.generation,baselineBundleSha256:JSON.parse(attempt.config_json).baselineBundleSha256}
  if(await digest(config)!==attempt.config_sha256)collectorFail('COLLECTOR_LEASE_STALE',409)
- const replay=publicationReplay && ['completed','reconciliation_required','publishing'].includes(attempt.stage)
+ // A terminal validation failure is readable only through publication proof
+ // replay. This option grants no capture, heartbeat or failure-write authority.
+ const replay=publicationReplay && (['completed','reconciliation_required','publishing'].includes(attempt.stage) ||
+  (allowRejectedPublicationReplay && attempt.stage==='failed' && attempt.failure_code==='VALIDATION_FAILED' && attempt.request_state==='failed'))
  if(!replay && (!(allowPublishing?['claimed','captured','publishing']:['claimed','captured']).includes(attempt.stage) || attempt.request_state!=='running' || Date.parse(attempt.lease_until)<=now.getTime() || Date.parse(attempt.hard_deadline)<=now.getTime()))collectorFail('COLLECTOR_LEASE_STALE',409)
  return {attempt,row,scope}
 }

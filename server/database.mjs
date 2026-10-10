@@ -429,6 +429,12 @@ export function migrate(database) {
   if (!dispositionSchema?.includes("'other'")) {
     withTransaction(database, () => database.exec(readFileSync(new URL('../cloudflare/migrations/0015_manual_inventory_controls.sql', import.meta.url), 'utf8')))
   }
+  // CREATE TABLE IF NOT EXISTS cannot extend the legacy active/released CHECK.
+  // Use the reviewed approval rebuild atomically so identities, immutable
+  // history and constraints survive startup, or the original table is restored.
+  if (!manualHoldApprovalsEnabled(database)) {
+    withTransaction(database, () => database.exec(readFileSync(new URL('../cloudflare/migrations/0017_manual_hold_approval.sql', import.meta.url), 'utf8')))
+  }
 }
 
 function setState(database, key, value, updatedAt) {

@@ -180,6 +180,21 @@ describe('collector host contract', () => {
     }
   })
 
+  it('accepts only a complete exact rejection proof bound to the original attempt, fence, candidate and publication key', async () => {
+    const { profile } = fixture()
+    const publication = { attemptId: 'attempt-1', fence: 1, configSha256: 'b'.repeat(64), idempotencyKey: 'idempotency-key', envelope: { bundleSha256: 'a'.repeat(64), reportDate: '2026-10-09', ciphertext: 'synthetic' } }
+    const proof = { status: 'rejected_verified', attemptId: publication.attemptId, fence: publication.fence, idempotencyKey: publication.idempotencyKey, bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate, code: 'VALIDATION_FAILED', ready: false, verifiedAt: new Date().toISOString() }
+    const reply = body => async () => Response.json(body)
+    await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, { fetchImpl: reply(proof) })).resolves.toEqual(proof)
+    for (const patch of [{ ready: true }, { code: 'OTHER_FAILURE' }, { fence: 2 }, { idempotencyKey: 'foreign-key' }, { attemptId: 'foreign-attempt' }, { bundleSha256: 'b'.repeat(64) }, { reportDate: '2026-10-08' }, { verifiedAt: 'invalid-date' }, { privateEvidence: 'SYNTHETIC_PRIVATE_VALUE' }]) {
+      await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, { fetchImpl: reply({ ...proof, ...patch }) })).rejects.toThrow(/PUBLICATION_RESPONSE_(INVALID|MISMATCH)/)
+    }
+    for (const key of Object.keys(proof)) {
+      const partial = { ...proof }; delete partial[key]
+      await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, { fetchImpl: reply(partial) })).rejects.toThrow(/PUBLICATION_RESPONSE_(INVALID|MISMATCH)/)
+    }
+  })
+
   it('rejects an oversized publication wrapper before making any POST', async () => {
     const { profile } = fixture()
     const maxBytes = 25 * 1024 * 1024

@@ -238,7 +238,7 @@ async function postCaptureReceipt(profile, credentials, claim, stage, fetchImpl,
   return collectorRequest(profile, credentials, '/api/collector/receipts', { body: payload, fetchImpl, signal })
 }
 
-async function postFailureReceipt(profile, credentials, claim, code, fetchImpl, sequence = 1) {
+async function postFailureReceipt(profile, credentials, claim, code, fetchImpl, sequence = 1, acknowledgementRequired = false) {
   const payload = validateReceiptPayload({
     attemptId: claim.attemptId,
     fence: claim.fence,
@@ -246,7 +246,11 @@ async function postFailureReceipt(profile, credentials, claim, code, fetchImpl, 
     kind: 'failure',
     code: receiptFailureCode(code),
   })
-  return collectorRequest(profile, credentials, '/api/collector/receipts', { body: payload, fetchImpl }).catch(() => null)
+  const request = collectorRequest(profile, credentials, '/api/collector/receipts', { body: payload, fetchImpl })
+  if (!acknowledgementRequired) return request.catch(() => null)
+  const response = await request
+  if (response.body?.saved !== true) throw new Error('COLLECTOR_RESPONSE_INVALID')
+  return response
 }
 
 function ensureCandidateState(profile, claim, stage, envelope) {
@@ -370,6 +374,10 @@ async function runClaimedAttempt(profile, credentials, claim, {
       }) }
       catch { throw new Error('PUBLICATION_OUTCOME_UNKNOWN', { cause: firstError }) }
     }
+    if (result.status === 'rejected_verified') {
+      cleanupVerifiedAttempt(artifacts)
+      return { status: 'failed', attemptId: claim.attemptId, code: result.code }
+    }
     if (result.status === 'reconciliation_required') {
       saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true })
       return { status: 'reconciliation_required', attemptId: claim.attemptId, bundleSha256: savedEnvelope.bundleSha256 }
@@ -436,6 +444,11 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
   const { artifacts, candidate, envelope } = pending
   let state = pending.state
   let retryableNoPublicationProof = state.preflightRetryable === true || state.revisionRetryable === true
+  // A later local rejection cannot settle a publication whose earlier reply
+  // was lost. Snapshot that durable uncertainty before marking this request.
+  const priorPublicationUnknown = !retryableNoPublicationProof &&
+    (state.publicationPending === true || state.reconciliationRequired === true)
+  let publicationRequestStarted = false
   if (state.attemptId !== path.basename(artifacts.statePath, '.state.json') ||
       state.profileSha256 !== profile.profileSha256 || !Number.isSafeInteger(state.fence) || state.fence < 1 ||
       !/^[a-f0-9]{64}$/.test(state.configSha256 ?? '') || !/^[A-Za-z0-9_-]{20,80}$/.test(state.publicationIdempotencyKey ?? '') ||
@@ -459,7 +472,12 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
       configSha256: state.configSha256,
       envelope,
       idempotencyKey: state.publicationIdempotencyKey,
-    }, { fetchImpl })
+    }, { fetchImpl, signal, onRequestStarted: () => { publicationRequestStarted = true } })
+    if (result.status === 'rejected_verified') {
+      cleanupVerifiedAttempt(artifacts)
+      clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256))
+      return { status: 'failed', attemptId: state.attemptId, code: result.code }
+    }
     if (result.status === 'preflight_retryable' || result.status === 'revision_retryable') {
       state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false, preflightRetryable: result.status === 'preflight_retryable', revisionRetryable: result.status === 'revision_retryable' })
       return { status: result.status, attemptId: state.attemptId, bundleSha256: state.bundleSha256 }
@@ -488,7 +506,8 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
     cleanupVerifiedAttempt(artifacts)
     return { status: result.status, attemptId: state.attemptId, bundleSha256: state.bundleSha256, counts: result.counts }
   } catch (error) {
-    if (retryableNoPublicationProof && (isDefiniteStaleClaim(error) || isDefinitePreflightAuthorityFailure(error))) {
+    if (!priorPublicationUnknown && (isDefiniteStaleClaim(error) ||
+        (retryableNoPublicationProof && isDefinitePreflightAuthorityFailure(error)))) {
       try {
         cleanupVerifiedAttempt(artifacts)
         const claimKey = getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256)
@@ -499,11 +518,11 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
         return { status: 'reconciliation_required', attemptId: state.attemptId, code: 'RECONCILIATION_REQUIRED' }
       }
     }
-    if (isDefiniteStaleClaim(error) && state.publicationPending !== true && state.reconciliationRequired !== true) {
+    if (!priorPublicationUnknown && publicationRequestStarted && isDefinitePublicationRejection(error)) {
       try {
         cleanupVerifiedAttempt(artifacts)
         clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256))
-        return { status: 'retry_fresh_claim', attemptId: state.attemptId, code: 'COLLECTOR_LEASE_STALE' }
+        return { status: 'failed', attemptId: state.attemptId, code: safeCode(error) }
       } catch {
         return { status: 'reconciliation_required', attemptId: state.attemptId, code: 'RECONCILIATION_REQUIRED' }
       }
@@ -511,6 +530,20 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
     if (state.captureReceiptSent !== true) {
       try { saveAttemptState(artifacts.statePath, { ...state, captureReceiptPending: true, publicationPending: false, reconciliationRequired: false }) } catch {}
       return { status: 'capture_receipt_pending', attemptId: state.attemptId }
+    }
+    if (!priorPublicationUnknown && !publicationRequestStarted &&
+        !['RECONCILIATION_REQUIRED', 'PUBLICATION_OUTCOME_UNKNOWN'].includes(safeCode(error))) {
+      const code = safeCode(error)
+      try { await postFailureReceipt(profile, credentials, { attemptId: state.attemptId, fence: state.fence }, code, fetchImpl, 2, true) }
+      catch {
+        // No publication was dispatched, but a lost failure-receipt reply may
+        // leave the control-plane capture active. Preserve it for exact replay.
+        try { saveAttemptState(artifacts.statePath, { ...state, publicationPending: false, reconciliationRequired: false }) } catch {}
+        return { status: 'failure_receipt_pending', attemptId: state.attemptId, code }
+      }
+      try { cleanupVerifiedAttempt(artifacts) }
+      catch { return { status: 'reconciliation_required', attemptId: state.attemptId, code: 'RECONCILIATION_REQUIRED' } }
+      return { status: 'failed', attemptId: state.attemptId, code }
     }
     try { saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true }) } catch {}
     return { status: 'reconciliation_required', attemptId: state.attemptId, code: 'PUBLICATION_OUTCOME_UNKNOWN' }

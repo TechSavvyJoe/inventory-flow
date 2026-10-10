@@ -125,6 +125,134 @@ async function lifecycleFixture() {
 }
 
 describe('collector exact candidate local baseline lifecycle', () => {
+  const oversizedWrapper = pending => {
+    const envelope = { ...pending.envelope, ciphertext: '' }
+    envelope.ciphertext = 'x'.repeat(25 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(envelope)) - 20)
+    writeFileSync(pending.artifacts.envelopePath, JSON.stringify(envelope))
+  }
+
+  it.each(['http', 'platform-batch'])('settles a retained candidate from exact rejection readback after the committed %s failure reply was lost', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    const publish = vi.fn(async () => ({ status: 'rejected', code: 'VALIDATION_FAILED' }))
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    if (mode === 'platform-batch') {
+      const batch = f.remote.env.PLATFORM_DB.batch
+      f.remote.env.PLATFORM_DB.batch = async statements => {
+        const result = await batch(statements)
+        if (statements.some(s => s.sql.includes("1000001,'failure'"))) throw new TypeError('Synthetic committed rejection batch reply lost')
+        return result
+      }
+    }
+    const unknown = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (mode === 'http' && url.pathname === '/api/collector/publication') throw new TypeError('Synthetic committed rejection HTTP reply lost')
+      return response
+    } })
+    expect(unknown.status).toBe('reconciliation_required')
+    expect(findPendingPublication(f.root)).not.toBe(null)
+    expect(f.remote.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('failed')
+    const settled = await f.runOnce(f.options)
+    expect(settled).toMatchObject({ status: 'failed', code: 'VALIDATION_FAILED' })
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(f.captures()).toBe(1)
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+  })
+
+  it('settles a local oversized publication during dropped-capture recovery and allows a later pull', async () => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'capture') throw new TypeError('Synthetic capture receipt never dispatched')
+      return f.actualFetch(url, options)
+    } })).status).toBe('capture_receipt_pending')
+    oversizedWrapper(findPendingPublication(f.root))
+    expect(await f.runOnce(f.options)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE' })
+    expect(f.publications()).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(f.remote.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('failed')
+    expect(f.localHash()).toBe(baseline)
+    await f.queue()
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+  }, 30_000)
+
+  it('retires a definitive stale publication during dropped-capture recovery and completes a fresh claim', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let dropped = false
+    expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/receipts' && !dropped && JSON.parse(String(options.body)).kind === 'capture') {
+        dropped = true
+        throw new TypeError('Synthetic capture receipt reply lost')
+      }
+      return response
+    } })).status).toBe('capture_receipt_pending')
+    let expired = false
+    const recovered = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/receipts' && !expired && JSON.parse(String(options.body)).kind === 'capture') {
+        expired = true
+        vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
+      }
+      return response
+    } })
+    expect(recovered.status).toBe('published_verified')
+    expect(f.captures()).toBe(2)
+    expect(f.remote.sqlite.prepare('SELECT stage FROM platform_collector_attempts ORDER BY fence').all().map(a => a.stage)).toEqual(['expired', 'completed'])
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
+  it.each(['before-commit', 'after-commit'])('retains an undispatched oversized recovery until its failure receipt is acknowledged (%s)', async mode => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'capture') throw new TypeError('Synthetic capture receipt lost')
+      return f.actualFetch(url, options)
+    } })
+    oversizedWrapper(findPendingPublication(f.root))
+    const failed = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'failure') {
+        if (mode === 'after-commit') await f.actualFetch(url, options)
+        throw new TypeError('Synthetic failure receipt reply lost')
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(failed.status).toBe('failure_receipt_pending')
+    expect(findPendingPublication(f.root).state).toMatchObject({ publicationPending: false, reconciliationRequired: false, captureReceiptSent: true })
+    expect(await f.runOnce(f.options)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE' })
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(1)
+    expect(f.publications()).toBe(0)
+    await f.queue()
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+  }, 30_000)
+
+  it.each(['local-oversize', 'stale-response'])('preserves earlier publication uncertainty through a later %s recovery error', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/publication') throw new TypeError('Synthetic committed publication reply lost')
+      return response
+    } })).status).toBe('reconciliation_required')
+    const pending = findPendingPublication(f.root), originalEnvelope = readFileSync(pending.artifacts.envelopePath, 'utf8')
+    if (mode === 'local-oversize') oversizedWrapper(pending)
+    expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (mode === 'stale-response' && url.pathname === '/api/collector/publication') return Response.json({ code: 'COLLECTOR_LEASE_STALE' }, { status: 409 })
+      return f.actualFetch(url, options)
+    } })).status).toBe('reconciliation_required')
+    expect(findPendingPublication(f.root).state.attemptId).toBe(pending.state.attemptId)
+    expect(f.localHash()).toBe(baseline)
+    writeFileSync(pending.artifacts.envelopePath, originalEnvelope)
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+    expect(f.captures()).toBe(1)
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(1)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_started'").get().n).toBe(1)
+  }, 30_000)
+
   it('runs runOnce twice through the real collector API and signed encrypted tenant, advancing both baselines', async () => {
     const f = await lifecycleFixture()
     const originalHash = f.localHash()

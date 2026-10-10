@@ -50,15 +50,30 @@ async function verifiedReceipt(env,attempt,binding,now) {
  return safe
 }
 
+async function verifiedRejection(env,row,attempt,key) {
+ // Receipt + dispatch + settlement audit were persisted together with the
+ // failed request. A bare terminal stage or stale-lease response is no proof.
+ const db=env.PLATFORM_DB,receipt=await db.prepare("SELECT * FROM platform_collector_receipts WHERE attempt_id=? AND sequence=1000001 AND kind='failure'").bind(attempt.id).first()
+ if(!receipt || attempt.stage!=='failed' || attempt.failure_code!=='VALIDATION_FAILED' || attempt.request_state!=='failed')return null
+ let proof;try{proof=JSON.parse(receipt.sanitized_json)}catch{return null}
+ if(Object.keys(proof??{}).length!==3 || proof.kind!=='failure' || proof.code!=='VALIDATION_FAILED' || proof.at!==receipt.received_at || proof.at!==attempt.completed_at || !/^\d{4}-\d{2}-\d{2}T/.test(proof.at) || !Number.isFinite(Date.parse(proof.at)) || await digest(proof)!==receipt.payload_sha256)return null
+ const hash=await digest({attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,configSha256:attempt.config_sha256})
+ const dispatch=await db.prepare("SELECT request_hash FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND action='publication_started'").bind(`collector:${row.id}`,attempt.id,`publish:${key}`).first()
+ const rejection=await db.prepare("SELECT request_hash FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND action='publication_rejected'").bind(`collector:${row.id}`,attempt.id,`publication-rejected:${attempt.id}`).first()
+ if(dispatch?.request_hash!==hash || rejection?.request_hash!==receipt.payload_sha256)return null
+ return {status:'rejected_verified',attemptId:attempt.id,fence:attempt.fence,idempotencyKey:key,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,code:'VALIDATION_FAILED',ready:false,verifiedAt:proof.at}
+}
+
 export async function publishCollector(env,claims,input,key,now=new Date(),clock=null) {
  const started=Date.now(),currentTime=clock??(()=>new Date(now.getTime()+Date.now()-started))
  // Identity precedes body/candidate lookup. Target group is never caller input.
  const row=await collectorIdentity(env,claims)
  exactFields(input,['attemptId','fence','configSha256','envelope']);text(key);sha(input.configSha256)
  exactFields(input.envelope,['version','reportDate','bundleSha256','iv','ciphertext']);sha(input.envelope.bundleSha256)
- const {attempt,scope}=await currentAttempt(env,claims,input.attemptId,input.fence,now,{publicationReplay:true})
+ const {attempt,scope}=await currentAttempt(env,claims,input.attemptId,input.fence,now,{publicationReplay:true,allowRejectedPublicationReplay:true})
  if(input.configSha256!==attempt.config_sha256 || input.envelope.reportDate!==attempt.report_date)collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  if(attempt.expected_bundle_sha256 && attempt.expected_bundle_sha256!==input.envelope.bundleSha256)collectorFail('COLLECTOR_RECEIPT_CONFLICT',409)
+ if(attempt.stage==='failed')return await verifiedRejection(env,row,attempt,key)??{status:'reconciliation_required',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
  const binding=await bindingFor(env,attempt)
  if(['publishing','reconciliation_required','completed'].includes(attempt.stage)) {
   const verified=await verifiedReceipt(env,attempt,binding,now)
@@ -108,14 +123,20 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
    }
    return {status:revisionProof?'revision_retryable':'preflight_retryable',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
   }
-  if(dispatched?.status==='rejected' && dispatched.code==='VALIDATION_FAILED') {
-   const receipt={kind:'failure',code:'VALIDATION_FAILED',at:now.toISOString()},receiptHash=await digest(receipt)
-   await env.PLATFORM_DB.batch([
-    env.PLATFORM_DB.prepare("INSERT INTO platform_collector_receipts VALUES(?,1000001,'failure',?,?,?)").bind(attempt.id,receiptHash,canonical(receipt),now.toISOString()),
-    env.PLATFORM_DB.prepare("UPDATE platform_collector_attempts SET stage='failed',failure_code='VALIDATION_FAILED',completed_at=? WHERE id=? AND stage='publishing'").bind(now.toISOString(),attempt.id),
-    env.PLATFORM_DB.prepare("UPDATE platform_pull_requests SET state='failed',updated_at=? WHERE id=? AND state='running'").bind(now.toISOString(),attempt.request_id),
-    env.PLATFORM_DB.prepare('UPDATE platform_revision SET revision=revision+1 WHERE id=1'),
-    machineAudit(env.PLATFORM_DB,{id:attempt.collector_id,name:'Tenant candidate validator'},attempt,'publication_rejected',{stage:'failed',code:'VALIDATION_FAILED'},`publication-rejected:${attempt.id}`,receiptHash,now.toISOString()),
+  if(dispatched?.status==='rejected' && dispatched.code==='VALIDATION_FAILED' && Object.keys(dispatched).length===2) {
+   const db=env.PLATFORM_DB,date=currentTime().toISOString()
+   const receipt={kind:'failure',code:'VALIDATION_FAILED',at:date},receiptHash=await digest(receipt)
+   // This positive tenant result proves no publication committed. Settle the
+   // exact dispatched candidate even if an owner parked it during the RPC;
+   // collector authority and the owner's audit are never rewritten.
+   const match="a.id=? AND a.collector_id=? AND a.group_id=? AND a.request_id=? AND a.fence=? AND a.expected_bundle_sha256=? AND a.stage IN ('publishing','reconciliation_required')"
+   const args=[attempt.id,row.id,attempt.group_id,attempt.request_id,attempt.fence,attempt.expected_bundle_sha256]
+   await db.batch([
+    db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required')) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash),
+    db.prepare("INSERT INTO platform_collector_receipts VALUES(?,1000001,'failure',?,?,?)").bind(attempt.id,receiptHash,canonical(receipt),date),
+    db.prepare(`UPDATE platform_pull_requests SET state='failed',updated_at=? WHERE id=? AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(date,attempt.request_id,...args),
+    db.prepare("UPDATE platform_collector_attempts SET stage='failed',failure_code='VALIDATION_FAILED',completed_at=? WHERE id=? AND collector_id=? AND group_id=? AND request_id=? AND fence=? AND expected_bundle_sha256=? AND stage IN ('publishing','reconciliation_required')").bind(date,...args),
+    machineAudit(db,{id:attempt.collector_id,name:'Tenant candidate validator'},attempt,'publication_rejected',{stage:'failed',code:'VALIDATION_FAILED'},`publication-rejected:${attempt.id}`,receiptHash,date),
    ])
    collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
   }

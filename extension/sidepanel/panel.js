@@ -1570,7 +1570,7 @@ function recordsTab(vehicle) {
     ))) : el('p', { class: 'rec-empty', text: report.historyStatus === 'not_reported' ? 'No service events reported by this source.' : 'No service events supplied by this source.' })
     const provenance = el('details', { class: 'rec-source-details' }, el('summary', { text: 'Source details' }), note(fmt.joinFacts([report.sourceLabel, report.dataState, report.capturedAt ? `Captured ${fmt.formatDate(report.capturedAt)}` : null, report.vin])))
     const section = recordSection(providerName(report.provider), [timeline, provenance])
-    return expandable ? el('details', { class: 'rec-history-secondary' }, el('summary', { text: providerName(report.provider) }), section) : section
+    return expandable ? el('details', { class: 'rec-history-secondary' }, el('summary', {}, el('span', { text: providerName(report.provider) }), icon('chevron-down')), section) : section
   }
   const referencePrice = (value) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)
   const recordPrices = (rows, format) => {
@@ -1655,11 +1655,10 @@ function recordsTab(vehicle) {
   ))
   const timelineVisits = oasis?.serviceHistory?.repairOrderTimeline ?? []
   const legacyOrders = timelineVisits.length ? timelineVisits : oasis?.serviceHistory?.recentRepairOrders ?? []
-  const legacyOem = legacyOrders.length ? { provider: 'oem', sourceLabel: oasis.sourceLabel ?? 'Ford OASIS', capturedAt: oasis.serviceHistory.checkedAt, dataState: oasis.serviceHistory.dataState, historyStatus: 'reported', entries: legacyOrders.map((order) => ({ openDate: order.openDate, closeDate: order.closeDate, date: timelineVisits.length ? null : order.closeDate || order.openDate, odometer: order.odometer, odometerUnit: 'mi', services: order.services.length ? order.services : [order.inspection || order.summary || 'Service work recorded'] })) } : null
-  const oemReports = serviceReports.filter((report) => report.provider === 'oem' && report.historyStatus === 'reported' && report.entries.length)
-  const externalReports = ['carfax', 'autocheck'].flatMap((provider) => serviceReports.filter((report) => report.provider === provider && report.historyStatus === 'reported' && report.entries.length))
-  const primaryServiceReport = oemReports[0] ?? (legacyOem ? legacyOem : externalReports[0] ?? null)
-  const allServiceReports = legacyOem ? [...serviceReports.filter((report) => report.provider !== 'oem'), legacyOem] : serviceReports
+  const legacyOem = legacyOrders.length ? { provider: 'oem', sourceLabel: oasis.sourceLabel ?? 'Ford OASIS', capturedAt: oasis.serviceHistory.checkedAt, dataState: oasis.dataState === 'current' ? oasis.serviceHistory.dataState : oasis.dataState, historyStatus: 'reported', entries: legacyOrders.map((order) => ({ openDate: order.openDate, closeDate: order.closeDate, date: timelineVisits.length ? null : order.closeDate || order.openDate, odometer: order.odometer, odometerUnit: 'mi', services: order.services.length ? order.services : [order.inspection || order.summary || 'Service work recorded'] })) } : null
+  const allServiceReports = legacyOem ? [...serviceReports, legacyOem] : serviceReports
+  const serviceRank = (report) => (report.dataState === 'current' ? 0 : 3) + ({ oem: 0, carfax: 1, autocheck: 2 }[report.provider] ?? 2)
+  const primaryServiceReport = allServiceReports.filter((report) => report.historyStatus === 'reported' && report.entries.length).sort((a, b) => serviceRank(a) - serviceRank(b))[0] ?? null
   if (serviceReports.length || timelineVisits.length) {
     const primary = primaryServiceReport ? renderServiceReport(primaryServiceReport) : recordSection('Service history', [el('p', { class: 'rec-empty', text: 'Service history not supplied.' })])
     const secondary = allServiceReports.filter((report) => report !== primaryServiceReport).map((report) => renderServiceReport(report, { expandable: true }))

@@ -5,6 +5,7 @@ import { createSyntheticCollector, COLLECTOR_OWNER as owner, COLLECTOR_SYNTHETIC
 import { claimCollector, readCollectors, receiptCollector, saveCollector } from '../../cloudflare/src/collector-execution.mjs'
 import { publishCollector, publicationTicket, publishTenantCandidate, reconcileCollector } from '../../cloudflare/src/collector-publication.mjs'
 import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
+import { digest } from '../../cloudflare/src/collector-common.mjs'
 import { cloudBundleSha256, encryptBundle } from '../../scripts/publish-cloud-release.mjs'
 import { publishRelease } from '../../cloudflare/src/worker.mjs'
 import { MANAGER_DISPOSITION_AUTHORITY, MANAGER_DISPOSITION_INDEPENDENCE, MANAGER_DISPOSITION_SCHEMA, canonicalManagerDispositionJson, managerDispositionSha256, sanitizeManagerDispositionDocuments } from '../../server/manager-disposition-schema.mjs'
@@ -22,6 +23,103 @@ const setup=async(prepare=async()=>{})=>{
  return f
 }
 describe('Brokered publication and independent tenant receipt',()=>{
+ it('replays an exact persisted validation rejection without another tenant call after its first reply is lost',async()=>{
+  const f=await setup(),publish=vi.spyOn(f.env.TENANT_NORTH_PUBLISHER,'publish')
+  f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
+  await expect(publishCollector(f.env,f.machine,f.input,'rejection-readback',now)).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
+  const beforeRevision=revision(f)
+  expect(await publishCollector(f.env,f.machine,f.input,'rejection-readback',new Date(now.getTime()+180000))).toMatchObject({status:'rejected_verified',attemptId:f.attempt.attemptId,fence:f.attempt.fence,bundleSha256:f.envelope.bundleSha256,reportDate:f.envelope.reportDate,idempotencyKey:'rejection-readback',code:'VALIDATION_FAILED',ready:false})
+  expect(publish).toHaveBeenCalledTimes(1)
+  expect((await publishCollector(f.env,f.machine,f.input,'rejection-readback',now)).status).toBe('rejected_verified')
+  expect(revision(f)).toBe(beforeRevision)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_rejected'").get().n).toBe(1)
+ })
+ it.each(['key','bundle','fence','receipt-hash','revoked'])('does not turn mismatched %s into an exact rejection readback',async mode=>{
+  const f=await setup(),publish=vi.spyOn(f.env.TENANT_NORTH_PUBLISHER,'publish')
+  f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
+  await expect(publishCollector(f.env,f.machine,f.input,'rejection-bound',now)).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
+  if(mode==='bundle')f.input.envelope={...f.input.envelope,bundleSha256:'b'.repeat(64)}
+  if(mode==='fence')f.input.fence++
+  if(mode==='receipt-hash'){
+   const prepare=f.env.PLATFORM_DB.prepare
+   f.env.PLATFORM_DB.prepare=sql=>{
+    const statement=prepare(sql)
+    if(sql.includes('FROM platform_collector_receipts') && sql.includes('1000001')){
+     const bind=statement.bind
+     statement.bind=(...args)=>{const bound=bind.apply(statement,args),first=bound.first;bound.first=async()=>{const receipt=await first.call(bound);return receipt?{...receipt,payload_sha256:'b'.repeat(64)}:null};return bound}
+    }
+    return statement
+   }
+  }
+  if(mode==='revoked')await saveCollector(f.env,owner,'synthetic-north',{operation:'revoke',id:f.collectorId,reason:'Synthetic revoked before rejection readback',expectedRevision:revision(f)},'rejection-revoke',now)
+  let result
+  try{result=await publishCollector(f.env,f.machine,f.input,mode==='key'?'foreign-key':'rejection-bound',now)}catch(error){result={status:'refused',code:error.code}}
+  if(['key','receipt-hash'].includes(mode))expect(result.status).toBe('reconciliation_required')
+  else expect(result).toEqual({status:'refused',code:mode==='fence'?'COLLECTOR_LEASE_STALE':mode==='bundle'?'COLLECTOR_RECEIPT_CONFLICT':'COLLECTOR_REVOKED'})
+  expect(publish).toHaveBeenCalledTimes(1)
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('failed')
+ })
+ it.each(['cancel','revoke'])('settles an exact positive validation rejection after racing owner %s without restoring authority',async mode=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  const otherRequest=await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic separately queued request',expectedRevision:revision(f)},'other-request')
+  f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
+  let ownerAudit,collector
+  f.env.TENANT_NORTH_PUBLISHER.publish=async(...args)=>{
+   const rejected=await publish(...args)
+   expect(rejected).toEqual({status:'rejected',code:'VALIDATION_FAILED'})
+   if(mode==='cancel')await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'cancel',connectionId:f.dealers[0].connectionId,requestId:f.attempt.requestId,reason:'Synthetic cancel while validation replied',expectedRevision:revision(f)},'validation-cancel')
+   else await saveCollector(f.env,owner,'synthetic-north',{operation:'revoke',id:f.collectorId,reason:'Synthetic revoke while validation replied',expectedRevision:revision(f)},'validation-revoke',now)
+   ownerAudit=f.sqlite.prepare("SELECT * FROM platform_audit WHERE request_key=?").get(`validation-${mode}`)
+   collector=f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(f.collectorId)
+   return rejected
+  }
+  await expect(publishCollector(f.env,f.machine,f.input,'validation-race',now)).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
+  expect(f.sqlite.prepare('SELECT stage,failure_code FROM platform_collector_attempts').get()).toMatchObject({stage:'failed',failure_code:'VALIDATION_FAILED'})
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests WHERE id=?').get(f.attempt.requestId).state).toBe('failed')
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests WHERE id=?').get(otherRequest.id).state).toBe('queued')
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_rejected'").get().n).toBe(1)
+  expect(f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(f.collectorId)).toEqual(collector)
+  expect(f.sqlite.prepare('SELECT * FROM platform_audit WHERE request_key=?').get(`validation-${mode}`)).toEqual(ownerAudit)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(f.baseline.bundleSha256)
+  if(mode==='cancel'){
+   await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[0].connectionId,reason:'Synthetic next pull after rejection',expectedRevision:revision(f)},'after-rejection')
+   expect(await claimCollector(f.env,f.machine,{},'after-rejection-claim',now)).toMatchObject({fence:1})
+  }else await expect(claimCollector(f.env,f.machine,{},'revoked-next-claim',now)).rejects.toMatchObject({code:'COLLECTOR_REVOKED'})
+ })
+ it.each(['fence','bundle','foreign-dispatch'])('keeps validation rejection unknown when the saved %s no longer matches',async mode=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
+  if(mode==='foreign-dispatch'){
+   const hash=await digest({attemptId:f.attempt.attemptId,bundleSha256:f.envelope.bundleSha256,configSha256:f.attempt.configSha256})
+   f.sqlite.prepare("INSERT INTO platform_audit SELECT id||'-foreign',actor_id,actor_name,entity,'synthetic-foreign-attempt','publication_started',reason,previous_json,next_json,'publish:validation-fenced',?,created_at FROM platform_audit WHERE action='claimed' LIMIT 1").run(hash)
+  }
+  f.env.TENANT_NORTH_PUBLISHER.publish=async(...args)=>{
+   const rejected=await publish(...args)
+   if(mode==='fence')f.sqlite.prepare('UPDATE platform_collector_attempts SET fence=fence+1').run()
+   if(mode==='bundle')f.sqlite.prepare('UPDATE platform_collector_attempts SET expected_bundle_sha256=?').run('b'.repeat(64))
+   return rejected
+  }
+  expect(await publishCollector(f.env,f.machine,f.input,'validation-fenced',now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('reconciliation_required')
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(0)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_rejected'").get().n).toBe(0)
+ })
+ it.each(['lost','malformed'])('keeps a %s validation rejection reply fenced for readback only',async mode=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{
+   const rejected=await publish(...args)
+   if(mode==='lost')throw new Error('Synthetic validation reply lost')
+   return {...rejected,unrecognized:true}
+  })
+  expect(await publishCollector(f.env,f.machine,f.input,'validation-unknown',now)).toMatchObject({status:'reconciliation_required'})
+  expect(await publishCollector(f.env,f.machine,f.input,'validation-unknown',now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(0)
+ })
  it('completes exact publication and a subsequent pull using active inventory after a confirmed manager delivery',async()=>{
   const f=await setup(async f=>{
    const v=f.bundle.release.vehicles.find(v=>v.publicRecord?.store==='Howell')

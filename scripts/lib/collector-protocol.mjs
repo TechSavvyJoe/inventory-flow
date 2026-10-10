@@ -167,8 +167,15 @@ export async function submitCollectorPublication(profile, credentials, publicati
     maxResponseBytes: MAX_ENVELOPE_BYTES,
   })
   const result = response.body
-  check(result && ['published_verified', 'unchanged_verified', 'reconciliation_required', 'preflight_retryable', 'revision_retryable'].includes(result.status), 'PUBLICATION_RESPONSE_INVALID')
+  check(result && ['published_verified', 'unchanged_verified', 'rejected_verified', 'reconciliation_required', 'preflight_retryable', 'revision_retryable'].includes(result.status), 'PUBLICATION_RESPONSE_INVALID')
   check(result.attemptId === publication.attemptId && result.bundleSha256 === publication.envelope.bundleSha256 && result.reportDate === publication.envelope.reportDate, 'PUBLICATION_RESPONSE_MISMATCH')
+  if (result.status === 'rejected_verified') {
+    const keys = ['status', 'attemptId', 'fence', 'idempotencyKey', 'bundleSha256', 'reportDate', 'code', 'ready', 'verifiedAt']
+    check(Object.keys(result).length === keys.length && Object.keys(result).every(key => keys.includes(key)) &&
+      result.ready === false && result.code === 'VALIDATION_FAILED' && isIso(result.verifiedAt), 'PUBLICATION_RESPONSE_INVALID')
+    check(result.fence === publication.fence && result.idempotencyKey === publication.idempotencyKey, 'PUBLICATION_RESPONSE_MISMATCH')
+    return result
+  }
   const responseKeys = ['reconciliation_required', 'preflight_retryable', 'revision_retryable'].includes(result.status)
     ? ['status', 'attemptId', 'bundleSha256', 'reportDate', 'ready']
     : ['status', 'attemptId', 'bundleSha256', 'reportDate', 'counts', 'ready', 'verifiedAt']

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // @ts-nocheck -- Unbundled extension UI exercised with synthetic source records.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { within } from '@testing-library/react'
 import markup from '../../extension/sidepanel/index.html?raw'
 
 const api = vi.hoisted(() => ({ bootstrap: vi.fn(), vehicle: vi.fn() }))
@@ -101,7 +102,7 @@ describe('extension captured Records detail parity', () => {
     expect(history.textContent).toContain('08/25/2026 · 08/26/2026')
     expect(history.querySelectorAll('.rec-history-secondary')).toHaveLength(0)
   })
-  it('uses reported CARFAX history when OEM visits are absent and keeps AutoCheck separate', async () => {
+  it('uses current AutoCheck before retained CARFAX when OEM visits are absent and keeps both sources', async () => {
     const record = recordWithSources()
     delete record.fordOasis.serviceHistory
     record.serviceHistory = { reports: [
@@ -110,11 +111,66 @@ describe('extension captured Records detail parity', () => {
     ] }
     const detail = await openRecords(record)
     const history = detail.querySelector('.rec-service')
-    expect(history.querySelector('.rec-section h4').textContent).toBe('CARFAX service history')
-    expect(history.querySelector('.rec-section').textContent).toContain('Synthetic CARFAX visit')
+    expect(history.querySelector('.rec-section h4').textContent).toBe('AutoCheck service history')
+    expect(history.querySelector('.rec-section').textContent).toContain('Synthetic AutoCheck visit')
     expect(history.querySelectorAll('.rec-history-secondary')).toHaveLength(1)
     expect(history.querySelector('.rec-history-secondary').open).toBe(false)
-    expect(history.querySelector('.rec-history-secondary .rec-section').textContent).toContain('Synthetic AutoCheck visit')
+    expect(history.querySelector('.rec-history-secondary .rec-section').textContent).toContain('Synthetic CARFAX visit')
+  })
+  it.each(['stale_unverified', 'incomplete'])('prefers current OEM timeline over %s provider OEM and retains the provider report', async dataState => {
+    const record = recordWithSources()
+    record.fordOasis.serviceHistory.repairOrderTimeline = [{ openDate: '2026-08-25', closeDate: '2026-08-26', odometer: 23200, services: ['Synthetic current OEM timeline'] }]
+    record.serviceHistory = { reports: [{ vin: record.vin, provider: 'oem', sourceLabel: 'Synthetic retained OEM report', capturedAt: '2026-08-01T11:00:00Z', dataState, historyStatus: 'reported', entries: [{ date: '2025-05-01', services: ['Synthetic retained OEM work'] }] }] }
+    const detail = await openRecords(record)
+    const regions = within(detail).getAllByRole('region', { name: 'OEM service history' })
+    expect(regions).toHaveLength(2)
+    expect(regions.find(region => !region.closest('details')).textContent).toContain('Synthetic current OEM timeline')
+    const retained = regions.find(region => region.closest('details'))
+    expect(retained.textContent).toContain('Synthetic retained OEM work')
+    expect(retained.textContent).toContain(dataState)
+    expect(retained.closest('details').open).toBe(false)
+  })
+  it('prefers current provider OEM before retained legacy OEM and current external history without dropping alternatives', async () => {
+    const record = recordWithSources()
+    record.fordOasis.serviceHistory.dataState = 'stale_unverified'
+    record.serviceHistory = { reports: [
+      { vin: record.vin, provider: 'oem', sourceLabel: 'Synthetic current OEM report', dataState: 'current', historyStatus: 'reported', entries: [{ date: '2026-08-29', services: ['Synthetic current provider OEM work'] }] },
+      { vin: record.vin, provider: 'carfax', sourceLabel: 'Synthetic current CARFAX', dataState: 'current', historyStatus: 'reported', entries: [{ date: '2026-08-28', services: ['Synthetic current CARFAX work'] }] },
+    ] }
+    const detail = await openRecords(record)
+    const regions = within(detail).getAllByRole('region', { name: 'OEM service history' })
+    expect(regions).toHaveLength(2)
+    expect(regions.find(region => !region.closest('details')).textContent).toContain('Synthetic current provider OEM work')
+    expect(regions.find(region => region.closest('details')).textContent).toContain(' · stale · ')
+    expect(within(detail).getByRole('region', { name: 'CARFAX service history' }).textContent).toContain('Synthetic current CARFAX work')
+  })
+  it.each(['current', 'stale_unverified'])('ranks %s external history by freshness before provider preference and retains all evidence', async externalState => {
+    const record = recordWithSources()
+    delete record.fordOasis.serviceHistory
+    record.serviceHistory = { reports: [
+      { vin: record.vin, provider: 'oem', sourceLabel: 'Synthetic retained OEM', dataState: 'stale_unverified', historyStatus: 'reported', entries: [{ date: '2025-05-01', services: ['Synthetic retained OEM work'] }] },
+      { vin: record.vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', dataState: externalState, historyStatus: 'reported', entries: [{ date: '2026-08-28', services: ['Synthetic CARFAX work'] }] },
+    ] }
+    const detail = await openRecords(record)
+    const oem = within(detail).getByRole('region', { name: 'OEM service history' })
+    const carfax = within(detail).getByRole('region', { name: 'CARFAX service history' })
+    expect(oem.textContent).toContain('Synthetic retained OEM work')
+    expect(carfax.textContent).toContain('Synthetic CARFAX work')
+    const primary = externalState === 'current' ? carfax : oem
+    const secondary = externalState === 'current' ? oem : carfax
+    expect(primary.closest('details')).toBeNull()
+    expect(secondary.closest('details').open).toBe(false)
+  })
+  it('does not promote an inner current timeline when the enclosing OEM capture is stale', async () => {
+    const record = recordWithSources()
+    record.fordOasis.dataState = 'stale_unverified'
+    record.serviceHistory = { reports: [{ vin: record.vin, provider: 'carfax', sourceLabel: 'Synthetic current CARFAX', dataState: 'current', historyStatus: 'reported', entries: [{ date: '2026-08-28', services: ['Synthetic current CARFAX work'] }] }] }
+    const detail = await openRecords(record)
+    const carfax = within(detail).getByRole('region', { name: 'CARFAX service history' })
+    expect(carfax.closest('details')).toBeNull()
+    const oem = within(detail).getByRole('region', { name: 'OEM service history' })
+    expect(oem.closest('details').open).toBe(false)
+    expect(oem.textContent).toContain(' · stale · ')
   })
   it('shows a CARFAX warranty estimate without OEM data and leaves unknown estimates unknown', async () => {
     const record = recordWithSources()

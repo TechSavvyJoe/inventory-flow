@@ -50,6 +50,10 @@
 .rec-source-details summary::-webkit-details-marker { display: none; }
 .rec-source-details[open] > summary > .icon { transform: rotate(180deg); }
 .rec-source-details :is(.rec-note,.rec-source-missing,.rec-state) { font-size: 12px; line-height: 1.4; }
+.rec-history-secondary > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--detail-space-sm); min-height: var(--control-target); color: var(--blue); font-size: var(--t-label); font-weight: var(--scan-strong-weight); cursor: pointer; list-style: none; border-bottom: var(--detail-rule) solid var(--line); }
+.rec-history-secondary > summary::-webkit-details-marker { display: none; }
+.rec-history-secondary > summary > .icon { flex: none; }
+.rec-history-secondary[open] > summary > .icon { transform: rotate(180deg); }
 .rec-empty { font-size: 13px; color: var(--ink-3); line-height: 1.4; margin: 6px 0; }
 .rec-price-context { margin: 8px 0 3px; font-size: 12px; line-height: 1.4; color: var(--ink-3); }
 .oasis-actions { padding: 0; list-style: none; }

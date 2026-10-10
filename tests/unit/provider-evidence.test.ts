@@ -121,10 +121,24 @@ describe('safe independent provider evidence', () => {
     expect(validateServiceHistoryEvidence(resource.serviceHistory, VIN).reports[0].entries[0].services).toEqual(services)
     expect(() => validateReleaseBundle(cloud(resource))).not.toThrow()
   })
-  it('retains valid ISO offsets, unknown freshness, and genuinely reported entries without added detail', () => {
+  it.each([{ services: [] }, { services: [' '] }, { services: ['customer: Private'] }])('rejects reported entries without safe mechanical facts in both release validators: %j', ({ services }) => {
+    const resource = { serviceHistory: { reports: [{ ...report, entries: [{ ...report.entries[0], services }] }] } }
+    expect(() => validateServiceHistoryEvidence(resource.serviceHistory, VIN)).toThrow()
+    expect(() => validateVinDocumentEnrichment(enrichment(resource))).toThrow()
+    const bundle = cloud({ serviceHistory: { reports: [report] } })
+    bundle.release.vehicles.find(row => row.vin === VIN).resourceRecord.serviceHistory = resource.serviceHistory
+    bundle.release.sourceRuns.resources.provenanceSha256 = resourceProvenanceSha256(bundle.release.sourceRuns.resources, bundle.release.vehicles)
+    expect(() => validateReleaseBundle(bundle)).toThrow()
+  })
+  it.each(['not_reported', 'unavailable'])('retains an empty %s history without creating a reported event', historyStatus => {
+    const resource = { serviceHistory: { reports: [{ ...report, historyStatus, entries: [] }] } }
+    expect(validateServiceHistoryEvidence(resource.serviceHistory, VIN).reports[0].entries).toEqual([])
+    expect(() => validateReleaseBundle(cloud(resource))).not.toThrow()
+  })
+  it('retains valid ISO offsets, unknown freshness, and a reported mechanical fact without inventing mileage', () => {
     expect(validateOperationalEvidence({ records: [{ ...observation, dataState: 'unknown', capturedAt: '2026-08-30T10:00:00-04:00' }] }, VIN).records[0]).toMatchObject({ dataState: 'unknown', capturedAt: '2026-08-30T10:00:00-04:00' })
-    const result = validateServiceHistoryEvidence({ reports: [{ ...report, entries: [{ date: '2026-08-29', odometer: null, services: [] }] }] }, VIN)
-    expect(result.reports[0].entries).toEqual([{ date: '2026-08-29', odometer: null, services: [] }])
+    const result = validateServiceHistoryEvidence({ reports: [{ ...report, entries: [{ date: '2026-08-29', odometer: null, services: ['Oil and filter changed'] }] }] }, VIN)
+    expect(result.reports[0].entries).toEqual([{ date: '2026-08-29', odometer: null, services: ['Oil and filter changed'] }])
     expect(result.reports[0]).not.toHaveProperty('complete')
   })
   it.each([

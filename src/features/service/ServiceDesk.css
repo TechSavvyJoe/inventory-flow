@@ -33,7 +33,7 @@
 .service-row-actions .service-row-open-vehicle { grid-area:vehicle; }
 .service-row-actions .service-row-records { grid-area:records; }
 .service-row-actions svg { flex:none; }
-.service-row-supporting { padding:8px 12px; border-top:1px solid var(--ifx-border-subtle); background:var(--ifx-neutral-50); }
+.service-row-supporting { padding:var(--ifx-space-2) var(--ifx-space-3); border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); background:var(--ifx-neutral-50); }
 .service-row-supporting .vehicle-quick-facts { gap:var(--ifx-space-2) var(--ifx-space-4); }
 .service-photo { display:flex; align-items:center; justify-content:center; width:112px; aspect-ratio:3/2; overflow:hidden; border-radius:6px; background:var(--ifx-neutral-100); color:var(--ink-600); }
 .service-photo img { width:100%; height:100%; object-fit:cover; }

@@ -101,6 +101,11 @@ export function buildManualHoldEvent(source, rows, input, context, { now, idempo
     if (replay.input_hash !== inputHash) throw new WorkflowError('This request key was used for another hold action.', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
     return { row: replay, created: false }
   }
+  // Preserve exact replays of committed history without allowing a new
+  // manager-created request or an edit that leaves a request undecided.
+  if (input.state === 'requested' && context.role !== 'sales') {
+    throw new WorkflowError('Only a salesperson can request a hold; managers can place or approve an active hold.', { status: 403, code: 'MANUAL_HOLD_ACCESS_DENIED' })
+  }
   if (input.expectedVersion !== (current?.version ?? 0)) throw new WorkflowError('Another employee updated the hold. Review the latest record and save again.', { status: 409, code: 'MANUAL_HOLD_VERSION_CONFLICT' })
   const pending = current?.state === 'requested'
   const active = current?.state === 'active'

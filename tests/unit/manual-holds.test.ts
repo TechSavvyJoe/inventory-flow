@@ -37,6 +37,73 @@ function local() {
 }
 
 describe('manual holds and reconciliation', () => {
+  it.each(['manager', 'group_manager'])('preserves exact historical %s request replays without permitting a new request', async role => {
+    const { service, database } = local()
+    const actor = { ...manager, role, store: role === 'group_manager' ? 'Lincoln' : 'Howell' }
+    const cloud = await createCloudWorkerHarness([{ email: 'manager@example.invalid', ...actor, name: actor.user }])
+    try {
+      // Hashes captured from the pre-fix builder for these synthetic inputs.
+      // Historical manager-created requests remain immutable; replay appends nothing.
+      const inputHashes = { manager: 'b6a284624d82995e704d42a617f4574b6f380ad54c45352f6a7a30ec605d9f90',
+        group_manager: 'a87aabe10ea819e0631fe609554e2aa437660d2c8e1e03b17a7c3b5b47f783ba' }
+      const historical = { ...buildManualHoldEvent(source, [], { ...input, state: 'active' }, actor, options).row,
+        state: 'requested', input_hash: inputHashes[role] }
+      const columns = Object.keys(historical)
+      for (const db of [database, cloud.database]) {
+        db.prepare(`INSERT INTO vehicle_manual_hold_events (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`).run(...columns.map(key => historical[key]))
+      }
+      const revision = cloud.revision()
+      const call = (body, key = options.idempotencyKey) => cloud.call('POST', `/api/vehicles/${VIN}/manual-hold`, 'manager@example.invalid', body, { 'idempotency-key': key })
+      expect(service.updateManualHold(VIN, input, actor, options.idempotencyKey).created).toBe(false)
+      expect(await call(input)).toMatchObject({ status: 200, json: { state: 'requested', version: 1 } })
+      const changed = { ...input, note: 'Changed historical request' }
+      expect(() => service.updateManualHold(VIN, changed, actor, options.idempotencyKey)).toThrow(expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }))
+      expect(await call(changed)).toMatchObject({ status: 409, json: { code: 'IDEMPOTENCY_CONFLICT' } })
+      const next = { ...input, expectedVersion: 1 }
+      expect(() => service.updateManualHold(VIN, next, actor, 'new-request')).toThrow(expect.objectContaining({ status: 403, code: 'MANUAL_HOLD_ACCESS_DENIED' }))
+      expect(await call(next, 'new-request')).toMatchObject({ status: 403, json: { code: 'MANUAL_HOLD_ACCESS_DENIED' } })
+      for (const db of [database, cloud.database]) expect(db.prepare('SELECT * FROM vehicle_manual_hold_events').all()).toEqual([historical])
+      expect(cloud.revision()).toBe(revision)
+      const approval = { state: 'active', expectedVersion: 1 }
+      service.updateManualHold(VIN, approval, actor, 'historical-approval')
+      expect(await call(approval, 'historical-approval')).toMatchObject({ status: 201, json: { state: 'active', version: 2 } })
+      const approvedRevision = cloud.revision()
+      expect(service.updateManualHold(VIN, input, actor, options.idempotencyKey).created).toBe(false)
+      expect(await call(input)).toMatchObject({ status: 200, json: { state: 'active', version: 2 } })
+      expect(cloud.revision()).toBe(approvedRevision)
+      for (const db of [database, cloud.database]) {
+        expect(db.prepare('SELECT * FROM vehicle_manual_hold_events WHERE version = 1').get()).toEqual(historical)
+        expect(db.prepare('SELECT COUNT(*) AS count FROM vehicle_manual_hold_events').get().count).toBe(2)
+      }
+    } finally { cloud.close() }
+  })
+  it.each(['manager', 'group_manager'])('rejects crafted %s requests and pending edits while allowing manager decisions and direct holds', async role => {
+    const { service, database } = local()
+    const actor = { ...manager, role, store: role === 'group_manager' ? 'Lincoln' : 'Howell' }
+    const cloud = await createCloudWorkerHarness([{ email: 'sales@example.invalid', ...sales, name: sales.user }, { email: 'manager@example.invalid', ...actor, name: actor.user }])
+    try {
+      const revision = cloud.revision()
+      expect(() => service.updateManualHold(VIN, input, actor, 'manager-request')).toThrow(expect.objectContaining({ status: 403, code: 'MANUAL_HOLD_ACCESS_DENIED' }))
+      expect(await cloud.call('POST', `/api/vehicles/${VIN}/manual-hold`, 'manager@example.invalid', input)).toMatchObject({ status: 403, json: { code: 'MANUAL_HOLD_ACCESS_DENIED' } })
+      expect(database.prepare('SELECT COUNT(*) AS count FROM vehicle_manual_hold_events').get().count).toBe(0)
+      expect(cloud.revision()).toBe(revision)
+      service.updateManualHold(VIN, input, sales, 'sales-request')
+      await cloud.call('POST', `/api/vehicles/${VIN}/manual-hold`, 'sales@example.invalid', input)
+      const pendingRows = database.prepare('SELECT * FROM vehicle_manual_hold_events').all()
+      const pendingRevision = cloud.revision()
+      const pendingEdit = { ...input, expectedVersion: 1, note: 'Manager must decide this request' }
+      expect(() => service.updateManualHold(VIN, pendingEdit, actor, 'manager-edit')).toThrow(expect.objectContaining({ status: 403, code: 'MANUAL_HOLD_ACCESS_DENIED' }))
+      expect(await cloud.call('POST', `/api/vehicles/${VIN}/manual-hold`, 'manager@example.invalid', pendingEdit)).toMatchObject({ status: 403, json: { code: 'MANUAL_HOLD_ACCESS_DENIED' } })
+      expect(database.prepare('SELECT * FROM vehicle_manual_hold_events').all()).toEqual(pendingRows)
+      expect(cloud.revision()).toBe(pendingRevision)
+      const decision = { state: 'active', expectedVersion: 1 }
+      expect(service.updateManualHold(VIN, decision, actor, 'manager-decision').record).toMatchObject({ state: 'active', version: 2 })
+      expect(await cloud.call('POST', `/api/vehicles/${VIN}/manual-hold`, 'manager@example.invalid', decision)).toMatchObject({ status: 201, json: { state: 'active', version: 2 } })
+      const direct = { ...input, state: 'active' }
+      expect(service.updateManualHold('TESTDATAHWELL0001', direct, actor, 'manager-direct').record).toMatchObject({ state: 'active', version: 1, ownedByCurrentUser: true })
+      expect(await cloud.call('POST', '/api/vehicles/TESTDATAHWELL0001/manual-hold', 'manager@example.invalid', direct)).toMatchObject({ status: 201, json: { state: 'active', version: 1 } })
+    } finally { cloud.close() }
+  })
   it('requires manager approval, retains requester ownership, and rejects stale decisions and crafted salesperson approvals', () => {
     const { service, database } = local()
     expect(() => service.updateManualHold(VIN, { ...input, state: 'active' }, sales, 'crafted-active')).toThrow(expect.objectContaining({ status: 403, code: 'MANUAL_HOLD_APPROVAL_REQUIRED' }))
@@ -124,7 +191,7 @@ describe('manual holds and reconciliation', () => {
     expect(first.record).toMatchObject({ state: 'requested', version: 1, customerLabel: 'AB', ownedByCurrentUser: true })
     expect(service.updateManualHold(VIN, input, sales, options.idempotencyKey).created).toBe(false)
     expect(() => service.updateManualHold(VIN, { ...input, note: 'Changed' }, sales, options.idempotencyKey)).toThrow(expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }))
-    expect(() => service.updateManualHold(VIN, input, manager, 'stale')).toThrow(expect.objectContaining({ code: 'MANUAL_HOLD_VERSION_CONFLICT' }))
+    expect(() => service.updateManualHold(VIN, { ...input, state: 'active' }, manager, 'stale')).toThrow(expect.objectContaining({ code: 'MANUAL_HOLD_VERSION_CONFLICT' }))
     service.updateManualHold(VIN, { ...input, expectedVersion: 1, note: 'Appointment confirmed' }, sales, 'edit')
     service.updateManualHold(VIN, { state: 'active', expectedVersion: 2 }, manager, 'approve')
     const released = service.updateManualHold(VIN, { state: 'released', expectedVersion: 3, note: 'Customer selected another unit' }, manager, 'release')
@@ -138,7 +205,7 @@ describe('manual holds and reconciliation', () => {
     for (const who of [{ ...sales, userId: 'other' }, { ...manager, store: 'Lincoln' }, { ...sales, role: 'driver' }, { ...sales, userId: null }]) {
       expect(() => buildManualHoldEvent(source, [row], { ...input, expectedVersion: 1 }, who, options)).toThrow(expect.objectContaining({ status: 403 }))
     }
-    expect(buildManualHoldEvent(source, [row], { ...input, expectedVersion: 1 }, manager, { ...options, idempotencyKey: 'manager-edit' }).row).toMatchObject({ actor_user_id: 'manager-1', owner_user_id: 'sales-1' })
+    expect(buildManualHoldEvent(source, [row], { state: 'active', expectedVersion: 1 }, manager, { ...options, idempotencyKey: 'manager-approve' }).row).toMatchObject({ actor_user_id: 'manager-1', owner_user_id: 'sales-1' })
     expect(() => buildManualHoldEvent(source, [], { ...input, actor: 'spoof' }, sales, options)).toThrow(expect.objectContaining({ code: 'INVALID_MANUAL_HOLD_INPUT' }))
   })
   it('keeps customer labels, notes and writer identity out of list views and transport detail', () => {

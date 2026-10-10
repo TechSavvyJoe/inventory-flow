@@ -66,7 +66,7 @@ export function validateServiceHistoryEvidence(value, vin) {
     return { ...result, historyStatus: report.historyStatus, entries: report.entries.map(entry => {
       keys(entry, ['date', 'odometer', 'odometerUnit', 'services'], 'service entry')
       ensure(typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && Number.isFinite(Date.parse(`${entry.date}T00:00:00Z`)) && new Date(`${entry.date}T00:00:00Z`).toISOString().slice(0, 10) === entry.date, 'service date is invalid')
-      ensure(Array.isArray(entry.services) && entry.services.length <= 12, 'services must be a bounded array')
+      ensure(Array.isArray(entry.services) && entry.services.length >= 1 && entry.services.length <= 12, 'services must contain 1 to 12 mechanical descriptions')
       const out = { date: entry.date, services: entry.services.map(serviceText) }
       if (entry.odometer !== undefined) {
         ensure(entry.odometer === null || (Number.isSafeInteger(entry.odometer) && entry.odometer >= 0 && entry.odometer <= 20_000_000), 'odometer is invalid')
