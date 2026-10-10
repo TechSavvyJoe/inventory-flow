@@ -690,8 +690,10 @@
 @media (min-width:681px) and (max-width:1200px) {
   .inventory-workspace.inventory-workspace--focused .vdp-focus-operations { grid-template-columns:minmax(0,1fr); grid-template-areas:"facts" "actions"; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-operations > .vdp-focus-actions { max-width:none; padding:var(--ifx-space-1) 0 0; border-left:0; border-top:var(--ifx-stroke-hairline) solid var(--v10-border-soft); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-context { grid-template-columns:calc(var(--ifx-space-16) * 3 + var(--ifx-space-8)) minmax(0,1fr); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-context { grid-template-columns:calc(var(--ifx-space-16) * 3 + var(--ifx-space-8)) minmax(0,1fr); grid-template-areas:"photo intelligence" "documents intelligence" "pricing intelligence" "equipment equipment" "reference reference" "vin vin"; grid-template-rows:min-content min-content minmax(0,1fr) auto auto auto; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-intelligence { grid-template-columns:minmax(0,1fr); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts { grid-template-columns:minmax(0,1fr); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .copyable-value__content { white-space:nowrap; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-history-facts > dl { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--ifx-space-3); }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights > ul { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }

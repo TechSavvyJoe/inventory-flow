@@ -29,6 +29,31 @@ function expandFollowUp() { fireEvent.click(screen.getByText('Follow-up & histor
 function tasks() { return within(screen.getByRole('list', { name: 'Attention items' })).getAllByRole('listitem') }
 
 describe('Action center store workflow', () => {
+  it('keeps simultaneous hold requests attached to their exact vehicle rows', () => {
+    const vins = ['TESTDATAHWELL0001', 'TESTDATAHWELL0002']
+    show(vins.map(vin => task({ id: `request-${vin}`, vin, type: 'hold_request',
+      label: 'Review hold request', href: `/inventory?scope=group&vin=${vin}&tab=hold`,
+      dueAt: undefined, priority: 'high', allowedActions: [] })))
+    expect(tasks()).toHaveLength(2)
+    for (const vin of vins) {
+      const row = screen.getByRole('button', { name: new RegExp(`^Copy VIN: ${vin}$`) }).closest('article')!
+      expect(within(row).getByRole('link', { name: /^Review hold request$/ })).toHaveAttribute('href', `/inventory?scope=group&vin=${vin}&tab=hold&returnTo=%2F`)
+    }
+  })
+  it('keeps manager hold approval reachable when an overdue imported hold shares its destination', () => {
+    const href = '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=hold'
+    show([
+      task({ href }),
+      task({ id: 'synthetic-request', type: 'hold_request', label: 'Review hold request', href,
+        dueAt: undefined, priority: 'high', allowedActions: [] }),
+      task({ id: 'synthetic-alert', type: 'hold_alert', href }),
+    ])
+    expect(tasks()).toHaveLength(1)
+    const row = tasks()[0]
+    expect(within(row).getByRole('link', { name: /^Review hold request$/ })).toHaveAttribute('href', `${href}&returnTo=%2F`)
+    expect(within(row).getAllByRole('link', { name: /^Review hold$/ })).toHaveLength(1)
+    expect(within(row).queryByRole('button', { name: /^Approve hold$/ })).not.toBeInTheDocument()
+  })
   it('keeps hold follow-ups focused on owner and timing, with records one click away and no assumed custody', () => {
     const vehicle = { vin: 'TESTDATAHWELL0001', vehicleName: 'Synthetic Ford H01', stockNumber: 'SYN-H01', homeStore: 'Howell', listedPrice: 31900, mileage: 18920, daysListed: 27, exteriorColor: 'Synthetic gray', engine: '2.0L synthetic engine', drivetrain: '4WD', sourceReportedLocation: 'Howell', movement: { currentLocation: 'Howell', locationConfidence: 'reported' }, serviceReadiness: { status: 'needs_service' } } as VehicleRecord
     show([task()], vi.fn(), [vehicle])

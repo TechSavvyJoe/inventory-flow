@@ -165,7 +165,12 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
 
 function TaskRow({ row, vehicle, returnTo, reportDate, role, homeStore, currentUser, onAction }: Pick<OperationsQueueProps, 'role' | 'homeStore' | 'currentUser' | 'onAction' | 'reportDate'> & { row: ActionRow; vehicle?: VehicleRecord; returnTo: string }) {
   const { lead } = row
-  const relatedTasks = row.items.filter((item, index, items) => item.id !== lead.id && item.href && item.href !== lead.href && items.findIndex(other => other.href === item.href) === index)
+  // Different workflows can share the Holds & moves destination. Preserve
+  // their named actions (especially manager approval) while deduplicating
+  // repeated evidence links that have both the same destination and label.
+  const relatedTasks = row.items.filter((item, index, items) => item.id !== lead.id && item.href &&
+    (item.href !== lead.href || taskLinkLabel(item) !== taskLinkLabel(lead)) &&
+    items.findIndex(other => other.href === item.href && taskLinkLabel(other) === taskLinkLabel(item)) === index)
   const overdue = row.items.some(item => isTaskOverdue(item, reportDate))
   // One row is one vehicle, but each condition keeps its own workflow record: a
   // note about the hold has to land on the hold, not on the move that leads the

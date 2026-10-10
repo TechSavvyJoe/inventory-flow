@@ -20,6 +20,8 @@
 .action-queue .workflow-toolbar { margin:var(--ifx-space-2) 0; }
 .action-queue .workflow-quick-actions { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
 .action-queue .workflow-quick-actions a { min-width:0; white-space:normal; overflow-wrap:anywhere; padding-inline:var(--ifx-space-1); }
+.action-queue .action-next-steps > .workflow-action { min-width:0; white-space:normal; overflow-wrap:anywhere; }
+.action-queue .action-next-steps > .workflow-action svg { flex-shrink:0; }
 .action-queue .action-task { padding-left:12px; border-left:3px solid var(--blue-600); }
 .action-queue .action-owner strong { font-weight:var(--ifx-weight-semibold); }
 .action-queue .action-follow-up { margin:0; }

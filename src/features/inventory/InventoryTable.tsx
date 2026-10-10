@@ -464,15 +464,11 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
           <strong>{identity}</strong>{series ? <span className="inv-desk-vehicle__series">{series}</span> : null}
         </button>
       </div>
-      <div className="inv-desk-vehicle__identifiers">
+      <div className="inv-desk-vehicle__identifiers" role="group" aria-label={`Copy identifiers for ${name}`}>
         <dl className="inv-desk-vehicle__facts">
-          <div><dt>Stock</dt><dd>{vehicle.stockNumber}</dd></div>
-          <div><dt>VIN</dt><dd>{vehicle.vin}</dd></div>
+          <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber}>{vehicle.stockNumber}</CopyableValue></dd></div>
+          <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin}>{vehicle.vin}</CopyableValue></dd></div>
         </dl>
-        <div className="inv-desk-identity-copy" role="group" aria-label={`Copy identifiers for ${name}`}>
-          <CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy-control">Stock</CopyableValue>
-          <CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy-control">VIN</CopyableValue>
-        </div>
       </div>
       <div className="inv-desk-vehicle__comparison">
         {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
