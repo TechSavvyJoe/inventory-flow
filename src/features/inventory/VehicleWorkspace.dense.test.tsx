@@ -445,6 +445,60 @@ describe('focused vehicle workspace', () => {
     expect(within(summary).getByRole('group', { name:'Reported hold evidence' })).toHaveTextContent('Synthetic loaner evidence');
   });
 
+  it.each([
+    ['unavailable', 'held'],
+    ['unavailable', 'not_observed'],
+    ['incomplete', 'held'],
+    ['incomplete', 'not_observed'],
+  ] as const)('keeps %s DealerMail status and authorized tools beside a provider reporting %s', async (dataState, holdState) => {
+    const unit = vehicle();
+    unit.dealerMail = { ...unit.dealerMail, dataState, hasActiveHold:null, lastKnownActiveHold:false };
+    unit.holdEvidence = [];
+    unit.operationalEvidence = { records:[{ vin:unit.vin, provider:'demo-crm', sourceLabel:'Synthetic independent CRM', capturedAt:'2026-08-30T14:00:00Z', dataState:'current', readOnly:true, complete:true, holdState }] };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+    const pane = screen.getByRole('tabpanel', { name:'Holds & moves' });
+    const provider = within(pane).getByRole('region', { name:'Imported inventory evidence' });
+    expect(provider).toHaveTextContent('Synthetic independent CRM');
+    expect(provider).toHaveTextContent(holdState === 'held' ? 'Hold observed' : 'No hold observed');
+    const dealerMailHeading = within(pane).getByRole('heading', { name:'DealerMail hold evidence' });
+    expect(dealerMailHeading).toBeVisible();
+    const movementHeading = within(pane).getByRole('heading', { name:'Location & movement' });
+    expect(dealerMailHeading.compareDocumentPosition(movementHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(pane).getByText('Hold status not verified', { exact:true })).toBeVisible();
+    const tools = within(pane).getByRole('region', { name:'DealerMail vehicle tools' });
+    expect(within(tools).getByRole('button', { name:'Open in DealerMail (copies stock)' })).toBeEnabled();
+    expect(tools).toHaveTextContent('Confirm the current hold before acting.');
+    expect(within(pane).queryByText('No current DealerMail hold found')).not.toBeInTheDocument();
+    expect(within(pane).queryByText('Customer appointment')).not.toBeInTheDocument();
+  });
+
+  it('keeps a current no-hold DealerMail observation independent of another provider hold', async () => {
+    const unit = vehicle();
+    unit.dealerMail = { ...unit.dealerMail, hasActiveHold:false, activeRecordCount:0, canManageHold:false };
+    unit.holdEvidence = [];
+    unit.operationalEvidence = { records:[{ vin:unit.vin, provider:'demo-crm', sourceLabel:'Synthetic independent CRM', capturedAt:'2026-08-30T14:00:00Z', dataState:'current', readOnly:true, complete:true, holdState:'held' }] };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+    const pane = screen.getByRole('tabpanel', { name:'Holds & moves' });
+    expect(within(pane).getByRole('region', { name:'Imported inventory evidence' })).toHaveTextContent('Hold observed');
+    expect(within(pane).getByText('No current DealerMail hold found', { exact:true })).toBeVisible();
+    expect(within(pane).queryByRole('region', { name:'DealerMail vehicle tools' })).not.toBeInTheDocument();
+  });
+
+  it('keeps DealerMail details restricted and hides its tool for an unauthorized role beside another provider', async () => {
+    const unit = vehicle();
+    unit.dealerMail = { ...unit.dealerMail, dataState:'unavailable', hasActiveHold:null, canViewEvidence:false, canManageHold:false };
+    unit.operationalEvidence = { records:[{ vin:unit.vin, provider:'demo-crm', sourceLabel:'Synthetic independent CRM', capturedAt:'2026-08-30T14:00:00Z', dataState:'current', readOnly:true, complete:true, holdState:'held' }] };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+    const pane = screen.getByRole('tabpanel', { name:'Holds & moves' });
+    expect(within(pane).getByRole('region', { name:'Imported inventory evidence' })).toHaveTextContent('Synthetic independent CRM');
+    expect(within(pane).getByRole('heading', { name:'Hold details are restricted' })).toBeVisible();
+    expect(within(pane).queryByText('Customer appointment')).not.toBeInTheDocument();
+    expect(within(pane).queryByRole('region', { name:'DealerMail vehicle tools' })).not.toBeInTheDocument();
+  });
+
   it('pairs compact mileage and age with the gallery before complete specifications and nests backup context under the same hold', () => {
     const unit = vehicle();
     unit.dealerMail.activeRecordCount = 3;

@@ -361,9 +361,9 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
           </span>
           <span className="inventory-workspace-no-hold__heading">
             <h3 id="inventory-no-hold-title">
-              {noCurrentHold
-                ? distinguishSourceHold ? "DealerMail hold evidence" : "No active hold"
-                : "Hold status needs review"}
+              {distinguishSourceHold
+                ? "DealerMail hold evidence"
+                : noCurrentHold ? "No active hold" : "Hold status needs review"}
             </h3>
             <p>Check availability with the home store before promising this vehicle.</p>
           </span>
@@ -372,7 +372,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
           <Fact label="Hold status" emphasize>
             {noCurrentHold
               ? distinguishSourceHold ? "No current DealerMail hold found" : "No active hold recorded"
-              : "Needs review"}
+              : "Hold status not verified"}
           </Fact>
           <Fact label="Home store">{vehicle.location.homeStore.name}</Fact>
           <Fact label="Location">{currentLocation.label}</Fact>
@@ -1070,12 +1070,12 @@ export function VehicleWorkspace({
             {vehicle.manualHold ? <section className="vdp-focus-manual-summary" aria-label="Hold and disposition controls"><div><strong>{unifiedHoldLabel}</strong><span>Inventory Flow: <span>{holdStateLabel(vehicle.manualHold.state)}</span> · {dispositionSummary(appDisposition)}</span></div><div className="vdp-focus-actions">{dispositionContext && vehicle.manualHold.enabled ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={event => { manualHoldOpenerRef.current = event.currentTarget; setManualHoldOpen(true); }}>{holdActionLabel(vehicle.manualHold, dispositionContext.role)}</button> : null}{dispositionAction ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={event => { dispositionOpenerRef.current = event.currentTarget; setDispositionOpen(true); }}>{dispositionAction}</button> : null}</div></section> : null}
             <ProviderEvidence vehicle={vehicle} />
             <div className="vdp-focus-hold-grid inventory-workspace-hold-center" data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}>
+              <div className="vdp-focus-hold-evidence"><HoldDetails vehicle={vehicle} /></div>
               <div className="vdp-focus-movement-panel">
                 <section id="inventory-section-movement" tabIndex={-1} aria-labelledby="inventory-movement-heading" className="vdp-focus-movement"><h3 id="inventory-movement-heading">Location &amp; movement</h3><MovementDetails vehicle={vehicle} status={nextStepStatus} /></section>
               </div>
-              <div className="vdp-focus-hold-evidence">{!vehicle.operationalEvidence || vehicle.inventoryDecision?.evidence?.some(record => ["dealermail", "legacy-dealermail"].includes(record.provider)) ? <HoldDetails vehicle={vehicle} /> : null}</div>
               {/* Custody and full evidence precede this secondary, read-only handoff. */}
-              {canManageDealerMail && (!vehicle.operationalEvidence || vehicle.inventoryDecision?.evidence?.some(record => ["dealermail", "legacy-dealermail"].includes(record.provider))) ? <div className="vdp-focus-handoff vdp-focus-handoff-panel"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} /></div> : null}
+              {canManageDealerMail ? <div className="vdp-focus-handoff vdp-focus-handoff-panel"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} /></div> : null}
             </div>
           </WorkspacePanel>
           <WorkspacePanel id="timeline" label="Activity" active={activePage === "timeline"}><TimelineDetails vehicle={vehicle} /></WorkspacePanel>

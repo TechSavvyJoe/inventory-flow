@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { base64Key, cloudBundleSha256, encryptBundle } from '../publish-cloud-release.mjs'
 import { collectCollectorDependencyGraph } from './collector-profile.mjs'
 
@@ -101,13 +102,20 @@ function childEnvironment(profile) {
   return env
 }
 
-function runOwnedChild(executable, args, { cwd, signal, timeoutMs, onChild, profile, spawnImpl = spawn } = {}) {
+function runOwnedChild(executable, args, { cwd, signal, timeoutMs, onChild, childGuard, profile, spawnImpl = spawn } = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('LEASE_STOPPED'))
-    const child = spawnImpl(executable, args, {
+    const launch = childGuard?.prepare()
+    const childArgs = launch ? [fileURLToPath(new URL('./collector-child-bootstrap.mjs', import.meta.url)), launch.journalPath, launch.nonce, launch.ownerId, ...args] : args
+    let child
+    try { child = spawnImpl(executable, childArgs, {
       cwd, env: childEnvironment(profile), shell: false, windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+      stdio: launch ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
+    }) } catch (error) {
+      // Preserve the launch record when no close event establishes completion.
+      // Recovery can retire this unadmitted launch after its host has exited.
+      return reject(error)
+    }
     let output = ''
     let requestedError = null
     let timer = null
@@ -142,11 +150,18 @@ function runOwnedChild(executable, args, { cwd, signal, timeoutMs, onChild, prof
       settled = true
       clearTimers()
       signal?.removeEventListener('abort', aborted)
+      try { childGuard?.closed() } catch { return reject(new Error('RECONCILIATION_REQUIRED')) }
       if (requestedError) reject(requestedError)
       else if (code === 0) resolve(output)
       else reject(new Error('CAPTURE_PROCESS_FAILED'))
     }
-    try { onChild?.(child) } catch { terminate(new Error('CAPTURE_PROCESS_FAILED')) }
+    try {
+      if (launch) {
+        childGuard.register(child.pid)
+        child.send({ type: 'collector_start', nonce: launch.nonce }, error => { if (error) terminate(new Error('CAPTURE_PROCESS_FAILED')) })
+      }
+      onChild?.(child)
+    } catch { terminate(new Error('CAPTURE_PROCESS_FAILED')) }
     signal?.addEventListener('abort', aborted, { once: true })
     if (signal?.aborted) aborted()
     if (!requestedError) timer = setTimeout(() => terminate(new Error('CAPTURE_TIMEOUT')), timeoutMs)
@@ -174,11 +189,11 @@ export function makeDealerMailCapture(profile, { onChild, signal, spawnImpl = sp
   if (!captureText.includes("const ORIGIN = 'https://www.dealermail.com'") || FORBIDDEN_CAPTURE_REFERENCE.test(captureText) || FORD_MERGE_REFERENCE.test(captureText)) {
     throw new Error('ADAPTER_DEPENDENCY_MISSING')
   }
-  return async ({ reportDate }) => {
+  return async ({ reportDate, childGuard }) => {
     if (!await hasExistingDealerMailTab({ fetchImpl })) throw new Error('DEALERMAIL_SESSION_REQUIRED')
-    await runChild(process.execPath, [capture, 'run', reportDate, '--budget-ms', String(DEALERMAIL_CAPTURE_BUDGET_MS)], { cwd: appRoot, signal, timeoutMs: DEALERMAIL_CAPTURE_TIMEOUT_MS, onChild, spawnImpl, profile })
-    await runChild(process.execPath, [builder, reportDate], { cwd: path.join(profile.workspaceRoot, 'work'), signal, timeoutMs: 8 * 60_000, onChild, spawnImpl, profile })
-    await runChild(process.execPath, [finalizer, reportDate], { cwd: profile.workspaceRoot, signal, timeoutMs: 8 * 60_000, onChild, spawnImpl, profile })
+    await runChild(process.execPath, [capture, 'run', reportDate, '--budget-ms', String(DEALERMAIL_CAPTURE_BUDGET_MS)], { cwd: appRoot, signal, timeoutMs: DEALERMAIL_CAPTURE_TIMEOUT_MS, onChild, childGuard, spawnImpl, profile })
+    await runChild(process.execPath, [builder, reportDate], { cwd: path.join(profile.workspaceRoot, 'work'), signal, timeoutMs: 8 * 60_000, onChild, childGuard, spawnImpl, profile })
+    await runChild(process.execPath, [finalizer, reportDate], { cwd: profile.workspaceRoot, signal, timeoutMs: 8 * 60_000, onChild, childGuard, spawnImpl, profile })
   }
 }
 

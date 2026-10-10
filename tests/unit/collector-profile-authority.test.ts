@@ -2,9 +2,10 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { STORE_CONFIG } from '../../server/importer.mjs'
 import { profileFingerprint, validateCollectorProfile } from '../../scripts/lib/collector-profile.mjs'
 
@@ -46,6 +47,33 @@ function profileAtCopiedWorkspace(profile) {
 afterEach(()=>roots.splice(0).forEach(root=>rmSync(root,{recursive:true,force:true})))
 
 describe('collector profile authority fingerprint',()=>{
+  it('rejects the enrolled fingerprint when the installed child admission bootstrap bytes change',async()=>{
+    const profile=profileFixture(),bridgeRoot=mkdtempSync(path.join(os.tmpdir(),'collector-bootstrap-authority-'))
+    roots.push(bridgeRoot)
+    // A synthetic installation copy permits real byte drift without editing
+    // the shared checkout or racing another collector test's fingerprint.
+    for(const relative of [
+      'scripts/collector-host.mjs','scripts/lib/collector-profile.mjs','scripts/lib/collector-protocol.mjs',
+      'scripts/lib/dealermail-hold-refresh-adapter.mjs','scripts/lib/collector-child-bootstrap.mjs','scripts/lib/cdp.mjs',
+      'scripts/run-inventory-flow-daily.mjs','scripts/publish-cloud-release.mjs','scripts/sync-cloud-release.mjs',
+      'cloudflare/src/release-validation.mjs',
+    ]){
+      const target=path.join(bridgeRoot,relative);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.resolve(relative),target)
+    }
+    mkdirSync(path.join(bridgeRoot,'server'),{recursive:true})
+    writeFileSync(path.join(bridgeRoot,'server/importer.mjs'),`export const STORE_CONFIG=${JSON.stringify(STORE_CONFIG)};\n`)
+    const moduleUrl=pathToFileURL(path.join(bridgeRoot,'scripts/lib/collector-profile.mjs')).href
+    const installed=await import(`${moduleUrl}?before-bootstrap-change`)
+    const recorded={...profile,profileSha256:installed.profileFingerprint(profile)}
+    expect(installed.validateCollectorProfile(recorded).profileSha256).toBe(recorded.profileSha256)
+    appendFileSync(path.join(bridgeRoot,'scripts/lib/collector-child-bootstrap.mjs'),'\n// SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS: changed admission bytes\n')
+    expect(installed.profileFingerprint(profile)).not.toBe(recorded.profileSha256)
+    expect(()=>installed.validateCollectorProfile(recorded)).toThrow('PROFILE_HASH_MISMATCH')
+    const changed=await import(`${moduleUrl}?after-bootstrap-change`)
+    expect(changed.profileFingerprint(profile)).not.toBe(recorded.profileSha256)
+    expect(()=>changed.validateCollectorProfile(recorded)).toThrow('PROFILE_HASH_MISMATCH')
+  })
+
   it.each([
     ['controlPlaneOrigin','https://inventory-admin.joegallant.me'],
     ['credentialRef','CREDENTIAL_SYNTHETIC_OTHER'],

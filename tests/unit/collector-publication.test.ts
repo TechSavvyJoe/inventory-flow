@@ -1,6 +1,7 @@
 // @ts-nocheck -- synthetic actual SQLite, encrypted evidence, R2 and signed RPC.
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { createSyntheticCollector, COLLECTOR_OWNER as owner, COLLECTOR_SYNTHETIC_NOW as now } from '../../fixtures/synthetic-collector.mjs'
 import { claimCollector, readCollectors, receiptCollector, saveCollector } from '../../cloudflare/src/collector-execution.mjs'
 import { publishCollector, publicationTicket, publishTenantCandidate, readTenantPublicationReceipt, reconcileCollector } from '../../cloudflare/src/collector-publication.mjs'
@@ -21,6 +22,31 @@ const setup=async(prepare=async()=>{})=>{
  f.candidate=structuredClone(f.bundle);f.candidate.release.completedAt=now.toISOString();f.candidate.createdAt=now.toISOString();f.envelope=encryptBundle(f.candidate,f.key)
  f.input={attemptId:f.attempt.attemptId,fence:f.attempt.fence,configSha256:f.attempt.configSha256,envelope:f.envelope}
  return f
+}
+const removeSyntheticPublicListing=(bundle,vin)=>{
+ const release=bundle.release,record=release.publicSnapshot.vehicles[vin]
+ delete release.publicSnapshot.vehicles[vin]
+ release.vehicles.find(v=>v.vin===vin).publicRecord=null
+ const status=release.publicSnapshot.source_statuses.find(s=>s.source===record.store)
+ for(const field of ['expected_count','rows_fetched','unique_vins'])status[field]--
+ release.sourceRuns.public.rowCount--
+ release.sourceRuns.public.metadata.storeCounts[record.store]--
+ release.sourceRuns.public.metadata.sourceStatuses=structuredClone(release.publicSnapshot.source_statuses)
+ release.manifest.source_counts.public_unique_vins--
+}
+const publishSyntheticBaseline=async f=>{
+ f.baseline=encryptBundle(f.bundle,f.key)
+ const result=await publishRelease(new Request('https://synthetic.invalid/internal/releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(f.baseline)}),f.tenantEnv)
+ expect(result.ok).toBe(true)
+}
+// Exercise the tenant's rejection of an authenticated but malformed candidate;
+// the normal publisher refuses these payloads before encrypting them.
+const encryptMalformedSyntheticCandidate=(bundle,key)=>{
+ const version='inventory-flow-private-release-v1',iv=randomBytes(12),plaintext=Buffer.from(JSON.stringify(bundle)),bundleSha256=createHash('sha256').update(plaintext).digest('hex')
+ const cipher=createCipheriv('aes-256-gcm',key,iv)
+ cipher.setAAD(Buffer.from(`${version}:${bundle.reportDate}:${bundleSha256}`))
+ const ciphertext=Buffer.concat([cipher.update(plaintext),cipher.final(),cipher.getAuthTag()])
+ return {version,reportDate:bundle.reportDate,bundleSha256,iv:iv.toString('base64url'),ciphertext:ciphertext.toString('base64url')}
 }
 describe('Brokered publication and independent tenant receipt',()=>{
  it.each([45000,119000])('verifies a publication after a %ims RPC using a fresh receipt ticket and settlement time',async elapsed=>{
@@ -210,6 +236,62 @@ describe('Brokered publication and independent tenant receipt',()=>{
   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM vehicle_service_intake').get().n).toBe(intakeBefore)
  })
+ it.each(['null','omitted','changed','retained'])('preserves baseline DealerMail-only resource evidence when its candidate record is %s',async mode=>{
+  const f=await setup(async f=>{
+   f.resourceVin=f.bundle.release.vehicles.find(v=>v.resourceRecord).vin
+   removeSyntheticPublicListing(f.bundle,f.resourceVin)
+   await publishSyntheticBaseline(f)
+  })
+  const record=f.candidate.release.vehicles.find(v=>v.vin===f.resourceVin),retained=structuredClone(record.resourceRecord)
+  expect(record.publicRecord).toBeNull()
+  expect(record.resourceRecord.factoryEquipment).toBeTruthy()
+  if(mode==='null')record.resourceRecord=null
+  if(mode==='omitted')delete record.resourceRecord
+  if(mode==='changed')record.resourceRecord.factoryEquipment.sourceLabel='Synthetic altered retained resource'
+  expect(f.candidate.release.sourceRuns.resources).toEqual(f.bundle.release.sourceRuns.resources)
+  expect(f.candidate.release.resourceSnapshot).toEqual(f.bundle.release.resourceSnapshot)
+  f.input.envelope=mode==='retained'?encryptBundle(f.candidate,f.key):encryptMalformedSyntheticCandidate(f.candidate,f.key)
+  if(mode==='retained'){
+   expect(await publishCollector(f.env,f.machine,f.input,'mail-only-resource',now)).toMatchObject({status:'published_verified',ready:true})
+   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(1)
+   expect(f.bundle.release.vehicles.find(v=>v.vin===f.resourceVin).resourceRecord).toEqual(retained)
+  }else{
+   await expect(publishCollector(f.env,f.machine,f.input,'mail-only-resource',now)).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
+   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+   expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(f.baseline.bundleSha256)
+  }
+ })
+ it('allows a genuinely new DealerMail-only VIN without adding public or resource evidence',async()=>{
+  const f=await setup(async f=>{
+   f.newRecord=structuredClone(f.bundle.release.vehicles.find(v=>!v.holdRecord && !v.resourceRecord && v.crmRecord.storeName==='Howell'))
+   f.fullMail=structuredClone(f.bundle.release.dealerMailSnapshot)
+   f.fullMailRun=structuredClone(f.bundle.release.sourceRuns.dealerMail)
+   removeSyntheticPublicListing(f.bundle,f.newRecord.vin)
+   f.bundle.release.vehicles=f.bundle.release.vehicles.filter(v=>v.vin!==f.newRecord.vin)
+   const snapshot=f.bundle.release.dealerMailSnapshot
+   for(const field of ['completeDealerMailUsedInventory','excludeActiveHoldsValidationSet']){
+    const set=snapshot[field];set.rows=set.rows.filter(row=>row.vin!==f.newRecord.vin)
+    for(const name of ['totalRows','uniqueVinCount','uniqueStockCount'])set.summary[name]--
+    if(set.summary.byStore)set.summary.byStore.Howell--
+   }
+   const control=snapshot.crmInventoryControlValidation
+   for(const field of ['completeInventoryRowsIncludingHolds','inventoryRowsExcludingHolds','lotReadyOnlyRowsIncludingHolds'])control[field]--
+   control.includingHoldsByStore.Howell--;control.excludingHoldsByStore.Howell--
+   f.bundle.release.sourceRuns.dealerMail.rowCount--
+   f.bundle.release.sourceRuns.dealerMail.metadata.vinQuarantine.sourceRowCount--
+   f.bundle.release.sourceRuns.dealerMail.metadata.vinQuarantine.vinReconciledRowCount--
+   f.bundle.release.manifest.source_counts.dealermail_used_rows--
+   await publishSyntheticBaseline(f)
+  })
+  expect(f.bundle.release.vehicles.some(v=>v.vin===f.newRecord.vin)).toBe(false)
+  f.candidate.release.dealerMailSnapshot=f.fullMail
+  f.candidate.release.sourceRuns.dealerMail=f.fullMailRun
+  f.candidate.release.manifest.source_counts.dealermail_used_rows=8
+  f.candidate.release.vehicles.push({...f.newRecord,publicRecord:null,resourceRecord:null})
+  f.input.envelope=encryptBundle(f.candidate,f.key)
+  expect(await publishCollector(f.env,f.machine,f.input,'new-mail-only',now)).toMatchObject({status:'published_verified',ready:true,counts:{inventory:8}})
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(1)
+ })
  it.each(['key','malformed-key','wrong-key','r2','d1'])('retains the same candidate and safely retries a definitely preflight-only %s failure',async mode=>{
   const f=await setup(),originalKey=f.tenantEnv.RELEASE_ENCRYPTION_KEY_BASE64,originalGet=f.bucket.get,originalPrepare=f.tenantEnv.INVENTORY_DB.prepare
   if(mode==='key')delete f.tenantEnv.RELEASE_ENCRYPTION_KEY_BASE64
@@ -332,8 +414,8 @@ describe('Brokered publication and independent tenant receipt',()=>{
    return {status:'preflight_retryable'}
   })
   expect(await publishCollector(f.env,f.machine,f.input,`late-${mode}`,now,()=>later)).toMatchObject({status:'preflight_retryable'})
-  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe(['cancel','revoke'].includes(mode)?'reconciliation_required':'expired')
-  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe(['cancel','revoke'].includes(mode)?'reconciliation_required':['disabled','third-attempt'].includes(mode)?'failed':'queued')
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe(['cancel','revoke'].includes(mode)?'cancelled':'expired')
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe(['cancel','revoke'].includes(mode)?'cancelled':['disabled','third-attempt'].includes(mode)?'failed':'queued')
   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_preflight_deferred'").get().n).toBe(1)
   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
   if(['lease','deadline'].includes(mode))expect(await claimCollector(f.env,f.machine,{},'retry-after-positive-expiry',later)).toMatchObject({fence:2})
@@ -355,8 +437,8 @@ describe('Brokered publication and independent tenant receipt',()=>{
    return proof
   }
   expect(await publishCollector(f.env,f.machine,f.input,`late-cas-${mode}`,now,()=>later)).toMatchObject({status:'revision_retryable'})
-  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe(['cancel','revoke'].includes(mode)?'reconciliation_required':'expired')
-  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe(['cancel','revoke'].includes(mode)?'reconciliation_required':['disabled','third-attempt'].includes(mode)?'failed':'queued')
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe(['cancel','revoke'].includes(mode)?'cancelled':'expired')
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe(['cancel','revoke'].includes(mode)?'cancelled':['disabled','third-attempt'].includes(mode)?'failed':'queued')
   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_revision_deferred'").get().n).toBe(1)
   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
   if(['lease','deadline'].includes(mode))expect(await claimCollector(f.env,f.machine,{},'retry-after-rollback-expiry',later)).toMatchObject({fence:2})
@@ -366,6 +448,90 @@ describe('Brokered publication and independent tenant receipt',()=>{
   expect(await publishCollector(f.env,f.machine,f.input,'lost-preflight',now)).toMatchObject({status:'reconciliation_required'})
   expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('reconciliation_required')
   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_preflight_deferred'").get().n).toBe(0)
+ })
+ it.each(['preflight','revision'].flatMap(proof=>['cancel','revoke'].map(mode=>({proof,mode}))))('settles $proof no-publication proof after owner $mode and frees only the exact group attempt',async({proof,mode})=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish,later=new Date(now.getTime()+45000)
+  const otherRequest=await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic independent queued work',expectedRevision:revision(f)},'proof-other-request')
+  const history={...f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get(),id:'synthetic-historical-attempt',request_id:otherRequest.id,claim_key:'synthetic-historical-claim',stage:'expired',failure_code:'DURATION_EXCEEDED',completed_at:now.toISOString()}
+  const columns=Object.keys(history)
+  f.sqlite.prepare(`INSERT INTO platform_collector_attempts (${columns.join(',')}) VALUES (${columns.map(()=>'?').join(',')})`).run(...Object.values(history))
+  if(proof==='preflight')delete f.tenantEnv.RELEASE_ENCRYPTION_KEY_BASE64
+  else{
+   const batch=f.tenantEnv.INVENTORY_DB.batch
+   f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+    if(statements.some(s=>s.sql.includes('UPDATE cloud_app_revision SET revision=CASE')))f.tenant.prepare('UPDATE cloud_app_revision SET revision=revision+1 WHERE id=1').run()
+    return batch(statements)
+   }
+  }
+  let ownerAudit,collector
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{
+   const result=await publish(...args)
+   expect(result.status).toBe(`${proof}_retryable`)
+   if(mode==='cancel')await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'cancel',connectionId:f.dealers[0].connectionId,requestId:f.attempt.requestId,reason:'Synthetic owner cancellation after no-publication proof',expectedRevision:revision(f)},'proof-cancel')
+   else await saveCollector(f.env,owner,'synthetic-north',{operation:'revoke',id:f.collectorId,reason:'Synthetic owner revocation after no-publication proof',expectedRevision:revision(f)},'proof-revoke',now)
+   expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts WHERE id=?').get(f.attempt.attemptId).stage).toBe('reconciliation_required')
+   ownerAudit=f.sqlite.prepare('SELECT * FROM platform_audit WHERE request_key=?').get(`proof-${mode}`)
+   collector=f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(f.collectorId)
+   return result
+  })
+  expect(await publishCollector(f.env,f.machine,f.input,'owner-proof',now,()=>later)).toMatchObject({status:`${proof}_retryable`,ready:false})
+  expect(f.sqlite.prepare('SELECT stage,failure_code,completed_at FROM platform_collector_attempts WHERE id=?').get(f.attempt.attemptId)).toEqual({stage:'cancelled',failure_code:mode==='cancel'?'CANCELLED_BY_OWNER':'COLLECTOR_REVOKED',completed_at:later.toISOString()})
+  expect(f.sqlite.prepare('SELECT state,updated_at FROM platform_pull_requests WHERE id=?').get(f.attempt.requestId)).toEqual({state:'cancelled',updated_at:later.toISOString()})
+  expect(f.sqlite.prepare('SELECT * FROM platform_collector_attempts WHERE id=?').get(history.id)).toEqual(history)
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests WHERE id=?').get(otherRequest.id).state).toBe('queued')
+  expect(f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(f.collectorId)).toEqual(collector)
+  expect(f.sqlite.prepare('SELECT * FROM platform_audit WHERE request_key=?').get(`proof-${mode}`)).toEqual(ownerAudit)
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_attempts WHERE stage IN (\'claimed\',\'captured\',\'publishing\',\'reconciliation_required\')').get().n).toBe(0)
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_audit WHERE action=? AND target_id=?').get(`publication_${proof}_deferred`,f.attempt.attemptId).n).toBe(1)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(f.baseline.bundleSha256)
+  if(mode==='cancel'){
+   f.tenantEnv.RELEASE_ENCRYPTION_KEY_BASE64=f.key.toString('base64')
+   expect(await claimCollector(f.env,f.machine,{},'proof-next-claim',later)).toMatchObject({requestId:otherRequest.id,fence:2})
+  }else await expect(claimCollector(f.env,f.machine,{},'proof-revoked-claim',later)).rejects.toMatchObject({code:'COLLECTOR_REVOKED'})
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+ })
+ it.each(['preflight','revision'].flatMap(proof=>['cancel','revoke'].flatMap(mode=>['lost','malformed'].map(reply=>({proof,mode,reply})))) )('keeps owner $mode fenced when its $proof no-publication reply is $reply',async({proof,mode,reply})=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  if(proof==='preflight')delete f.tenantEnv.RELEASE_ENCRYPTION_KEY_BASE64
+  else{
+   const batch=f.tenantEnv.INVENTORY_DB.batch
+   f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+    if(statements.some(s=>s.sql.includes('UPDATE cloud_app_revision SET revision=CASE')))f.tenant.prepare('UPDATE cloud_app_revision SET revision=revision+1 WHERE id=1').run()
+    return batch(statements)
+   }
+  }
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{
+   const result=await publish(...args)
+   if(mode==='cancel')await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'cancel',connectionId:f.dealers[0].connectionId,requestId:f.attempt.requestId,reason:'Synthetic cancellation with uncertain reply',expectedRevision:revision(f)},'uncertain-cancel')
+   else await saveCollector(f.env,owner,'synthetic-north',{operation:'revoke',id:f.collectorId,reason:'Synthetic revocation with uncertain reply',expectedRevision:revision(f)},'uncertain-revoke',now)
+   if(reply==='lost')throw new Error('Synthetic no-publication reply lost')
+   return proof==='preflight'?{...result,unrecognized:true}:{...result,atomicRollback:false}
+  })
+  expect(await publishCollector(f.env,f.machine,f.input,'uncertain-owner-proof',now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare('SELECT stage,failure_code,completed_at FROM platform_collector_attempts').get()).toEqual({stage:'reconciliation_required',failure_code:mode==='cancel'?'CANCELLED_BY_OWNER':'COLLECTOR_REVOKED',completed_at:null})
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe('reconciliation_required')
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action IN ('publication_preflight_deferred','publication_revision_deferred')").get().n).toBe(0)
+  expect(await reconcileCollector(f.env,owner,'synthetic-north',{attemptId:f.attempt.attemptId},now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+ })
+ it.each(['preflight','revision'].flatMap(proof=>['fence','bundle','foreign-dispatch'].map(mismatch=>({proof,mismatch}))))('does not settle $proof proof against a mismatched saved $mismatch',async({proof,mismatch})=>{
+  const f=await setup(),later=new Date(now.getTime()+121000)
+  if(mismatch==='foreign-dispatch'){
+   const hash=await digest({attemptId:f.attempt.attemptId,bundleSha256:f.envelope.bundleSha256,configSha256:f.attempt.configSha256})
+   f.sqlite.prepare("INSERT INTO platform_audit SELECT id||'-foreign',actor_id,actor_name,entity,'synthetic-foreign-attempt','publication_started',reason,previous_json,next_json,'publish:isolated-proof',?,created_at FROM platform_audit WHERE action='claimed' LIMIT 1").run(hash)
+  }
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async()=>{
+   if(mismatch==='fence')f.sqlite.prepare('UPDATE platform_collector_attempts SET fence=fence+1').run()
+   if(mismatch==='bundle')f.sqlite.prepare('UPDATE platform_collector_attempts SET expected_bundle_sha256=?').run('b'.repeat(64))
+   return proof==='preflight'?{status:'preflight_retryable'}:{status:'revision_retryable',attemptId:f.attempt.attemptId,fence:f.attempt.fence,bundleSha256:f.envelope.bundleSha256,reportDate:f.envelope.reportDate,atomicRollback:true}
+  })
+  expect(await publishCollector(f.env,f.machine,f.input,'isolated-proof',now,()=>later)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare('SELECT stage,completed_at FROM platform_collector_attempts').get()).toEqual({stage:'reconciliation_required',completed_at:null})
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe('reconciliation_required')
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action IN ('publication_preflight_deferred','publication_revision_deferred')").get().n).toBe(0)
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
  })
  it('actually decrypts, validates, accepts, persists and reads the exact tenant publication; host cannot submit publication receipts',async()=>{
   const f=await setup(),result=await publishCollector(f.env,f.machine,f.input,'publish',now)

@@ -183,6 +183,36 @@ restored where storage permits, and the exact candidate, backup and pending
 marker stay available for a verified retry. An unrelated later local receipt or
 unrecoverable storage failure requires review; it is not cleared as success.
 
+Before capture can overwrite canonical inputs, the host writes a private,
+durable `collector-attempts/capture-rollback.json` journal containing the exact
+receipt-bound manifest, release, receipt and fixed DealerMail input slots. The
+journal is synchronized before capture starts. Recovery runs under the existing
+publication lock before baseline inspection, writer work or verified promotion,
+restores exact prior bytes and file absence, and verifies source binding before
+retiring the backup. Recovery does not remove unrelated pending candidates or
+promotion artifacts. Malformed, partial, oversized or unsafe journals, a changed
+receipt, and incomplete rollback stop for reconciliation while preserving
+evidence. A reviewed child bootstrap waits for durable PID/nonce admission before
+importing a capture entrypoint. Recovery preserves the journal while an admitted
+child is alive, its PID cannot be conclusively checked, or its identity is
+uncertain; it never kills a process discovered through recovery. A pending launch
+cannot receive a start grant after its original owner is gone. Older journals
+without this admission record fail closed because they cannot exclude an orphan
+writer. Standalone publishing and reconciliation also refuse any remaining
+journal or temporary journal before reading canonical data; recovery belongs to
+the daily runner. Limits are 25 MiB per file and 128 MiB per journal. Existing Windows
+directory-sync behavior remains unchanged; a real Windows power interruption
+is not covered by the synthetic process-interruption tests.
+
+A positively verified preflight rejection or atomic rollback proves that no
+publication occurred. If the owner cancelled the request or revoked the
+collector during that RPC, the exact request and attempt settle as cancelled
+and release the group fence without becoming runnable again. A lost or malformed
+reply cannot supply this proof and remains readback-only. Hold-only publication
+also compares nullable public and resource evidence for every baseline VIN;
+omitting a retained record cannot bypass this check. Genuinely new DealerMail-only
+VINs remain allowed.
+
 After verified settlement, cleanup atomically retires the pending marker before
 removing that attempt's exact artifact paths. An interruption during removal can
 leave private orphan files, but cannot leave a pending marker pointing to deleted

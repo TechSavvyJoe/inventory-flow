@@ -162,6 +162,27 @@ export function readPublicationReconciliation(workspaceRoot) {
   }
 }
 
+// A reclaimed publication lock does not prove the collector restored the
+// canonical files. Only the daily runner owns capture recovery. Treat any
+// journal or interrupted journal update as pending, without parsing/following
+// it; unknown filesystem state must not admit a canonical publication either.
+export function assertNoPendingCollectorCapture(workspaceRoot, environment = process.env) {
+  const workRoots = new Set([path.join(workspaceRoot, 'work')])
+  // The runner uses the fixed canonical root above. A configured work root is
+  // an additional fence, never a replacement that could hide that journal.
+  if (String(environment.WORK_ROOT ?? '').trim()) workRoots.add(path.resolve(workspaceRoot, environment.WORK_ROOT))
+  for (const workRoot of workRoots) {
+    const journal = path.join(workRoot, 'collector-attempts', 'capture-rollback.json')
+    for (const marker of [journal, `${journal}.tmp`]) {
+      try { lstatSync(marker) } catch (error) {
+        if (error?.code === 'ENOENT') continue
+        throw new Error('COLLECTOR_CAPTURE_RECOVERY_REQUIRED', { cause: error })
+      }
+      throw new Error('COLLECTOR_CAPTURE_RECOVERY_REQUIRED')
+    }
+  }
+}
+
 export function assertNoPendingPublicationReconciliation(workspaceRoot) {
   const state = readPublicationReconciliation(workspaceRoot)
   if (!state) return null
@@ -492,6 +513,7 @@ export async function reconcilePendingPublication({
   const inheritedLock = assertInheritedPublicationLock(lockPath, environment)
   const lock = inheritedLock ? null : acquirePublicationLock(lockPath)
   try {
+    assertNoPendingCollectorCapture(workspaceRoot, environment)
     const state = readPublicationReconciliation(workspaceRoot)
     check(state !== null, 'PUBLICATION_RECONCILIATION_NOT_FOUND')
     const candidateClock = new Date(`${state.reportDate}T16:00:00-04:00`)
@@ -572,6 +594,7 @@ export async function main({
   const inheritedLock = assertInheritedPublicationLock(lockPath, environment)
   const lock = inheritedLock ? null : acquirePublicationLock(lockPath)
   try {
+    assertNoPendingCollectorCapture(workspaceRoot, environment)
     assertNoPendingPublicationReconciliation(workspaceRoot)
     const release = loadRelease({ workspaceRoot, now })
     const holdRefresh = Boolean(String(environment.INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON ?? '').trim())
@@ -620,6 +643,7 @@ export function publicationFailureMessage(error) {
     ? error.bundleSha256.toLowerCase()
     : null
   const reconciliationRequired = RECONCILIATION_FAILURE_CODES.has(code) || code === 'PUBLICATION_RECONCILIATION_REQUIRED'
+  if (code === 'COLLECTOR_CAPTURE_RECOVERY_REQUIRED') return `Cloud sync incomplete: ${code}. Run the daily runner's guarded capture recovery before publishing or reconciling canonical files.`
   if (RECOVERY_RETAINED_CODES.has(code)) {
     const candidate = bundleSha256 ? ` candidate_bundle_sha256=${bundleSha256}.` : ''
     return `Publication reconciliation incomplete: ${code}.${candidate} The exact-candidate marker was kept; follow the guarded recovery in DAILY_AUTOMATION_RUNBOOK.md.`

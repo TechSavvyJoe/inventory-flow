@@ -109,9 +109,9 @@ export function collectCollectorDependencyGraph(workspaceRoot) {
   return [...visited.entries()].map(([file, hash]) => ({ path: path.relative(root, file).split(path.sep).join('/'), sha256: hash })).sort((a, b) => a.path.localeCompare(b.path))
 }
 
-let cachedAdapterCodeSha256
 function adapterCodeFingerprint() {
-  if (cachedAdapterCodeSha256) return cachedAdapterCodeSha256
+  // A daemon imports this module once, but each child reads installed source
+  // afresh. Revalidate current bytes before admitting another collector run.
   const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url))
   const repoRoot = path.resolve(scriptsDirectory, '..', '..')
   const sourceFiles = [
@@ -119,6 +119,7 @@ function adapterCodeFingerprint() {
     'scripts/lib/collector-profile.mjs',
     'scripts/lib/collector-protocol.mjs',
     'scripts/lib/dealermail-hold-refresh-adapter.mjs',
+    'scripts/lib/collector-child-bootstrap.mjs',
     'scripts/lib/cdp.mjs',
     'scripts/run-inventory-flow-daily.mjs',
     'scripts/publish-cloud-release.mjs',
@@ -130,8 +131,7 @@ function adapterCodeFingerprint() {
   for (const relative of sourceFiles) {
     hash.update(relative).update('\0').update(readFileSync(path.join(repoRoot, relative))).update('\0')
   }
-  cachedAdapterCodeSha256 = hash.digest('hex')
-  return cachedAdapterCodeSha256
+  return hash.digest('hex')
 }
 
 export function validateCollectorProfile(profile) {

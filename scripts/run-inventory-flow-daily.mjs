@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -337,6 +337,7 @@ function verifyHoldRefreshBaseline({ reportDate, receipt, manifestPath, publicPa
 }
 
 function inspectCollectorBaseline(reportDate) {
+  recoverCollectorCaptureBaseline()
   if (reportDate !== todayInNewYork()) throw new Error('BASELINE_REQUIRED')
   if (retainedGlobalPublicationReconciliation()) throw new Error('RECONCILIATION_REQUIRED')
   const manifestPath = path.join(WORK_ROOT, 'run-status', `${reportDate}.json`)
@@ -1547,6 +1548,171 @@ function writeCollectorBaselineFile(filePath, content) {
   syncCollectorDirectory(path.dirname(filePath))
 }
 
+const COLLECTOR_CAPTURE_JOURNAL_LIMIT = 128 * 1024 * 1024
+const COLLECTOR_CAPTURE_FILE_LIMIT = 25 * 1024 * 1024
+const collectorCaptureJournalPath = () => path.join(WORK_ROOT, 'collector-attempts', 'capture-rollback.json')
+function collectorCaptureBaselinePaths(reportDate) {
+  return {
+    manifest: path.join(WORK_ROOT, 'run-status', `${reportDate}.json`),
+    release: path.join(WORK_ROOT, 'releases', reportDate, 'inventory-flow-release.json'),
+    ...Object.fromEntries(dealerMailRevisionPaths(reportDate).map((filePath, index) => [`dealerMail${index}`, filePath])),
+    receipt: path.join(WORK_ROOT, 'app-feed-status', `${reportDate}.json`),
+  }
+}
+
+function readCollectorCaptureJournal(journalPath) {
+  assertCollectorLocalFile(journalPath)
+  if (lstatSync(journalPath).size > COLLECTOR_CAPTURE_JOURNAL_LIMIT) throw new Error('RECONCILIATION_REQUIRED')
+  const journal = readJson(journalPath)
+  if (Object.keys(journal).sort().join(',') !== 'attemptId,baselineBundleSha256,child,files,reportDate,schemaVersion' || journal.schemaVersion !== 2 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(journal.attemptId ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(journal.reportDate ?? '') ||
+      !normalizedHash(journal.baselineBundleSha256)) throw new Error('RECONCILIATION_REQUIRED')
+  if (journal.child !== null) {
+    const child = journal.child
+    if (Object.keys(child ?? {}).sort().join(',') !== 'nonce,ownerId,parentPid,phase,pid' ||
+        !['launch_pending', 'active'].includes(child.phase) || !Number.isSafeInteger(child.parentPid) || child.parentPid < 1 ||
+        !/^[a-f0-9-]{36}$/.test(child.nonce ?? '') || !/^[a-f0-9-]{36}$/.test(child.ownerId ?? '') ||
+        (child.phase === 'launch_pending' ? child.pid !== null : !Number.isSafeInteger(child.pid) || child.pid < 1)) throw new Error('RECONCILIATION_REQUIRED')
+  }
+  const paths = collectorCaptureBaselinePaths(journal.reportDate)
+  if (Object.keys(journal.files ?? {}).sort().join(',') !== Object.keys(paths).sort().join(',')) throw new Error('RECONCILIATION_REQUIRED')
+  const files = Object.fromEntries(Object.entries(journal.files).map(([key, value]) => {
+    if (value === null) return [key, null]
+    if (Object.keys(value).sort().join(',') !== 'bytes,sha256' || typeof value.bytes !== 'string' || value.bytes.length > Math.ceil(COLLECTOR_CAPTURE_FILE_LIMIT / 3) * 4) throw new Error('RECONCILIATION_REQUIRED')
+    const bytes = Buffer.from(value.bytes, 'base64')
+    if (bytes.length > COLLECTOR_CAPTURE_FILE_LIMIT || bytes.toString('base64') !== value.bytes ||
+        createHash('sha256').update(bytes).digest('hex') !== value.sha256) throw new Error('RECONCILIATION_REQUIRED')
+    return [key, bytes]
+  }))
+  if (!files.manifest || !files.release || !files.receipt || !files.dealerMail5) throw new Error('RECONCILIATION_REQUIRED')
+  const receipt = JSON.parse(files.receipt.toString('utf8'))
+  const manifest = JSON.parse(files.manifest.toString('utf8'))
+  if (!verifiedReceiptIdentityIsValid(receipt, journal.reportDate) || !sameHash(receipt.bundleSha256, journal.baselineBundleSha256) ||
+      !sameHash(cloudBundleSha256(JSON.parse(files.release.toString('utf8'))), journal.baselineBundleSha256) ||
+      manifest.report_date !== journal.reportDate || manifest.complete !== true ||
+      path.resolve(WORKSPACE_ROOT, manifest.dealermail_snapshot_path ?? '') !== paths.dealerMail5 ||
+      !sameHash(createHash('sha256').update(files.dealerMail5).digest('hex'), receipt.sourceHashes?.dealerMail) ||
+      !sameHash(manifest.dealermail_snapshot_sha256, receipt.sourceHashes?.dealerMail)) throw new Error('RECONCILIATION_REQUIRED')
+  // Validate every destination before the first rollback write. Journal contents
+  // carry fixed slots rather than caller-selected paths.
+  for (const filePath of Object.values(paths)) assertCollectorLocalFile(filePath, true)
+  return { journal, paths, files }
+}
+
+function recoverCollectorCaptureBaseline() {
+  const journalPath = collectorCaptureJournalPath(), directory = path.dirname(journalPath)
+  if (!existsSync(directory)) return false
+  let lock
+  try {
+    const pending = assertCollectorLocalFile(journalPath, true)
+    const temporary = assertCollectorLocalFile(`${journalPath}.tmp`, true)
+    if (!pending && !temporary) return false
+    const lockPath = path.join(WORK_ROOT, 'app-feed-status', '.publication.lock')
+    if (!assertInheritedPublicationLock(lockPath)) lock = acquirePublicationLock(lockPath)
+    // A partial journal was never admitted for capture. Keep it for review;
+    // never guess original bytes or silently delete recovery evidence.
+    if (temporary) throw new Error('RECONCILIATION_REQUIRED')
+    const { journal, paths, files } = readCollectorCaptureJournal(journalPath)
+    if (journal.child) {
+      // A dead host does not prove its separately spawned writer is dead. An
+      // admitted child fences rollback until definite exit; PID reuse, EPERM
+      // and unknown process status remain blocked, never grounds for a kill.
+      const pid = journal.child.phase === 'active' ? journal.child.pid : journal.child.parentPid
+      let definitelyExited = false
+      try { process.kill(pid, 0) } catch (error) { definitelyExited = error.code === 'ESRCH' }
+      if (!definitelyExited) throw new Error('RECONCILIATION_REQUIRED')
+    }
+    // Publication/promotion never runs while this journal exists. A changed
+    // receipt is outside this transaction's authority and must be reconciled.
+    if (!readFileSync(paths.receipt).equals(files.receipt)) throw new Error('RECONCILIATION_REQUIRED')
+    for (const [key, filePath] of Object.entries(paths)) {
+      if (files[key] === null) {
+        try { unlinkSync(filePath) } catch (error) { if (error.code !== 'ENOENT') throw error }
+        syncCollectorDirectory(path.dirname(filePath))
+      } else if (!existsSync(filePath) || !readFileSync(filePath).equals(files[key])) {
+        writeCollectorBaselineFile(filePath, files[key])
+      }
+    }
+    for (const [key, filePath] of Object.entries(paths)) {
+      if (files[key] === null ? existsSync(filePath) : !readFileSync(filePath).equals(files[key])) throw new Error('RECONCILIATION_REQUIRED')
+    }
+    verifyHoldRefreshBaseline({ reportDate: journal.reportDate, receipt: JSON.parse(files.receipt.toString('utf8')),
+      manifestPath: paths.manifest, publicPath: publicSnapshotPath(journal.reportDate), dealerPath: paths.dealerMail5,
+      resourcePath: path.join(APP_ROOT, 'data', 'vin-document-enrichment.json') })
+    // Confirm journal removal can be persisted before retiring the only backup.
+    syncCollectorDirectory(directory)
+    unlinkSync(journalPath)
+    syncCollectorDirectory(directory)
+    return true
+  } catch { throw new Error('RECONCILIATION_REQUIRED') }
+  finally { if (lock) releasePublicationLock(lock) }
+}
+
+function beginCollectorCaptureRollback({ reportDate, attemptId, baselineBundleSha256 }) {
+  const journalPath = collectorCaptureJournalPath(), directory = path.dirname(journalPath)
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  syncCollectorDirectory(WORK_ROOT)
+  if (assertCollectorLocalFile(journalPath, true) || assertCollectorLocalFile(`${journalPath}.tmp`, true)) throw new Error('RECONCILIATION_REQUIRED')
+  const paths = collectorCaptureBaselinePaths(reportDate)
+  const files = Object.fromEntries(Object.entries(paths).map(([key, filePath]) => {
+    if (!assertCollectorLocalFile(filePath, true)) return [key, null]
+    if (lstatSync(filePath).size > COLLECTOR_CAPTURE_FILE_LIMIT) throw new Error('RECONCILIATION_REQUIRED')
+    const bytes = readFileSync(filePath)
+    return [key, { bytes: bytes.toString('base64'), sha256: createHash('sha256').update(bytes).digest('hex') }]
+  }))
+  const serialized = JSON.stringify({ schemaVersion: 2, attemptId, reportDate, baselineBundleSha256, child: null, files })
+  if (Buffer.byteLength(serialized) > COLLECTOR_CAPTURE_JOURNAL_LIMIT) throw new Error('RECONCILIATION_REQUIRED')
+  // Unlike an attempt artifact, this fixed journal survives cleanup and holds
+  // the receipt-bound baseline until exact rollback succeeds on any startup.
+  writeCollectorAttemptFile(`${journalPath}.tmp`, serialized)
+  renameSync(`${journalPath}.tmp`, journalPath)
+  syncCollectorDirectory(directory)
+  readCollectorCaptureJournal(journalPath)
+  return { rollback: recoverCollectorCaptureBaseline, childGuard: collectorCaptureChildGuard(journalPath) }
+}
+
+function writeCollectorCaptureJournal(journalPath, journal) {
+  const temporary = `${journalPath}.tmp`
+  const serialized = JSON.stringify(journal)
+  if (Buffer.byteLength(serialized) > COLLECTOR_CAPTURE_JOURNAL_LIMIT) throw new Error('RECONCILIATION_REQUIRED')
+  // Preserve both the old complete backup and any interrupted replacement.
+  // A temporary replacement makes all later recovery fail closed.
+  writeCollectorAttemptFile(temporary, serialized)
+  renameSync(temporary, journalPath)
+  syncCollectorDirectory(path.dirname(journalPath))
+}
+
+function collectorCaptureChildGuard(journalPath) {
+  let launch = null
+  const matchingJournal = () => {
+    const { journal } = readCollectorCaptureJournal(journalPath)
+    if (!launch || journal.child?.nonce !== launch.nonce || journal.child.ownerId !== launch.ownerId ||
+        journal.child.parentPid !== process.pid) throw new Error('RECONCILIATION_REQUIRED')
+    return journal
+  }
+  return {
+    prepare() {
+      const lockPath = path.join(WORK_ROOT, 'app-feed-status', '.publication.lock')
+      if (!assertInheritedPublicationLock(lockPath)) throw new Error(PUBLICATION_LOCKED)
+      const { journal } = readCollectorCaptureJournal(journalPath)
+      if (journal.child !== null) throw new Error('RECONCILIATION_REQUIRED')
+      launch = { phase: 'launch_pending', pid: null, parentPid: process.pid, nonce: randomUUID(), ownerId: process.env[PUBLICATION_LOCK_OWNER_ENV] }
+      writeCollectorCaptureJournal(journalPath, { ...journal, child: launch })
+      return { journalPath, nonce: launch.nonce, ownerId: launch.ownerId }
+    },
+    register(pid) {
+      const journal = matchingJournal()
+      if (journal.child.phase !== 'launch_pending' || !Number.isSafeInteger(pid) || pid < 1) throw new Error('RECONCILIATION_REQUIRED')
+      writeCollectorCaptureJournal(journalPath, { ...journal, child: { ...launch, phase: 'active', pid } })
+    },
+    closed() {
+      const journal = matchingJournal()
+      writeCollectorCaptureJournal(journalPath, { ...journal, child: null })
+      launch = null
+    },
+  }
+}
+
 async function stageIntradayHoldRefreshCandidate({ reportDate, attemptId, baselineBundleSha256, captureDealerMail }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate ?? '') || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(attemptId ?? '')) {
     throw new Error('COLLECTOR_ATTEMPT_INVALID')
@@ -1557,10 +1723,10 @@ async function stageIntradayHoldRefreshCandidate({ reportDate, attemptId, baseli
   const { manifestPath, releasePath, receiptPath, publicPath, dealerPath, resourcePath, baseline, receipt } = verified
   if (!sameHash(receipt.bundleSha256, baselineBundleSha256)) throw new Error('BASELINE_REQUIRED')
   const beforeReceipt = { receipt }
-  const transaction = captureFileTransaction([manifestPath, releasePath, ...dealerMailRevisionPaths(reportDate)])
+  const transaction = beginCollectorCaptureRollback({ reportDate, attemptId, baselineBundleSha256 })
   let staged = false
   try {
-    await captureDealerMail({ reportDate, workspaceRoot: WORKSPACE_ROOT })
+    await captureDealerMail({ reportDate, workspaceRoot: WORKSPACE_ROOT, childGuard: transaction.childGuard })
     verifyHoldRefreshStableSources({ reportDate, receipt: beforeReceipt.receipt, manifestPath, publicPath, resourcePath })
     const resourceValidation = validateCurrentResourceFile()
     if (!resourceValidation.ok) throw new Error('BASELINE_INVALID')
@@ -1633,15 +1799,18 @@ async function stageIntradayHoldRefreshCandidate({ reportDate, attemptId, baseli
   }
 }
 
-function assertCollectorLocalFile(filePath) {
+function assertCollectorLocalFile(filePath, optional = false) {
   const relative = path.relative(WORKSPACE_ROOT, filePath)
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error('COLLECTOR_LOCAL_PROMOTION_FAILED')
   let current = WORKSPACE_ROOT
   for (const segment of relative.split(path.sep)) {
     current = path.join(current, segment)
-    const stat = lstatSync(current)
+    let stat
+    try { stat = lstatSync(current) }
+    catch (error) { if (optional && current === filePath && error.code === 'ENOENT') return false; throw error }
     if (stat.isSymbolicLink() || (current === filePath ? !stat.isFile() : !stat.isDirectory())) throw new Error('COLLECTOR_LOCAL_PROMOTION_FAILED')
   }
+  return true
 }
 
 // Only a tenant-verified exact candidate may advance the local receipt-bound
@@ -1654,6 +1823,7 @@ function promoteVerifiedCollectorCandidate({ profile, claim, candidate, verifica
   }
   const lockPath = path.join(WORK_ROOT, 'app-feed-status', '.publication.lock')
   if (!assertInheritedPublicationLock(lockPath)) throw new Error(PUBLICATION_LOCKED)
+  recoverCollectorCaptureBaseline()
   const { attemptId, reportDate } = claim
   const base = path.join(WORK_ROOT, 'collector-attempts', attemptId)
   const retainedPaths = { release: `${base}.release.json`, manifest: `${base}.manifest.json`, dealerMail: `${base}.dealermail.json` }
@@ -1974,6 +2144,7 @@ async function runDaily(options) {
     const inherited = assertInheritedPublicationLock(lockPath)
     lock = inherited ? null : acquirePublicationLock(lockPath)
     if (lock) process.env[PUBLICATION_LOCK_OWNER_ENV] = JSON.parse(lock.content).ownerId
+    recoverCollectorCaptureBaseline()
     return await runDailyUnlocked(options)
   } catch (error) {
     if (error.message === PUBLICATION_LOCKED && options.refreshHolds) {
@@ -2042,6 +2213,8 @@ export const internals = {
   runDaily,
   runIntradayHoldRefresh,
   inspectCollectorBaseline,
+  recoverCollectorCaptureBaseline,
+  collectorCaptureBaselinePaths,
   stageIntradayHoldRefreshCandidate,
   promoteVerifiedCollectorCandidate,
   verifyHoldRefreshBaseline,

@@ -96,8 +96,9 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
   // A positive tenant RPC proof can release the no-redispatch fence. Preflight
   // did not enter publication; a revision conflict entered it but definitively
   // rolled back the atomic release/receipt batch. A thrown/lost reply cannot.
+  const preflightProof=dispatched?.status==='preflight_retryable' && Object.keys(dispatched).length===1
   const revisionProof=dispatched?.status==='revision_retryable' && dispatched.atomicRollback===true && dispatched.attemptId===attempt.id && dispatched.fence===attempt.fence && dispatched.bundleSha256===attempt.expected_bundle_sha256 && dispatched.reportDate===attempt.report_date && Object.keys(dispatched).length===6 && Object.keys(dispatched).every(k=>['status','attemptId','fence','bundleSha256','reportDate','atomicRollback'].includes(k))
-  if(dispatched?.status==='preflight_retryable' || revisionProof) {
+  if(preflightProof || revisionProof) {
    const fresh=currentTime(),date=fresh.toISOString(),db=env.PLATFORM_DB
    const proof=revisionProof?{attemptId:attempt.id,fence:attempt.fence,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,atomicRollback:true}:{attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,preflightOnly:true},proofHash=await digest(proof),proofKey=`${revisionProof?'revision':'preflight'}:${attempt.id}`
    const priorProof=await db.prepare('SELECT request_hash FROM platform_audit WHERE actor_id=? AND request_key=?').bind(`collector:${row.id}`,proofKey).first()
@@ -111,13 +112,14 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
     // The RPC positively proved that no tenant publication committed. If authority
     // or time expired during it, retire ONLY this exact attempt. A fresh claim
     // can retry an otherwise-authorized request within the original budget.
-    // Concurrent owner cancellation/revocation remains non-runnable; only its
-    // positive proof is recorded, without rewriting the reconciled state.
-    const guard=scopeGuard(row,scope),match="a.id=? AND a.collector_id=? AND a.group_id=? AND a.fence=? AND a.expected_bundle_sha256=? AND a.stage IN ('publishing','reconciliation_required')",args=[attempt.id,row.id,attempt.group_id,attempt.fence,attempt.expected_bundle_sha256]
+    // Owner cancellation/revocation stays non-runnable, but this proof resolves
+    // its publication uncertainty and releases the exact attempt's group lock.
+    const guard=scopeGuard(row,scope),match="a.id=? AND a.collector_id=? AND a.group_id=? AND a.request_id=? AND a.fence=? AND a.expected_bundle_sha256=? AND a.stage IN ('publishing','reconciliation_required')",args=[attempt.id,row.id,attempt.group_id,attempt.request_id,attempt.fence,attempt.expected_bundle_sha256]
+    const ownerStopped="failure_code IN ('CANCELLED_BY_OWNER','COLLECTOR_REVOKED')"
     await db.batch([
-     db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match}) THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args),
-     db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN ?=1 AND ?<3 AND ${guard.sql} THEN 'queued' ELSE 'failed' END,updated_at=? WHERE id=? AND state='running' AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(executionEnabled(env)?1:0,attempt.fence,...guard.args,date,attempt.request_id,...args),
-     db.prepare(`UPDATE platform_collector_attempts SET stage='expired',failure_code='DURATION_EXCEEDED',completed_at=? WHERE id=? AND collector_id=? AND group_id=? AND fence=? AND expected_bundle_sha256=? AND stage='publishing'`).bind(date,...args),
+     db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required')) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash),
+     db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.${ownerStopped}) THEN 'cancelled' WHEN ?=1 AND ?<3 AND ${guard.sql} THEN 'queued' ELSE 'failed' END,updated_at=? WHERE id=? AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(...args,executionEnabled(env)?1:0,attempt.fence,...guard.args,date,attempt.request_id,...args),
+     db.prepare(`UPDATE platform_collector_attempts SET stage=CASE WHEN ${ownerStopped} THEN 'cancelled' ELSE 'expired' END,failure_code=CASE WHEN ${ownerStopped} THEN failure_code ELSE 'DURATION_EXCEEDED' END,completed_at=? WHERE id=? AND collector_id=? AND group_id=? AND request_id=? AND fence=? AND expected_bundle_sha256=? AND stage IN ('publishing','reconciliation_required')`).bind(date,...args),
      ...proofAudit(),
     ])
    }
@@ -180,7 +182,9 @@ export async function publishTenantCandidate(env,envelope,authorization,testTime
  // Hold refresh may only change DealerMail evidence and its derived records.
  for(const field of ['publicSnapshot','publicChangeEvents','resourceSnapshot','managerDispositionOverlay'])if(canonical(bundle.release[field]??null)!==canonical(baseline.release[field]??null))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  for(const [name,run] of Object.entries(bundle.release.sourceRuns))if(name!=='dealerMail' && canonical(run)!==canonical(baseline.release.sourceRuns[name]))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
- for(const record of bundle.release.vehicles){const original=baseline.release.vehicles.find(v=>v.vin===record.vin);if((record.publicRecord||record.resourceRecord) && (!original || canonical(record.publicRecord??null)!==canonical(original.publicRecord??null) || canonical(record.resourceRecord??null)!==canonical(original.resourceRecord??null)))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)}
+ const candidates=new Map(bundle.release.vehicles.map(record=>[record.vin,record]))
+ for(const original of baseline.release.vehicles){const record=candidates.get(original.vin);if(canonical(record?.publicRecord??null)!==canonical(original.publicRecord??null) || canonical(record?.resourceRecord??null)!==canonical(original.resourceRecord??null))collectorFail('COLLECTOR_PUBLICATION_INVALID',409);candidates.delete(original.vin)}
+ for(const record of candidates.values())if(record.publicRecord || record.resourceRecord)collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  const storeNames={howell:'Howell',fowlerville:'Fowlerville','ford-detroit':'Ford Detroit',lincoln:'Lincoln'}
  if(config.dealerships.length!==4 || config.dealerships.some(d=>!storeNames[d.storeKey]))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  }catch{return {status:'rejected',code:'VALIDATION_FAILED'}}
