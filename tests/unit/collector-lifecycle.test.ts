@@ -11,6 +11,7 @@ import { createSyntheticCollector, COLLECTOR_OWNER, COLLECTOR_SYNTHETIC_NOW } fr
 import { saveCollector } from '../../cloudflare/src/collector-execution.mjs'
 import { handleCollectorApi } from '../../cloudflare/src/platform-worker.mjs'
 import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
+import { savePlatform } from '../../cloudflare/src/platform-admin.mjs'
 import { publishRelease } from '../../cloudflare/src/worker.mjs'
 import { cloudBundleSha256, encryptBundle } from '../../scripts/publish-cloud-release.mjs'
 import { receiptSourceHashes, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
@@ -178,6 +179,15 @@ describe('collector exact candidate local baseline lifecycle', () => {
       }, 'synthetic-pre-dispatch-revoke', new Date())
     } else if (mode === 'enrollment-disabled') {
       f.remote.sqlite.prepare('UPDATE platform_collectors SET enabled=0 WHERE id=?').run(f.remote.collectorId)
+    } else if (mode === 'group-suspended' || mode === 'dealership-disabled') {
+      const expectedRevision = f.remote.sqlite.prepare('SELECT revision FROM platform_revision').get().revision
+      if (mode === 'group-suspended') {
+        const group = f.remote.sqlite.prepare('SELECT * FROM platform_groups WHERE id=?').get(f.profile.groupId)
+        await savePlatform(f.remote.env,COLLECTOR_OWNER,'groups',{id:group.id,name:group.name,status:'suspended',reason:'Synthetic authority suspension',expectedRevision},'lost-publication-owner-stop')
+      } else {
+        const dealer = f.remote.sqlite.prepare('SELECT * FROM platform_dealerships WHERE id=?').get(f.remote.dealers[0].id)
+        await savePlatform(f.remote.env,COLLECTOR_OWNER,'dealerships',{id:dealer.id,groupId:dealer.group_id,name:dealer.name,storeKey:dealer.store_key,website:dealer.website,enabled:false,reason:'Synthetic authority disable',expectedRevision},'lost-publication-owner-stop')
+      }
     } else f.remote.env.PLATFORM_COLLECTOR_EXECUTION_ENABLED = 'false'
   }
 
@@ -213,6 +223,74 @@ describe('collector exact candidate local baseline lifecycle', () => {
     if (mode === 'revoked') await expect(f.runOnce(f.options)).rejects.toMatchObject({ message: 'COLLECTOR_REVOKED', status: 403 })
     else expect(await f.runOnce(f.options)).toMatchObject({ status: 'disabled' })
     expect(f.captures()).toBe(1)
+  })
+
+  it.each(['group-suspended','dealership-disabled'].flatMap(mode => ['initial','capture-recovery','preflight-recovery'].map(phase => [mode,phase])))('retires only an undispatched %s candidate during %s on actual owner-authority 409', async (mode,phase) => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    const originalPublish = f.remote.env.TENANT_NORTH_PUBLISHER.publish
+    const publish = vi.fn(originalPublish)
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    if (phase === 'capture-recovery') {
+      expect((await f.runOnce({ ...f.options, fetchImpl: async (url,options) => {
+        const response = await f.actualFetch(url,options)
+        if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'capture') throw new TypeError('Synthetic lost capture acknowledgement')
+        return response
+      } })).status).toBe('capture_receipt_pending')
+      expect(findPendingPublication(f.root).state.publicationPending).toBe(false)
+    }
+    if (phase === 'preflight-recovery') {
+      f.remote.env.TENANT_NORTH_PUBLISHER.publish = async () => ({ status:'preflight_retryable' })
+      expect((await f.runOnce(f.options)).status).toBe('preflight_retryable')
+      expect(findPendingPublication(f.root).state.preflightRetryable).toBe(true)
+      f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    }
+    let requests = 0, failureReceipts = 0, artifacts, ownerAudit, ownerRecord, authorityResponse
+    const expectedCode = mode === 'group-suspended' ? 'COLLECTOR_DISABLED' : 'COLLECTOR_SCOPE_MISMATCH'
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url,options) => {
+      if (url.pathname === '/api/collector/publication') {
+        requests += 1
+        artifacts = privateAttemptArtifacts(f.root,JSON.parse(String(options.body)).attemptId)
+        if (requests === 1) {
+          const expectedRevision = f.remote.sqlite.prepare('SELECT revision FROM platform_revision').get().revision
+          if (mode === 'group-suspended') {
+            const group = f.remote.sqlite.prepare('SELECT * FROM platform_groups WHERE id=?').get(f.profile.groupId)
+            await savePlatform(f.remote.env,COLLECTOR_OWNER,'groups',{ id:group.id,name:group.name,status:'suspended',reason:'Synthetic owner suspension after capture',expectedRevision },'owner-stop-before-publication')
+            ownerRecord = f.remote.sqlite.prepare('SELECT * FROM platform_groups WHERE id=?').get(group.id)
+          } else {
+            const dealer = f.remote.sqlite.prepare('SELECT * FROM platform_dealerships WHERE id=?').get(f.remote.dealers[0].id)
+            await savePlatform(f.remote.env,COLLECTOR_OWNER,'dealerships',{ id:dealer.id,groupId:dealer.group_id,name:dealer.name,storeKey:dealer.store_key,website:dealer.website,enabled:false,reason:'Synthetic owner dealership disable after capture',expectedRevision },'owner-stop-before-publication')
+            ownerRecord = f.remote.sqlite.prepare('SELECT * FROM platform_dealerships WHERE id=?').get(dealer.id)
+          }
+          ownerAudit = f.remote.sqlite.prepare("SELECT * FROM platform_audit WHERE request_key='owner-stop-before-publication'").get()
+        }
+        const response = await f.actualFetch(url,options)
+        authorityResponse = { status:response.status,body:await response.clone().json() }
+        return response
+      }
+      if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'failure') failureReceipts += 1
+      return f.actualFetch(url,options)
+    } })
+    expect(authorityResponse).toMatchObject({status:409,body:{code:expectedCode}})
+    expect(outcome).toMatchObject({status:'failed',code:expectedCode})
+    expect(requests).toBe(1)
+    expect(publish).not.toHaveBeenCalled()
+    expect(failureReceipts).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+    for (const key of ['candidatePath','manifestPath','dealerMailPath','envelopePath','statePath']) expect(existsSync(artifacts[key])).toBe(false)
+    expect(existsSync(path.join(artifacts.directory,'pending-claim.json'))).toBe(false)
+    expect(existsSync(path.join(artifacts.directory,'capture-rollback.json'))).toBe(false)
+    expect(existsSync(path.join(f.root,'work/app-feed-status/.publication.lock'))).toBe(false)
+    expect(f.localHash()).toBe(baseline);expect(f.cloudHash()).toBe(baseline);expect(f.captures()).toBe(1)
+    const attempt = f.remote.sqlite.prepare('SELECT stage,expected_bundle_sha256 FROM platform_collector_attempts').get()
+    expect(attempt.stage).toBe('captured')
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_started'").get().n).toBe(phase === 'preflight-recovery' ? 1 : 0)
+    expect(f.remote.sqlite.prepare("SELECT * FROM platform_audit WHERE request_key='owner-stop-before-publication'").get()).toEqual(ownerAudit)
+    expect(f.remote.sqlite.prepare(`SELECT * FROM ${mode === 'group-suspended' ? 'platform_groups' : 'platform_dealerships'} WHERE id=?`).get(ownerRecord.id)).toEqual(ownerRecord)
+    if (mode === 'group-suspended') expect(await f.runOnce(f.options)).toMatchObject({status:'blocked',code:expectedCode})
+    else await expect(f.runOnce(f.options)).rejects.toMatchObject({status:409,message:expectedCode})
+    expect(findPendingPublication(f.root)).toBe(null);expect(f.captures()).toBe(1)
   })
 
   it.each(['COLLECTOR_PUBLICATION_INVALID', 'COLLECTOR_LEASE_STALE', 'COLLECTOR_NO_CAPTURE'])('still retires a new candidate on direct publication %s/409 rejection', async code => {
@@ -261,8 +339,8 @@ describe('collector exact candidate local baseline lifecycle', () => {
 
   it.each([
     ['COLLECTOR_REVOKED', 401], ['COLLECTOR_REVOKED', 409],
-    ['COLLECTOR_DISABLED', 409], ['COLLECTOR_AUTH_REQUIRED', 403],
-    ['COLLECTOR_SCOPE_MISMATCH', 403], ['COLLECTOR_SCOPE_MISMATCH', 409],
+    ['COLLECTOR_DISABLED', 401], ['COLLECTOR_AUTH_REQUIRED', 403],
+    ['COLLECTOR_SCOPE_MISMATCH', 403], ['COLLECTOR_SCOPE_MISMATCH', 500],
   ])('keeps a new candidate unknown for non-authoritative %s/%s responses', async (code, status) => {
     const f = await lifecycleFixture()
     await f.queue()
@@ -283,7 +361,46 @@ describe('collector exact candidate local baseline lifecycle', () => {
     expect(f.captures()).toBe(1)
   })
 
-  it.each(['revoked', 'execution-disabled'].flatMap(mode => ['before-dispatch', 'after-commit'].map(loss => [mode, loss])))('preserves a new candidate when %s rejection follows the first %s lost reply', async (mode, loss) => {
+  it.each(['COLLECTOR_DISABLED','COLLECTOR_SCOPE_MISMATCH'].flatMap(code => ['before-commit','after-commit'].map(point => [code,point])))('preserves a new candidate when tenant-dispatched %s at %s remains uncertain', async (code,point) => {
+    const f = await lifecycleFixture(), baseline = f.localHash(), publish = f.remote.env.TENANT_NORTH_PUBLISHER.publish
+    await f.queue()
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = vi.fn(async (...args) => {
+      if (point === 'after-commit') await publish(...args)
+      throw Object.assign(new Error('Synthetic tenant-dispatched authority-shaped failure'),{code,status:409})
+    })
+    let artifacts, before, responseStatus, failureReceipts = 0
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url,options) => {
+      if (url.pathname === '/api/collector/publication') {
+        artifacts = privateAttemptArtifacts(f.root,JSON.parse(String(options.body)).attemptId)
+        before = artifactBytes(artifacts)
+        const response = await f.actualFetch(url,options)
+        responseStatus = response.status
+        expect(await response.clone().json()).toMatchObject({status:'reconciliation_required',ready:false})
+        return response
+      }
+      if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'failure') failureReceipts += 1
+      return f.actualFetch(url,options)
+    } })
+    expect(responseStatus).toBe(200);expect(outcome.status).toBe('reconciliation_required')
+    expect(f.remote.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+    expect(findPendingPublication(f.root).state).toMatchObject({publicationPending:true,reconciliationRequired:true})
+    expect(artifactBytes(artifacts)).toEqual(before);expect(failureReceipts).toBe(0)
+    expect(f.localHash()).toBe(baseline);expect(f.captures()).toBe(1)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_started'").get().n).toBe(1)
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(point === 'after-commit' ? 1 : 0)
+    if (point === 'after-commit') {
+      expect(f.cloudHash()).toBe(findPendingPublication(f.root).state.bundleSha256)
+      expect((await f.runOnce(f.options)).status).toBe('published_verified')
+      expect(findPendingPublication(f.root)).toBe(null);expect(f.localHash()).toBe(f.cloudHash())
+    } else {
+      expect(f.cloudHash()).toBe(baseline)
+      expect((await f.runOnce(f.options)).status).toBe('reconciliation_required')
+      expect(artifactBytes(artifacts)).toEqual(before)
+    }
+    expect(f.captures()).toBe(1);expect(f.remote.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['revoked', 'execution-disabled', 'group-suspended', 'dealership-disabled'].flatMap(mode => ['before-dispatch', 'after-commit'].map(loss => [mode, loss])))('preserves a new candidate when %s rejection follows the first %s lost reply', async (mode, loss) => {
     const f = await lifecycleFixture(), baseline = f.localHash()
     const publish = vi.fn(f.remote.env.TENANT_NORTH_PUBLISHER.publish)
     f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
@@ -311,7 +428,7 @@ describe('collector exact candidate local baseline lifecycle', () => {
     expect(f.captures()).toBe(1)
   })
 
-  it.each(['revoked', 'execution-disabled'])('preserves a persisted unknown candidate after exact %s authority rejection', async mode => {
+  it.each(['revoked', 'execution-disabled', 'group-suspended', 'dealership-disabled'])('preserves a persisted unknown candidate after exact %s authority rejection', async mode => {
     const f = await lifecycleFixture()
     await f.queue()
     expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {

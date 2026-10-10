@@ -100,10 +100,12 @@ function isDefinitePreflightAuthorityFailure(error) {
     (error?.status === 409 && error?.message === 'COLLECTOR_SCOPE_MISMATCH')
 }
 
-function isDefinitePreHandlerAuthorityRejection(error) {
-  // The collector API authenticates these exact authority failures before
-  // entering the publication handler. They prove only this request undispatched.
-  return error?.status === 403 && ['COLLECTOR_REVOKED', 'COLLECTOR_DISABLED'].includes(error?.message)
+function isDefinitePreDispatchAuthorityRejection(error) {
+  // These exact API responses arise in identity/currentAttempt before tenant
+  // dispatch. After binding.publish, authority throws become an uncertain 200
+  // projection. This proves only this request, never an earlier lost reply.
+  return (error?.status === 403 && ['COLLECTOR_REVOKED', 'COLLECTOR_DISABLED'].includes(error?.message)) ||
+    (error?.status === 409 && ['COLLECTOR_DISABLED', 'COLLECTOR_SCOPE_MISMATCH'].includes(error?.message))
 }
 
 function isDefinitePublicationRejection(error) {
@@ -392,7 +394,7 @@ async function runClaimedAttempt(profile, credentials, claim, {
       // happens before onRequestStarted. It is a definite failure, so retain
       // and report that error instead of turning it into an unknown outcome.
       if (!publicationRequestStarted) throw firstError
-      if (isDefinitePublicationRejection(firstError) || isDefinitePreHandlerAuthorityRejection(firstError)) {
+      if (isDefinitePublicationRejection(firstError) || isDefinitePreDispatchAuthorityRejection(firstError)) {
         directPublicationRejection = firstError
         throw firstError
       }
@@ -436,9 +438,9 @@ async function runClaimedAttempt(profile, credentials, claim, {
   } catch (error) {
     if (heartbeat.failure && (error?.message === 'LEASE_STOPPED' || error?.name === 'AbortError')) error = heartbeat.failure
     const code = safeCode(error)
-    if (!priorPublicationUnknown && error === directPublicationRejection && isDefinitePreHandlerAuthorityRejection(error)) {
-      // No failure receipt can be authenticated after revocation/disable. The
-      // exact pre-handler response is the no-publication acknowledgement; an
+    if (!priorPublicationUnknown && error === directPublicationRejection && isDefinitePreDispatchAuthorityRejection(error)) {
+      // No failure receipt can be authenticated after this authority loss. The
+      // exact pre-dispatch response is the no-publication acknowledgement; an
       // authority response after an earlier lost reply never reaches this path.
       try { cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)) }
       catch { return { status: 'reconciliation_required', attemptId: claim.attemptId, code: 'RECONCILIATION_REQUIRED' } }
@@ -553,7 +555,7 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
     cleanupVerifiedAttempt(artifacts)
     return { status: result.status, attemptId: state.attemptId, bundleSha256: state.bundleSha256, counts: result.counts }
   } catch (error) {
-    if (!priorPublicationUnknown && publicationRequestStarted && isDefinitePreHandlerAuthorityRejection(error)) {
+    if (!priorPublicationUnknown && publicationRequestStarted && isDefinitePreDispatchAuthorityRejection(error)) {
       try {
         cleanupVerifiedAttempt(artifacts)
         const key = getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256)

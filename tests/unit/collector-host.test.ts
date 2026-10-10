@@ -12,6 +12,7 @@ import { createSyntheticCollector, COLLECTOR_OWNER, COLLECTOR_SYNTHETIC_NOW } fr
 import { handleCollectorApi } from '../../cloudflare/src/platform-worker.mjs'
 import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
 import { encryptBundle } from '../../scripts/publish-cloud-release.mjs'
+import { buildSyntheticCloudBundle } from '../../fixtures/synthetic-cloud-bundle.mjs'
 import { doctor, runDaemon, runOnce, collectorHostInternals } from '../../scripts/collector-host.mjs'
 import { acquirePublicationLock, releasePublicationLock } from '../../scripts/sync-cloud-release.mjs'
 import { profileFingerprint, validateCollectorProfile, COLLECTOR_ADAPTER_ID, COLLECTOR_ADAPTER_VERSION, COLLECTOR_PROFILE_NAME } from '../../scripts/lib/collector-profile.mjs'
@@ -403,6 +404,44 @@ describe('collector host contract', () => {
       expect(result).toMatchObject({ status: 'published_verified', bundleSha256: envelope.bundleSha256, ready: true })
       expect(fixture.tenant.prepare('SELECT bundle_sha256 FROM cloud_release_versions WHERE status=\'current\'').get().bundle_sha256).toBe(envelope.bundleSha256)
     } finally { fixture.close() }
+  })
+
+  it.each(['claim','reconcile'].flatMap(phase => ['disabled-unknown','scope-unknown','bad-json','lost-body','wrong-status','lost-first-reply'].map(mode => [phase,mode])))('preserves exact host candidate evidence during %s for %s uncertainty', async (phase,mode) => {
+    const { root,profile } = fixture(),candidate = buildSyntheticCloudBundle()
+    const envelope = encryptBundle(candidate,Buffer.alloc(32,42)),artifacts = privateAttemptArtifacts(root,'synthetic-host-uncertain')
+    mkdirSync(artifacts.directory,{recursive:true})
+    writeFileSync(artifacts.candidatePath,JSON.stringify(candidate))
+    writeFileSync(artifacts.manifestPath,JSON.stringify({marker:'SYNTHETIC_PRIVATE_MANIFEST'}))
+    writeFileSync(artifacts.dealerMailPath,JSON.stringify(candidate.release.dealerMailSnapshot))
+    writeFileSync(artifacts.envelopePath,JSON.stringify(envelope))
+    const unknown = mode.endsWith('-unknown')
+    saveAttemptState(artifacts.statePath,{
+      attemptId:'synthetic-host-uncertain',fence:1,reportDate:candidate.reportDate,profileSha256:profile.profileSha256,
+      configSha256:'b'.repeat(64),baselineBundleSha256:envelope.bundleSha256,bundleSha256:envelope.bundleSha256,
+      publicationIdempotencyKey:'synthetic-host-publication-key',captureReceiptSent:true,captureReceiptPending:false,
+      capturedAt:COLLECTOR_SYNTHETIC_NOW.toISOString(),sourceSha256:candidate.release.sourceRuns.dealerMail.sha256,dealerMailRows:8,
+      publicationPending:unknown,reconciliationRequired:unknown,
+    })
+    const bytes = Object.fromEntries(['candidatePath','manifestPath','dealerMailPath','envelopePath'].map(key => [key,readFileSync(artifacts[key])]))
+    const promotion = vi.fn(),runnerLoader = vi.fn(async () => { throw new Error('must not load source work') })
+    let publications = 0
+    const fetchImpl = vi.fn(async url => {
+      expect(url.pathname).toBe('/api/collector/publication')
+      publications += 1
+      if (mode === 'lost-first-reply' && publications === 1) throw new TypeError('Synthetic first publication reply lost')
+      if (mode === 'bad-json') return new Response('{"code":"COLLECTOR_DISABLED"',{status:409})
+      if (mode === 'lost-body') return new Response(new ReadableStream({start(controller){controller.error(new TypeError('Synthetic publication body lost'))}}),{status:409})
+      return Response.json({code:mode === 'scope-unknown' ? 'COLLECTOR_SCOPE_MISMATCH' : 'COLLECTOR_DISABLED'},{status:mode === 'wrong-status' ? 500 : 409})
+    })
+    const credentials = {accessClientId:'synthetic',accessClientSecret:'synthetic',releaseEncryptionKeyBase64:Buffer.alloc(32,42).toString('base64')}
+    const outcome = phase === 'claim'
+      ? await collectorHostInternals.runClaimedAttempt(profile,credentials,{attemptId:'synthetic-host-uncertain',fence:1,reportDate:candidate.reportDate,configSha256:'b'.repeat(64),baselineBundleSha256:envelope.bundleSha256,leaseUntil:new Date(Date.now()+120000).toISOString(),hardDeadline:new Date(Date.now()+1800000).toISOString()},{fetchImpl,runnerLoader,promotion,now:() => COLLECTOR_SYNTHETIC_NOW})
+      : await collectorHostInternals.reconcilePendingPublication(profile,credentials,findPendingPublication(root),fetchImpl,undefined,{runnerLoader,promotion})
+    expect(outcome.status).toBe('reconciliation_required')
+    expect(findPendingPublication(root).state).toMatchObject({attemptId:'synthetic-host-uncertain',publicationPending:true,reconciliationRequired:true})
+    for (const [key,before] of Object.entries(bytes)) expect(readFileSync(artifacts[key])).toEqual(before)
+    expect(promotion).not.toHaveBeenCalled();expect(runnerLoader).not.toHaveBeenCalled()
+    expect(publications).toBe(phase === 'claim' && !unknown ? 2 : 1)
   })
 
   it('fails closed without a matching installed dependency hash or an already-open DealerMail tab', async () => {
