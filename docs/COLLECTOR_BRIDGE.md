@@ -164,8 +164,13 @@ The platform signs short-lived tenant admission/read tickets. The tenant
 rechecks its singleton identity, active group, enrollment, grants, configuration,
 lease/fence and exact candidate hash/date. Public/resource fields must equal the
 verified baseline. Its publication receipt is stored with the tenant release
-mutation, then current release/readiness is independently checked. An old
-same-date release or a host-reported HTTP success does not satisfy this check.
+mutation. Readback independently verifies the exact accepted immutable version,
+encrypted artifact, bindings, counts and application read pipeline. That proof
+remains valid after a newer release supersedes it; reconciliation leaves the
+current release pointer untouched. Receipt readiness proves the accepted
+artifact is readable, not that it remains current or that a vehicle is Ready.
+Missing or invalid archived evidence remains unknown. An unrelated same-date
+release or a host-reported HTTP success does not satisfy this check.
 
 Control-plane D1 contains sanitized enrollments, jobs, attempts and receipts.
 Encrypted candidates are transient at the platform and retained only in the

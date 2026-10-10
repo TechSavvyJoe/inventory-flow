@@ -628,6 +628,116 @@ describe('Brokered publication and independent tenant receipt',()=>{
   expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
   expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind=\'publication\'').get().n).toBe(1)
  })
+ it.each(['published','unchanged'].flatMap(mode=>['none','cancel','revoke'].map(ownerAction=>({mode,ownerAction}))))('settles a lost committed $mode receipt after supersession and owner $ownerAction',async({mode,ownerAction})=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  const otherRequest=await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic independently queued request',expectedRevision:revision(f)},'superseded-other-request')
+  const historical={...f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get(),id:'synthetic-prior-receipt-attempt',request_id:otherRequest.id,claim_key:'synthetic-prior-receipt-claim',stage:'expired',failure_code:'DURATION_EXCEEDED',completed_at:now.toISOString()}
+  const historicalColumns=Object.keys(historical)
+  f.sqlite.prepare(`INSERT INTO platform_collector_attempts (${historicalColumns.join(',')}) VALUES (${historicalColumns.map(()=>'?').join(',')})`).run(...Object.values(historical))
+  const queued=f.sqlite.prepare('SELECT * FROM platform_pull_requests WHERE id=?').get(otherRequest.id)
+  if(mode==='unchanged')f.input.envelope=f.baseline
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{await publish(...args);throw new Error('Synthetic committed reply lost')})
+  expect(await publishCollector(f.env,f.machine,f.input,'superseded-receipt',now)).toMatchObject({status:'reconciliation_required'})
+  const tenantReceipt=f.tenant.prepare('SELECT * FROM collector_publication_receipts').get()
+  expect(tenantReceipt.status).toBe(mode)
+  const newer=structuredClone(f.candidate),vehicle=newer.release.vehicles.find(v=>v.publicRecord)
+  newer.release.publicSnapshot.vehicles[vehicle.vin].listed_price+=1000
+  vehicle.publicRecord.listed_price=newer.release.publicSnapshot.vehicles[vehicle.vin].listed_price
+  newer.release.sourceRuns.public.sha256='d'.repeat(64)
+  newer.release.completedAt=new Date(now.getTime()+1000).toISOString()
+  const newerEnvelope=encryptBundle(newer,f.key)
+  expect((await publishRelease(new Request('https://synthetic.invalid/internal/releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(newerEnvelope)}),f.tenantEnv)).status).toBe(201)
+  const afterNewer={revision:f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision,versions:f.tenant.prepare('SELECT * FROM cloud_release_versions ORDER BY release_id').all(),state:f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all(),intake:f.tenant.prepare('SELECT * FROM vehicle_service_intake ORDER BY vin').all()}
+  let ownerAudit,collector
+  if(ownerAction==='cancel')await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'cancel',connectionId:f.dealers[0].connectionId,requestId:f.attempt.requestId,reason:'Synthetic cancellation after superseded acceptance',expectedRevision:revision(f)},'superseded-owner-cancel')
+  if(ownerAction==='revoke')await saveCollector(f.env,owner,'synthetic-north',{operation:'revoke',id:f.collectorId,reason:'Synthetic revocation after superseded acceptance',expectedRevision:revision(f)},'superseded-owner-revoke',now)
+  if(ownerAction!=='none'){
+   ownerAudit=f.sqlite.prepare('SELECT * FROM platform_audit WHERE request_key=?').get(`superseded-owner-${ownerAction}`)
+   collector=f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(f.collectorId)
+  }
+  expect(f.tenant.prepare('SELECT status FROM cloud_release_versions WHERE bundle_sha256=?').get(tenantReceipt.bundle_sha256).status).toBe('superseded')
+  expect(await reconcileCollector(f.env,owner,'synthetic-north',{attemptId:f.attempt.attemptId},now)).toMatchObject({status:`${mode}_verified`,bundleSha256:tenantReceipt.bundle_sha256,reportDate:tenantReceipt.report_date,ready:true,counts:{inventory:8}})
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('completed')
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe('completed')
+  expect(f.sqlite.prepare('SELECT * FROM platform_collector_attempts WHERE id=?').get(historical.id)).toEqual(historical)
+  expect(f.sqlite.prepare('SELECT * FROM platform_pull_requests WHERE id=?').get(otherRequest.id)).toEqual(queued)
+  expect(f.tenant.prepare('SELECT * FROM collector_publication_receipts').get()).toEqual(tenantReceipt)
+  expect(f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision).toBe(afterNewer.revision)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_versions ORDER BY release_id').all()).toEqual(afterNewer.versions)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all()).toEqual(afterNewer.state)
+  expect(f.tenant.prepare('SELECT * FROM vehicle_service_intake ORDER BY vin').all()).toEqual(afterNewer.intake)
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_attempts WHERE stage IN ('claimed','captured','publishing','reconciliation_required')").get().n).toBe(0)
+  if(ownerAction!=='none'){
+   expect(f.sqlite.prepare('SELECT * FROM platform_audit WHERE request_key=?').get(`superseded-owner-${ownerAction}`)).toEqual(ownerAudit)
+   expect(f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(f.collectorId)).toEqual(collector)
+  }
+  if(ownerAction==='revoke')await expect(claimCollector(f.env,f.machine,{},'after-superseded-claim',now)).rejects.toMatchObject({code:'COLLECTOR_REVOKED'})
+  else expect(await claimCollector(f.env,f.machine,{},'after-superseded-claim',now)).toMatchObject({requestId:otherRequest.id,fence:2,baselineBundleSha256:newerEnvelope.bundleSha256})
+ })
+ it.each(['published','unchanged'].flatMap(mode=>['missing-receipt','missing-version','rejected-version','version-hash','version-date','version-object','version-source','version-count','version-metadata','missing-object','object-hash','object-date','object-ciphertext','receipt-count','receipt-grant','receipt-fence','receipt-group','receipt-config','receipt-status'].flatMap(corruption=>(['missing-version','rejected-version','missing-object','object-ciphertext','receipt-count'].includes(corruption)?['current','superseded']:['current']).map(state=>({mode,corruption,state})))) )('keeps a committed $mode receipt unknown with $state version and $corruption corruption',async({mode,corruption,state})=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  if(mode==='unchanged')f.input.envelope=f.baseline
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{await publish(...args);throw new Error('Synthetic receipt reply lost')})
+  expect(await publishCollector(f.env,f.machine,f.input,'corrupt-receipt',now)).toMatchObject({status:'reconciliation_required'})
+  const receipt=f.tenant.prepare('SELECT * FROM collector_publication_receipts').get()
+  const version=f.tenant.prepare('SELECT * FROM cloud_release_versions WHERE bundle_sha256=?').get(receipt.bundle_sha256)
+  const originalObject=f.objects.get(version.object_key)
+  if(state==='superseded'){
+   const newer=structuredClone(f.candidate),vehicle=newer.release.vehicles.find(v=>v.publicRecord)
+   newer.release.publicSnapshot.vehicles[vehicle.vin].listed_price+=1000
+   vehicle.publicRecord.listed_price=newer.release.publicSnapshot.vehicles[vehicle.vin].listed_price
+   newer.release.sourceRuns.public.sha256='d'.repeat(64)
+   newer.release.completedAt=new Date(now.getTime()+1000).toISOString()
+   const newerEnvelope=encryptBundle(newer,f.key)
+   expect((await publishRelease(new Request('https://synthetic.invalid/internal/releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(newerEnvelope)}),f.tenantEnv)).status).toBe(201)
+   expect(f.tenant.prepare('SELECT status FROM cloud_release_versions WHERE bundle_sha256=?').get(receipt.bundle_sha256).status).toBe('superseded')
+  }
+  if(corruption==='missing-version')f.tenant.prepare('DELETE FROM cloud_release_versions WHERE release_id=?').run(version.release_id)
+  if(corruption==='rejected-version')f.tenant.prepare("UPDATE cloud_release_versions SET status='rejected' WHERE release_id=?").run(version.release_id)
+  if(corruption==='version-hash')f.tenant.prepare('UPDATE cloud_release_versions SET bundle_sha256=? WHERE release_id=?').run('e'.repeat(64),version.release_id)
+  if(corruption==='version-date')f.tenant.prepare('UPDATE cloud_release_versions SET report_date=? WHERE release_id=?').run('2026-08-29',version.release_id)
+  if(corruption==='version-object')f.tenant.prepare('UPDATE cloud_release_versions SET object_key=? WHERE release_id=?').run('releases/foreign/version.json.enc',version.release_id)
+  if(corruption==='version-source')f.tenant.prepare('UPDATE cloud_release_versions SET public_source_sha256=? WHERE release_id=?').run('e'.repeat(64),version.release_id)
+  if(corruption==='version-count')f.tenant.prepare('UPDATE cloud_release_versions SET public_row_count=public_row_count+1 WHERE release_id=?').run(version.release_id)
+  if(corruption==='version-metadata')f.tenant.prepare('UPDATE cloud_release_versions SET metadata_json=? WHERE release_id=?').run('{}',version.release_id)
+  if(corruption==='missing-object')f.objects.delete(version.object_key)
+  if(corruption.startsWith('object-')){
+   const envelope=JSON.parse(originalObject.body)
+   if(corruption==='object-hash')envelope.bundleSha256='e'.repeat(64)
+   if(corruption==='object-date')envelope.reportDate='2026-08-29'
+   if(corruption==='object-ciphertext')envelope.ciphertext=(envelope.ciphertext[0]==='A'?'B':'A')+envelope.ciphertext.slice(1)
+   f.objects.set(version.object_key,{...originalObject,body:JSON.stringify(envelope)})
+  }
+  if(corruption==='missing-receipt' || corruption.startsWith('receipt-')){
+   // Receipts are append-only. Inject a corrupted read result without disabling
+   // their schema triggers or permitting a production receipt rewrite.
+   const prepare=f.tenantEnv.INVENTORY_DB.prepare
+   f.tenantEnv.INVENTORY_DB.prepare=sql=>{
+    const statement=prepare(sql)
+    if(sql.includes('SELECT * FROM collector_publication_receipts')){
+     const bind=statement.bind
+     statement.bind=(...args)=>{const bound=bind.apply(statement,args),first=bound.first;bound.first=async()=>{
+      const row=await first.call(bound)
+      if(corruption==='missing-receipt')return null
+      if(corruption==='receipt-count')return {...row,counts_json:JSON.stringify({...JSON.parse(row.counts_json),activeInventoryCount:999})}
+      const field={'receipt-grant':'grant_generation','receipt-fence':'fence','receipt-group':'group_id','receipt-config':'config_sha256','receipt-status':'status'}[corruption]
+      return {...row,[field]:typeof row[field]==='number'?row[field]+1:'synthetic-invalid-binding'}
+     };return bound}
+    }
+    return statement
+   }
+  }
+  const before={revision:revision(f),attempt:f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get(),request:f.sqlite.prepare('SELECT * FROM platform_pull_requests').get(),tenantRevision:f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision,state:f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all()}
+  expect(await reconcileCollector(f.env,owner,'synthetic-north',{attemptId:f.attempt.attemptId},now)).toMatchObject({status:'reconciliation_required',ready:false})
+  expect(revision(f)).toBe(before.revision)
+  expect(f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get()).toEqual(before.attempt)
+  expect(f.sqlite.prepare('SELECT * FROM platform_pull_requests').get()).toEqual(before.request)
+  expect(f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision).toBe(before.tenantRevision)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all()).toEqual(before.state)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='publication'").get().n).toBe(0)
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+ })
  it('does not mistake an old same-date publication for success when dispatch never reached the tenant',async()=>{
   const f=await setup();f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async()=>{throw new Error('timeout')})
   expect(await publishCollector(f.env,f.machine,f.input,'timeout',now)).toMatchObject({status:'reconciliation_required'})

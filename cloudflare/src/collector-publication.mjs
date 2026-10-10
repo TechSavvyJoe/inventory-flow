@@ -3,7 +3,7 @@ import { platformOwner, tenantDatabase } from './platform-admin.mjs'
 import { collectorIdentity } from './collector-auth.mjs'
 import { currentAttempt, attemptGuard, scopeGuard, machineAudit } from './collector-execution.mjs'
 import { canonical, collectorFail, digest, exactFields, executionEnabled, sha, text } from './collector-common.mjs'
-import { appReadiness, decryptEnvelope, publishRelease, readReleaseWithIdentity } from './worker.mjs'
+import { decryptEnvelope, publishRelease, readReleaseWithIdentity, releaseReadiness } from './worker.mjs'
 import { verifyPublicationTicket, assertPublicationFence } from './collector-publication-guards.mjs'
 import { validateReleaseBundle } from './release-validation.mjs'
 
@@ -194,11 +194,22 @@ export async function publishTenantCandidate(env,envelope,authorization,testTime
 
 export async function readTenantPublicationReceipt(env,authorization,now=new Date()) {
  const {ticket}=await verifyPublicationTicket(env,authorization,'read',now)
- const receipt=await env.INVENTORY_DB.prepare('SELECT * FROM collector_publication_receipts WHERE attempt_id=? AND group_id=? AND collector_id=? AND fence=? AND config_sha256=? AND bundle_sha256=? AND report_date=?').bind(ticket.attemptId,ticket.groupId,ticket.collectorId,ticket.fence,ticket.configSha256,ticket.bundleSha256,ticket.reportDate).first()
- if(!receipt)return {status:'reconciliation_required',attemptId:ticket.attemptId,ready:false}
- const current=await env.INVENTORY_DB.prepare("SELECT v.* FROM cloud_release_state s JOIN cloud_release_versions v ON v.release_id=s.value WHERE s.key='current_release_id' AND v.status='current'").first()
- if(!current || current.bundle_sha256!==receipt.bundle_sha256 || current.report_date!==receipt.report_date)return {status:'reconciliation_required',attemptId:ticket.attemptId,ready:false}
- const readiness=await appReadiness(env),counts=JSON.parse(receipt.counts_json)
- if(!readiness.ready || readiness.bundleSha256!==receipt.bundle_sha256 || readiness.reportDate!==receipt.report_date || readiness.counts.inventory!==counts.activeInventoryCount)return {status:'reconciliation_required',attemptId:ticket.attemptId,ready:false}
+ const unknown=()=>({status:'reconciliation_required',attemptId:ticket.attemptId,ready:false})
+ try {
+ const receipt=await env.INVENTORY_DB.prepare('SELECT * FROM collector_publication_receipts WHERE attempt_id=? AND group_id=? AND collector_id=? AND fence=? AND grant_generation=? AND config_sha256=? AND bundle_sha256=? AND report_date=?').bind(ticket.attemptId,ticket.groupId,ticket.collectorId,ticket.fence,ticket.grantGeneration,ticket.configSha256,ticket.bundleSha256,ticket.reportDate).first()
+ if(!receipt || [['attempt_id','attemptId'],['group_id','groupId'],['collector_id','collectorId'],['fence','fence'],['grant_generation','grantGeneration'],['config_sha256','configSha256'],['bundle_sha256','bundleSha256'],['report_date','reportDate']].some(([field,claim])=>receipt[field]!==ticket[claim]) || !['published','unchanged'].includes(receipt.status) || !/^\d{4}-\d{2}-\d{2}T/.test(receipt.accepted_at) || !Number.isFinite(Date.parse(receipt.accepted_at)))return unknown()
+ // A newer release does not undo this append-only commit receipt. Verify the
+ // exact accepted immutable artifact, never the current pointer or a cache.
+ const version=await env.INVENTORY_DB.prepare("SELECT * FROM cloud_release_versions WHERE bundle_sha256=? AND report_date=? AND status IN ('current','superseded')").bind(receipt.bundle_sha256,receipt.report_date).first()
+ if(!version || !['current','superseded'].includes(version.status) || version.bundle_sha256!==receipt.bundle_sha256 || version.report_date!==receipt.report_date || version.object_key!==`releases/${receipt.report_date}/${receipt.bundle_sha256}.json.enc`)return unknown()
+ const object=await env.RELEASE_SNAPSHOTS.get(version.object_key)
+ if(!object || !Number.isSafeInteger(object.size) || object.size<1 || object.size>25*1024*1024 || object.size!==version.object_bytes)return unknown()
+ const envelope=JSON.parse(await object.text())
+ if(envelope.bundleSha256!==receipt.bundle_sha256 || envelope.reportDate!==receipt.report_date)return unknown()
+ const bundle=await decryptEnvelope(envelope,env),counts=validateReleaseBundle(bundle,{degradeOptionalResources:true}),metadata=JSON.parse(version.metadata_json)
+ if(bundle.reportDate!==receipt.report_date || canonical(counts)!==canonical(JSON.parse(receipt.counts_json)) || version.public_source_sha256!==bundle.release.sourceRuns.public.sha256 || version.dealermail_source_sha256!==bundle.release.sourceRuns.dealerMail.sha256 || version.public_row_count!==counts.publicRowCount || version.dealermail_row_count!==counts.dealerMailRowCount || metadata.completedAt!==bundle.release.completedAt || metadata.timezone!==bundle.release.timezone)return unknown()
+ const readiness=await releaseReadiness(env,bundle.release,receipt.bundle_sha256)
+ if(!readiness.ready || readiness.bundleSha256!==receipt.bundle_sha256 || readiness.reportDate!==receipt.report_date || readiness.counts.inventory!==counts.activeInventoryCount)return unknown()
  return {status:receipt.status==='published'?'published_verified':'unchanged_verified',attemptId:ticket.attemptId,bundleSha256:receipt.bundle_sha256,reportDate:receipt.report_date,counts:readiness.counts,ready:true,verifiedAt:now.toISOString()}
+ }catch{return unknown()}
 }

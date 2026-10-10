@@ -326,7 +326,9 @@ export function vehicleMatchesFilters(
   if (filters.dealerMail === "held" && !hasProviderHold(vehicle) && vehicle.manualHold?.state !== "active" && dealerMail.hasActiveHold !== true && !dealerMail.lastKnownActiveHold) return false;
   if (
     filters.dealerMail === "not-held" &&
-    !(vehicle.manualHold?.state !== "active" && !hasProviderHold(vehicle) && (vehicle.operationalEvidence ? providerHoldState(vehicle) === false : dealerMail.dataState === "current" && dealerMail.hasActiveHold === false))
+    !(vehicle.manualHold?.state !== "active" && !hasProviderHold(vehicle) &&
+      dealerMail.hasActiveHold !== true && !dealerMail.lastKnownActiveHold &&
+      (vehicle.operationalEvidence ? providerHoldState(vehicle) === false : dealerMail.dataState === "current" && dealerMail.hasActiveHold === false))
   ) {
     return false;
   }

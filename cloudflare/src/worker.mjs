@@ -309,6 +309,11 @@ export async function appReadiness(env) {
   // Readiness must prove the artifact can still be read and decrypted now,
   // so it never answers from the per-isolate cache.
   const {release,bundleSha256}=await readReleaseWithIdentity(env,{fresh:true})
+  return releaseReadiness(env,release,bundleSha256)
+}
+// Receipt reconciliation exercises the same read pipeline for its immutable
+// accepted release, without substituting or changing the current pointer.
+export async function releaseReadiness(env,release,bundleSha256) {
   const repo=await loadD1Repository(env.INVENTORY_DB,release,{probeSavedLists:true})
   const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
   // Fixed least-privileged context exercises the real read pipeline without
