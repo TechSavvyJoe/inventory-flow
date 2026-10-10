@@ -37,11 +37,14 @@ function writeDurableFile(filePath, contents, flags = 'wx') {
   finally { closeSync(descriptor) }
 }
 
-function syncDirectory(directory) {
+function syncDirectory(directory, { required = false } = {}) {
   if (process.platform === 'win32') return
   let descriptor
   try { descriptor = openSync(directory, 'r'); fsyncSync(descriptor) }
-  catch { /* Some filesystems do not expose directory fsync. */ }
+  catch (error) {
+    if (required) throw error
+    // Some filesystems do not expose directory fsync.
+  }
   finally { if (descriptor !== undefined) closeSync(descriptor) }
 }
 
@@ -310,8 +313,25 @@ export function clearPendingClaimIdempotencyKey(workspaceRoot, profileSha256, ex
 }
 
 export function cleanupVerifiedAttempt(artifacts) {
-  for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'promotionBackupPath', 'envelopePath', 'statePath']) {
-    try { unlinkSync(artifacts[key]) } catch (error) { if (error.code !== 'ENOENT') throw error }
+  // Only a settled attempt reaches cleanup. Retire its pending marker before
+  // deleting evidence, so an interrupted cleanup leaves harmless orphan files.
+  const tombstonePath = `${artifacts.statePath}.settled`
+  let retired = false
+  try { renameSync(artifacts.statePath, tombstonePath); retired = true }
+  catch (error) { if (error.code !== 'ENOENT') throw new Error('RECONCILIATION_REQUIRED') }
+  if (retired) {
+    try { syncDirectory(artifacts.directory, { required: true }) }
+    catch {
+      // No evidence has been deleted yet. Preserve the complete pending attempt
+      // when storage cannot confirm retirement; never expose filesystem paths.
+      try { renameSync(tombstonePath, artifacts.statePath) } catch {}
+      throw new Error('RECONCILIATION_REQUIRED')
+    }
+  }
+  for (const filePath of [artifacts.candidatePath, artifacts.manifestPath, artifacts.dealerMailPath, artifacts.promotionBackupPath, artifacts.envelopePath, tombstonePath]) {
+    // Do not let an orphan-removal failure recreate a pending marker in the
+    // caller's recovery handler after some of its candidate files are gone.
+    try { unlinkSync(filePath) } catch { /* Best-effort removal of this settled attempt only. */ }
   }
 }
 

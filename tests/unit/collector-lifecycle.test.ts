@@ -2,7 +2,8 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import fs, { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import path from 'node:path'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { buildSyntheticCloudBundle } from '../../fixtures/synthetic-cloud-bundle.mjs'
@@ -125,6 +126,50 @@ async function lifecycleFixture() {
 }
 
 describe('collector exact candidate local baseline lifecycle', () => {
+  it.each([
+    ['initial', 'published_verified'], ['reconcile', 'published_verified'],
+    ['initial', 'rejected_verified'], ['reconcile', 'rejected_verified'],
+  ])('keeps %s %s settled when a private artifact cannot be deleted', async (phase, result) => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    if (result === 'rejected_verified') {
+      f.remote.env.TENANT_NORTH_PUBLISHER.publish = vi.fn(async () => ({ status: 'rejected', code: 'VALIDATION_FAILED' }))
+    }
+    if (phase === 'reconcile') {
+      expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+        const response = await f.actualFetch(url, options)
+        if (url.pathname === '/api/collector/publication') throw new TypeError('Synthetic terminal publication reply lost')
+        return response
+      } })).status).toBe('reconciliation_required')
+      expect(findPendingPublication(f.root)).not.toBe(null)
+    }
+    const unlink = fs.unlinkSync
+    let orphanPath, orphanBytes, removalFailures = 0
+    fs.unlinkSync = filePath => {
+      if (path.dirname(filePath) === path.join(f.root, 'work/collector-attempts') && filePath.endsWith('.manifest.json')) {
+        orphanPath = filePath
+        orphanBytes = readFileSync(filePath)
+        removalFailures += 1
+        throw Object.assign(new Error('Synthetic artifact locked'), { code: 'EBUSY' })
+      }
+      return unlink(filePath)
+    }
+    syncBuiltinESMExports()
+    let settled
+    try { settled = await f.runOnce(f.options) }
+    finally { fs.unlinkSync = unlink; syncBuiltinESMExports() }
+
+    expect(removalFailures).toBe(1)
+    expect(settled.status).toBe(result === 'rejected_verified' ? 'failed' : 'published_verified')
+    expect(readFileSync(orphanPath)).toEqual(orphanBytes)
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(f.captures()).toBe(1)
+    expect(f.localHash()).toBe(result === 'rejected_verified' ? baseline : settled.bundleSha256)
+    expect(f.cloudHash()).toBe(f.localHash())
+    expect((await f.runOnce(f.options)).status).toBe('idle')
+    expect(f.captures()).toBe(1)
+  })
+
   const abortError = signal => new Promise((_, reject) => {
     const rejectAborted = () => reject(new Error('LEASE_STOPPED'))
     if (signal.aborted) rejectAborted()

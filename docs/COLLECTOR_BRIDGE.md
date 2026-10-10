@@ -183,11 +183,14 @@ restored where storage permits, and the exact candidate, backup and pending
 marker stay available for a verified retry. An unrelated later local receipt or
 unrecoverable storage failure requires review; it is not cleared as success.
 
-If artifact cleanup is interrupted after verification and leaves a pending
-marker with missing candidate files, the host stops for reconciliation instead
-of recapturing. Recovery requires an operator to compare the exact local and
-tenant receipts before removing that attempt's remaining artifacts. This edge
-case is not an automatic recovery path or permission to clear unknown outcomes.
+After verified settlement, cleanup atomically retires the pending marker before
+removing that attempt's exact artifact paths. An interruption during removal can
+leave private orphan files, but cannot leave a pending marker pointing to deleted
+evidence or recreate one after an artifact-removal failure. If marker retirement
+fails, evidence remains intact and the host stops for reconciliation. Directory
+retirement is synchronized where supported; Windows retains its existing
+filesystem behavior. Unknown publication outcomes keep their pending marker and
+exact candidate for receipt readback; cleanup never clears them as success.
 
 ## Release and rollback
 
