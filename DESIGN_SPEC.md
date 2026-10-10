@@ -45,22 +45,22 @@ Never display **Available** solely because a public listing exists, DealerOn say
 
 ## Layout and container model
 
-- Desktop: 172px fixed navy navigation rail, 64px top bar, open white work canvas, table/list as the dominant surface, optional 344px right detail workspace.
+- Desktop: fixed navy navigation rail, compact top bar, cool recessed work canvas with white working surfaces, table/list as the dominant surface, optional right detail workspace.
 - Tablet: collapsible navigation, table with prioritized columns, detail drawer overlays the content.
 - Mobile: compact top bar, search and scope controls, list rows, bottom navigation, selected-vehicle bottom sheet; no horizontal scrolling.
 - Do not turn table-driven screens into card grids. Cards are limited to the small decision rail and empty/onboarding states.
 
 ## Design tokens
 
-- Background: true white `#ffffff`.
-- Navigation: deep navy `#062a4d`; active navy-blue `#0a4e9b`.
-- Primary action: Ford blue `#0759bd`; hover `#064b9f`; focus ring `#8bbcff`.
+- Canvas: `--ifx-canvas` (`#f3f5f7`); working panels remain white.
+- Navigation, selected tabs and primary actions: the approved sidebar navy `#062b50`. OEM brand colours belong to genuine identity assets, not operational controls.
+- Workspace headers use the white workspace-header tokens. True ledger headers use sidebar navy; local section headings use `--ifx-panel-header` (`#f4f6f8`). Evidence ledgers use `--ifx-evidence-surface` (`#f6f8fa`); action strips use `--ifx-action-well` (`#f0f3f6`).
 - Text: `#102238`; secondary `#536579`; muted `#728195`.
-- Borders: `#dce4ed`; soft fill `#f5f8fb`; selected row `#edf5ff`.
+- Outer panel borders: `--ifx-panel-border` (`#aabdd0`); internal fact separators: `--ifx-ledger-line` (`#d5e0eb`). Strong outer boundaries and lighter internal separators make dense records easy to scan.
 - Success: `#147a3d`; warning: `#b85b00`; danger: `#c93434`; location violet: `#7655d8`; neutral: `#69798a`.
 - Typography: Inter when available, then `Segoe UI`, Arial, sans-serif. Body 14px desktop/15px mobile; controls 13–14px; table secondary 12px; page title 28px/700.
 - Radius: 8px controls, 10px panels/drawers, 12px selected mobile sheet.
-- Elevation: none for the normal canvas; subtle shadow only for drawers, sheets, and menus.
+- Elevation: the canvas stays recessed. Working panels use restrained `--ifx-panel-shadow`; actionable primary and secondary controls use consistent `--ifx-primary-shadow` and `--ifx-control-shadow`, removed when pressed. Quiet, copy and disabled controls remain unelevated. No gradients, glass, decorative 3D or extra whitespace.
 - Motion: apply selection, tab and store changes immediately. Use the shared 80ms/120ms tokens for brief feedback and disclosure transitions; avoid animating the whole inventory table or taking a full-page view-transition snapshot. Respect `prefers-reduced-motion`.
 
 ## Component families
@@ -132,11 +132,12 @@ The shared service defaults to `workflowMode: 'simple'`. Earlier dual-approval a
 Inspect at the viewports listed in [AGENTS.md](AGENTS.md); the width-specific criteria below apply at those sizes.
 
 - 1440×900 desktop: no page-level horizontal scrolling; table may use controlled internal overflow only below 1180px.
-- 1024px tablet: priority columns remain, secondary fields move into the drawer.
+- 1024px tablet: the four-column comparison remains readable. Identity and pricing share the first column; configuration, history and operations retain their own sourced facts, with complete records available in the drawer.
 - 390×844 mobile: no horizontal scrolling, 44px touch targets, bottom navigation, status text alongside color/icon.
-- Judge density using an unfiltered, multi-vehicle list as well as the default No hold view. Include provider summaries in the complete desktop row height; measuring only the primary table row hides wasted space. Typical phone results should be about 200–250px, and complete desktop groups about 240–280px. Long warnings may need more space; do not truncate material evidence to meet a budget.
-- Phone results use a compact identity block, location/hold/service facts, and one shared action row. Full provider details are one Records action away. Desktop compares a short set of labeled AutoCheck, sticker, and OASIS facts beneath the main row.
-- The customer shortlist uses a fixed launcher and a small anchored, nonmodal popover. Opening it must not add document height, move inventory scroll position, dim the whole page or block other inventory controls. Customer management is progressive; compact photo rows retain vehicle identity and quick actions. Nested vehicle and customer-sheet dialogs remain modal and return focus to their exact launch controls.
+- Judge density using an unfiltered, multi-vehicle list as well as the default No hold view. Measure the complete vehicle group, including provider summaries. The ordinary clear Maverick fixture has whole-group limits of 340px at 1024px, 310px at 1320px and 300px at 1440px. The deliberately rich unheld fixture has limits of 320px at 1280px/1440px and 300px at 1800px. Held records, additional permitted actions and full warnings can need more space; do not truncate material evidence to meet an unrelated fixture's budget. Phone identity, operational facts and first actions must appear before the bottom navigation; complete supporting facts follow without an arbitrary total-card cap.
+- Desktop uses four native columns: Vehicle & pricing, Configuration, History and Operations. A larger photo, identity, published price, original MSRP and listing age form one vehicle reference area. Full stock/VIN and base MSRP/mileage copy ledgers stay in this first column, alongside colors and change history. Factory evidence stays with configuration, captured history with History, and OEM service evidence with Operations; each source follows its own facts without a forced common baseline. One compact footer spans the columns and groups Records, Save and Listing, then permitted Request/Track/Move actions. Missing actions leave no reserved slot, and additional genuine actions stay direct. Phone results put the photo/identity/price and all four copy fields before independent location/hold/service facts and the two-column action group. Explicit source links retain 44px targets and real provider marks. Full provider details remain one Records action away.
+- Inventory has one continuous workbench: compact title/result count and location scope, dominant search with Saved/Scan/Filters/Sort utilities, visibly labeled Hold and Service filter groups, and the source qualification immediately above the table. Phone controls keep service filtering within its existing disclosure rather than adding a desktop toolbar stack.
+- The customer shortlist uses a toolbar launcher beside inventory search and a small anchored, nonmodal popover. The closed launcher never covers vehicle data; the expanded popover stays outside document flow and within the viewport. Opening it must not add document height, move inventory scroll position, dim the whole page or block other inventory controls. Customer management is progressive; compact photo rows retain vehicle identity and quick actions. Nested vehicle and customer-sheet dialogs remain modal and return focus to their exact launch controls.
 - Service list cards provide explicit Open vehicle, Records and permission-aware Update service / View service actions outside the card's selection button. These open existing workflows and never save a new status by themselves.
 - Overview has one Show details / Hide details control for all captured documents and records. They expand together, retain their source links, and reset to summaries when another vehicle opens. Full records remains a separate action.
 - Full Records uses up to two report columns on desktop and a single report sequence on phones. Reports flow in reading order with compact gaps, without reserving space to match a taller neighboring report; a lone report uses the full width. Keep labels near values and source details with their report. The phone report-navigation row may scroll horizontally; report bodies and the page must not.

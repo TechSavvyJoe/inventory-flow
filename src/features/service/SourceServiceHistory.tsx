@@ -7,6 +7,7 @@ import { fordServiceHistoryUrl, officialVehicleDocumentUrl } from '../inventory/
 import { sourceDisplayText } from '../../lib/source-text'
 import { qualifyingAutoCheckInspection } from '../../lib/service-inspection-evidence'
 import { ProviderServiceHistoryReports, rankedServiceReports, serviceReportStateLabel } from '../inventory/ServiceHistory'
+import { SourceWordmark, type SourceWordmarkBrand } from '../../components/SourceWordmark'
 
 function fordOrders(vehicle: VehicleRecord): FordServiceRepairOrderRecord[] {
   const history = vehicle.fordOasis?.serviceHistory
@@ -153,12 +154,16 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
   const hasOemHistory = fordFamily && historyState === 'current' && Boolean(history?.repairOrderCount || visits.length)
   const primaryReport = rankedServiceReports(reports)[0]
   const providerFirst = Boolean(primaryReport && !hasOemHistory)
+  const sourceBrand: SourceWordmarkBrand | null = providerFirst
+    ? primaryReport?.provider === 'autocheck' || primaryReport?.provider === 'carfax' ? primaryReport.provider : null
+    : fordFamily ? 'ford' : 'autocheck'
+  const sourceName = providerFirst ? primaryReport?.sourceLabel : fordFamily ? 'FORD' : 'AUTOCHECK'
   const sourceUrl = fordFamily ? fordServiceHistoryUrl(vehicle.vin) : officialVehicleDocumentUrl(autoCheck?.url, 'autocheck', vehicle.listingUrl)
 
   return <section className="service-source-history" aria-labelledby="source-service-history-title">
     <header className="service-source-history-heading">
       <div className="service-source-history-title"><span className="service-source-history-icon" aria-hidden="true"><Wrench size={17} /></span><div><h3 id="source-service-history-title">Vehicle service records</h3><p>{providerFirst ? `${primaryReport?.sourceLabel} service history` : fordFamily ? 'Ford dealer repair history' : 'AutoCheck history'}</p></div></div>
-      <span className="service-source-history-source">{providerFirst ? primaryReport?.sourceLabel : fordFamily ? 'FORD' : 'AUTOCHECK'}</span>
+      <span className="service-source-history-source"><SourceWordmark brand={sourceBrand} label={sourceName ?? ''} /></span>
     </header>
     {providerFirst ? <div className="service-autocheck-history"><ProviderServiceHistoryReports reports={reports} /></div> : null}
     {fordFamily ? <>

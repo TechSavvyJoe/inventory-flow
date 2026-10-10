@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
-// Inventory -> save -> open the floating list -> keep the page in place.
+// Inventory -> save -> open the toolbar list -> keep the page in place.
 async function saveVehicles(page: Page) {
   await page.goto('/inventory?scope=group')
   await page.getByRole('button', { name: /^All:/ }).click()
@@ -54,7 +54,7 @@ for (const [width, height] of [[390, 844], [1024, 768], [1320, 820], [1440, 900]
       const separateColumns = labelBounds!.x + labelBounds!.width <= valueBounds!.x
       expect(separateRows || separateColumns).toBe(true)
     }
-    // A transformed/clipped app container must not capture the fixed launcher.
+    // The toolbar launcher stays inline; its popover must escape a transformed app container.
     await page.evaluate(() => { document.getElementById('root')!.style.transform = 'translateZ(0)' })
     const launcher = page.getByRole('button', { name: /^Saved vehicles:/ })
     const closedFrame = await pageFrame(page)
@@ -71,7 +71,8 @@ for (const [width, height] of [[390, 844], [1024, 768], [1320, 820], [1440, 900]
     expect(bounds!.x).toBeGreaterThanOrEqual(0)
     expect(bounds!.y).toBeGreaterThanOrEqual(0)
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
-    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(closedBounds!.y)
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(height)
+    expect(bounds!.y, 'The popover opens below its toolbar launcher').toBeGreaterThanOrEqual(closedBounds!.y + closedBounds!.height)
     await expect(panel.getByRole('textbox', { name: 'Customer list name' })).toHaveCount(0)
     await expect(panel.getByRole('button', { name: 'Clear list' })).toHaveCount(0)
     const sheet = panel.getByRole('button', { name: /^Customer sheet/ })

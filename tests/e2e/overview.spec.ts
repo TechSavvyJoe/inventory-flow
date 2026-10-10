@@ -219,11 +219,10 @@ test('a store manager records a disposition from the vehicle workspace and the O
 
   await page.goto('/inventory?scope=group&vin=TESTDATAHWELL0001')
   const operations = page.getByRole('region', { name: 'Vehicle operational summary' })
-  // Disposition is a secondary employee action in the compact Overview strip.
-  const more = operations.getByRole('button', { name: 'More', exact: true })
-  await expect(more).toHaveAttribute('aria-expanded', 'false')
-  await more.click()
-  await expect(more).toHaveAttribute('aria-expanded', 'true')
+  // The operational summary exposes disposition directly alongside the
+  // vehicle's other primary employee actions.
+  await expect(operations.getByRole('button', { name: 'More', exact: true })).toHaveCount(0)
+  await expect(operations.getByRole('button', { name: /^(Record|Change) disposition$/ })).toBeVisible()
   let wasSoldPending = false
   const record = async (choice: 'Sold pending' | 'Keep') => {
     const opener = operations.getByRole('button', { name: /^(Record|Change) disposition$/ })

@@ -3,7 +3,6 @@ import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMe
 import {
   ArrowDown,
   ArrowUp,
-  CarFront,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -716,7 +715,7 @@ export function InventoryExperience({
     <section id="inventory-results-workspace" ref={captureModalBackground} data-filters-open={filtersOpen} className={`inventory-experience if-srp${selectedVehicle ? " has-workspace" : ""}`} aria-label="Inventory">
       <div className="inventory-experience__content" ref={backgroundRef}>
         <div className="if-srp-heading-grid">
-        <FlowPageHeader className="if-srp-header" title="Inventory" titleLabel={scope === "group" ? "All locations inventory" : title} icon={<CarFront />} actions={<ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />} />
+        <FlowPageHeader className="if-srp-header" title={<><span>Inventory</span><span className="inventory-results-count" aria-live="polite">{scopedVehicles.length} shown <span className="inventory-results-count__scope" aria-hidden="true">· {scope === "home" ? `${homeVehicleCount} of ` : ""}{groupVehicleCount} group</span></span></>} titleLabel={scope === "group" ? "All locations inventory" : title} actions={<ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />} />
 
         <div className="if-srp-searchbar" role="group" aria-label="Inventory search and location scope">
           <InventoryPredictiveSearch
@@ -735,11 +734,31 @@ export function InventoryExperience({
             <Heart aria-hidden="true" /><span className="inventory-tool-label">Shortlist</span><span aria-hidden="true">{shortlist.count}</span>
           </button> : null}
           <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan vehicle</span></button></span>
+          <div className="if-srp-tools">
+            <div className="inventory-toolbar__left">
+              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
+                <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
+              </button>
+            </div>
+
+            <div className="inventory-toolbar__right">
+              <SortComposer sorts={sorts} onChange={setSorts} />
+            </div>
+          </div>
+      <CustomerShortlistDrawer entries={shortlist.entries}
+        onRemove={shortlist.remove} onClear={shortlist.clear}
+        management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
+        modalOpen={scannerOpen || Boolean(selectedVehicle) || Boolean(shortlist.management?.pendingSave)}
+        onSelectVehicle={(entry, opener) => {
+          const vehicle = allVehicles.find(candidate => candidate.id === entry.id || candidate.vin === entry.id);
+          if (vehicle) openVehicleWorkspace(vehicle, "overview", opener);
+        }} />
         </div>
 
         </div>
         <div className="if-srp-controls">
           <div className="if-srp-quickviews" role="group" aria-label="Inventory quick filters">
+            <strong className="if-srp-control-heading">Hold</strong>
             {([
               ["no-hold", "No hold", "No hold"],
               ["all", "All", "All"],
@@ -758,7 +777,7 @@ export function InventoryExperience({
               one wrapper so tablet widths can flow them as one chip row. */}
           <div id={`${filterPanelId}-service`} className="if-srp-chip-rows" onKeyDown={event => { if (filtersOpen && event.key === "Escape") { event.preventDefault(); closeFilters(); } }}>
             <div className="if-srp-service-filters" role="group" aria-label="Inventory service status">
-              <strong className="if-srp-service-heading">Service status</strong>
+              <strong className="if-srp-service-heading">Service</strong>
               {SERVICE_FILTERS.map(([value, label]) => <button key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
                 <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
               </button>)}
@@ -768,20 +787,6 @@ export function InventoryExperience({
             </div> : null}
           </div>
 
-          <div className="if-srp-tools">
-            <div className="inventory-toolbar__left">
-              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
-                <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
-              </button>
-              <strong className="inventory-results-count" aria-live="polite">
-                {scopedVehicles.length} shown · {scope === "home" ? `${homeVehicleCount} of ` : ""}{groupVehicleCount} group
-              </strong>
-            </div>
-
-            <div className="inventory-toolbar__right">
-              <SortComposer sorts={sorts} onChange={setSorts} />
-            </div>
-          </div>
         </div>
 
         {quickView === "no-hold" ? <p className="inventory-view-context" role="status">{locationScope === "home" ? `Reported at ${scopedStore.name}` : "Reported at a dealership"} · No hold in the published snapshot. Confirm availability.</p> : quickView === "offsite" ? <p className="inventory-view-context" role="status">{locationScope === "home" ? `${scopedStore.name} inventory reported elsewhere` : "Vehicles reported away from their home store"}. Unknown or conflicting locations remain in All.</p> : null}
@@ -881,14 +886,6 @@ export function InventoryExperience({
           setQuery(vehicle.vin); setScannerOpen(false);
           window.requestAnimationFrame(() => { resultsSurfaceRef.current?.scrollIntoView({ block: "start", behavior: "instant" }); });
         }} /> : null}
-      <CustomerShortlistDrawer entries={shortlist.entries}
-        onRemove={shortlist.remove} onClear={shortlist.clear}
-        management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
-        modalOpen={scannerOpen || Boolean(selectedVehicle) || Boolean(shortlist.management?.pendingSave)}
-        onSelectVehicle={(entry, opener) => {
-          const vehicle = allVehicles.find(candidate => candidate.id === entry.id || candidate.vin === entry.id);
-          if (vehicle) openVehicleWorkspace(vehicle, "overview", opener);
-        }} />
       {selectedVehicle ? (
         <VehicleWorkspace
           vehicle={selectedVehicle}

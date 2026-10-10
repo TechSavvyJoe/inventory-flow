@@ -34,7 +34,10 @@ export interface VehicleResourceCardsProps {
 
 function ResourceBrand({ resource }: { resource: VehicleResource }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return <span className="vehicle-resource-brand-fallback">{resource.brand === 'autocheck' ? 'AutoCheck' : resource.brand === 'vauto' ? 'vAuto' : 'Ford'}</span>;
+  if (failed) {
+    const labels = { autocheck:'AutoCheck', carfax:'CARFAX', vauto:'vAuto', ford:'Ford', lincoln:'Lincoln', chevrolet:'Chevrolet' } as const;
+    return <span className="vehicle-resource-brand-fallback">{resource.brand ? labels[resource.brand] : resource.title}</span>;
+  }
   if (!resource.brand) return <FileText aria-hidden="true" className="vehicle-resource-symbol"/>;
   return <img className={`vehicle-resource-brand vehicle-resource-brand--${resource.brand}`} src={`/resource-brands/${resource.brand}.svg`} alt="" onError={() => setFailed(true)}/>;
 }
@@ -152,7 +155,7 @@ function historyExceptionText(row: VehicleResourceSummaryRow, synthetic: boolean
 }
 
 /** Inventory presentation reuses structured report fields; it does not derive source status. */
-function scanRows(resource: VehicleResource, vehicle: VehicleResourceVehicle): VehicleResourceSummaryRow[] {
+function scanRows(resource: VehicleResource, vehicle: VehicleResourceVehicle, explicitDestination = false): VehicleResourceSummaryRow[] {
   const rows = resource.summaryRows ?? [];
   if (resource.id === 'autocheck') {
     const unique = (candidates: Array<VehicleResourceSummaryRow | undefined>) => {
@@ -171,10 +174,14 @@ function scanRows(resource: VehicleResource, vehicle: VehicleResourceVehicle): V
     const odometer = rows.find(row => row.label === 'Last odometer');
     const reviewLabels = historyReviewLabels(vehicle);
     const primary = rows.find(row => reviewLabels.has(historyLabel(row.label))) ?? resource.primaryScanRow;
-    return unique([rows.find(row => row.label === 'Score'), title, accidents, primary,
-      ownership ? { ...ownership, label:ownership.label === 'Owners / use' ? 'Owners' : 'Use', detail:undefined } : undefined,
-      odometer ? { ...odometer, values:odometer.values.slice(0, 1), detail:undefined } : undefined,
-    ]);
+    const ownerRow = ownership ? { ...ownership, label:ownership.label === 'Owners / use' ? 'Owners' : 'Use', detail:undefined } : undefined;
+    const odometerRow = odometer ? { ...odometer, values:odometer.values.slice(0, 1), detail:undefined } : undefined;
+    const score = rows.find(row => row.label === 'Score');
+    // Inventory's two-column ledger retains a natural reading order; other
+    // scan consumers keep their existing priority order for material findings.
+    return unique(explicitDestination
+      ? [score, ownerRow, odometerRow, title, accidents, primary]
+      : [score, title, accidents, primary, ownerRow, odometerRow]);
   }
   if (resource.id === 'oasis') {
     const actionRow = rows.find(row => /actions/i.test(row.label));
@@ -323,18 +330,13 @@ export function VehicleResourceScan({ resource, vehicle, onOpenSection, onSelect
   selectedId?: string | null;
 }) {
   const syntheticPreview = Boolean(getDemoWindowSticker(vehicle));
-  const rows = scanRows(resource, vehicle);
+  const rows = scanRows(resource, vehicle, explicitDestination);
   const label = resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker';
-  // The synthetic demo sticker still represents the captured Ford-family
-  // document slot; the adjacent warning keeps its demo status explicit.
-  const scanBrandResource = resource.id === 'window-sticker' && !resource.brand && /^(ford|lincoln)$/i.test(vehicle.make?.trim() ?? '')
-    ? { ...resource, brand:'ford' as const }
-    : resource;
-  const sourceContent = <><ResourceBrand resource={scanBrandResource}/><span className="vehicle-resource-scan__source-label">{label}</span>{onSelectResource ? <ChevronDown size={13} aria-hidden="true"/> : null}</>;
+  const sourceContent = <><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}</span>{onSelectResource ? <ChevronDown size={13} aria-hidden="true"/> : null}</>;
   return <div data-resource-kind={resource.id} className="vehicle-resource-scan">
     {onSelectResource && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" aria-label={`Show ${label === 'Sticker' ? 'sticker' : label === 'Equipment' ? 'equipment' : label} records`} aria-expanded={selectedId === resource.id} onClick={event => { event.currentTarget.focus({preventScroll:true}); onSelectResource?.(resource.id); }}>{sourceContent}</button>
-      : resource.href ? <a className="vehicle-resource-scan__source" title={`Open ${label === 'Equipment' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`}>{!explicitDestination ? <ResourceBrand resource={scanBrandResource}/> : null}<span className="vehicle-resource-scan__source-label">{explicitDestination ? `Open ${label} report` : label}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
-        : onOpenSection && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" title={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} aria-label={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} onClick={() => onOpenSection(resource.target)}>{explicitDestination ? <><span className="vehicle-resource-scan__source-label">View {label}</span><ChevronRight size={13} aria-hidden="true"/></> : <>{sourceContent}<ArrowRight size={13} aria-hidden="true"/></>}</button>
+      : resource.href ? <a className={`vehicle-resource-scan__source${explicitDestination ? ' vehicle-resource-scan__source--destination' : ''}`} title={`Open ${label === 'Equipment' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`}><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{explicitDestination ? `Open ${label} report` : label}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
+        : onOpenSection && resource.hasCapturedData ? <button type="button" className={`vehicle-resource-scan__source${explicitDestination ? ' vehicle-resource-scan__source--destination' : ''}`} title={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} aria-label={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} onClick={() => onOpenSection(resource.target)}>{explicitDestination ? <><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">View captured {label}</span><ChevronRight size={13} aria-hidden="true"/></> : <>{sourceContent}<ArrowRight size={13} aria-hidden="true"/></>}</button>
           : <strong className="vehicle-resource-scan__source vehicle-resource-scan__source--static">{sourceContent}</strong>}
     <div className="vehicle-resource-scan__findings">{rows.length ? <ScanFields rows={rows} resource={resource} synthetic={syntheticPreview}/> : <p className="vehicle-resource-scan__missing">{resource.hasCapturedData ? 'Captured details in Records' : resource.id === 'vauto' && resource.href ? 'VIN equipment profile available' : 'No captured report'}</p>}</div>
     {decisionSourceNote(resource.sourceNote) ? <p className="vehicle-resource-scan__caption">{decisionSourceNote(resource.sourceNote)}</p> : null}
@@ -362,10 +364,10 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
     const history = usable.find(resource => resource.id === 'autocheck');
     const historyFacts = history ? scanRows(history, vehicle).filter(row => ['Score', 'Owners', 'Use'].includes(row.label) && !hiddenShortcutFactLabels?.includes(row.label)) : [];
     const combinedRail = shortcutActions !== undefined && shortcutActions !== null;
-    return <div className={`vehicle-resource-shortcuts${combinedRail ? ' is-action-rail' : ''}`} aria-label={combinedRail ? 'Vehicle report and row actions' : 'Vehicle report shortcuts'} onClick={event => event.stopPropagation()}>
+    return <div className={`vehicle-resource-shortcuts${combinedRail ? ' is-action-rail' : ''}${explicitDestination ? ' has-explicit-destinations' : ''}`} aria-label={combinedRail ? 'Vehicle report and row actions' : 'Vehicle report shortcuts'} onClick={event => event.stopPropagation()}>
       {usable.filter(resource => ['autocheck', 'window-sticker', 'vauto', 'oasis'].includes(resource.id)).map(resource => {
         const label = resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker';
-        const rows = scanRows(resource, vehicle);
+        const rows = scanRows(resource, vehicle, explicitDestination);
         const sourceMsrp = resource.stickerDetails?.msrp;
         const shortcutFact = resource.id === 'autocheck'
           ? rows.filter(row => ['Score', 'Owners'].includes(row.label)).map(row => `${row.label === 'Score' ? 'Score ' : ''}${row.values[0]}`).join(' · ')
@@ -374,7 +376,7 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
             : sourceMsrp
               ? `${label} MSRP ${displaySourceMoney(sourceMsrp)}`
               : rows[0]?.values[0];
-        const content = <><span className="vehicle-resource-shortcut__heading">{!explicitDestination ? <ResourceBrand resource={resource}/> : null}<span>{explicitDestination ? resource.href ? `Open ${label} report` : `View ${label}` : label}</span>{resource.href ? <ArrowUpRight size={14} aria-hidden="true"/> : <ArrowRight size={14} aria-hidden="true"/>}</span>{combinedRail && shortcutFact ? <span className="vehicle-resource-shortcut__fact">{shortcutFact}</span> : null}</>;
+        const content = <><span className="vehicle-resource-shortcut__heading"><ResourceBrand resource={resource}/><span>{explicitDestination ? resource.href ? `Open ${label} report` : `View captured ${label}` : label}</span>{resource.href ? <ArrowUpRight size={14} aria-hidden="true"/> : <ArrowRight size={14} aria-hidden="true"/>}</span>{combinedRail && shortcutFact ? <span className="vehicle-resource-shortcut__fact">{shortcutFact}</span> : null}</>;
         return resource.href ? <a key={resource.id} className="vehicle-resource-shortcut" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${label} ${explicitDestination ? "report" : "source"} in a new tab`}>{content}</a>
           : onOpenSection ? <button key={resource.id} type="button" className="vehicle-resource-shortcut" onClick={() => onOpenSection(resource.target)} aria-label={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`}>{content}</button>
             : null;

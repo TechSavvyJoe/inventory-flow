@@ -183,7 +183,14 @@ function daysAwayText(facts: OverviewVehicleFacts): string | null {
 
 function arrivalText(service: OverviewVehicleFacts['service']): string | null {
   if (!service.arrivalDate) return null
-  return `arrived ${formatDate(service.arrivalDate)} (${service.arrivalBasis === 'intake' ? 'intake' : 'listing date'})`
+  if (service.arrivalBasis === 'intake') return `Arrived ${formatDate(service.arrivalDate)} (intake)`
+  if (service.arrivalBasis === 'listing_date') return `Listed ${formatDate(service.arrivalDate)} · arrival unconfirmed`
+  return 'Arrival timing not recorded'
+}
+
+function serviceAgeText(service: Pick<OverviewVehicleFacts['service'], 'waitingDays' | 'arrivalBasis'>): string {
+  if (service.waitingDays === undefined || service.arrivalBasis === 'unknown') return 'Waiting time not recorded'
+  return `${plural(service.waitingDays, 'day')} ${service.arrivalBasis === 'listing_date' ? 'since listing' : 'waiting'}`
 }
 
 function RecordsLink({ vin, facts, name }: { vin: string; facts?: OverviewVehicleFacts; name: string }) {
@@ -208,7 +215,7 @@ function WhereRow({ row, filter, holdsVerified }: { row: OverviewRow; filter: Wh
   if (facts.holdActive) details.push({ text: `${vehicle.hold.label}${holdsVerified ? '' : ' (last verified)'}${facts.holdPastExpected ? ' · past expected' : ''}`, tone: facts.holdPastExpected ? 'warning' : undefined })
   if (vehicle.appDisposition?.code) details.push({ text: `${dispositionSummary(vehicle.appDisposition)} · recorded` })
   if (filter === 'waiting' && facts.service.waitingDays !== undefined) {
-    details.push({ text: [`Waiting ${plural(facts.service.waitingDays, 'day')}`, arrivalText(facts.service)].filter(Boolean).join(' · ') })
+    details.push({ text: [serviceAgeText(facts.service), arrivalText(facts.service)].filter(Boolean).join(' · ') })
   }
   const transferId = vehicle.movement.transferId
   return (
@@ -433,7 +440,7 @@ function ServiceSection({ data, overview, stores, role, homeStore, reportMode, p
                 <div className="ov-row-main">
                   <strong>{name}</strong>
                   <span className="ov-row-meta">{entry.vehicle ? `Stock ${entry.vehicle.stockNumber} · ` : ''}{entry.store ?? 'Service store not set'}{entry.vehicle?.mileage != null ? ` · ${formatNumber(entry.vehicle.mileage)} mi` : ''}</span>
-                  <span className={`ov-service-wait${entry.waitingDays >= waitingLong ? ' ov-tone-danger' : ' ov-tone-warning'}`}>Waiting {plural(entry.waitingDays, 'day')}<span>{entry.arrivalBasis === 'intake' ? 'From recorded arrival' : entry.arrivalBasis === 'listing_date' ? 'From listing date; arrival unconfirmed' : 'Arrival date unconfirmed'}</span></span>
+                  <span className={`ov-service-wait${entry.waitingDays >= waitingLong ? ' ov-tone-danger' : ' ov-tone-warning'}`}>{serviceAgeText(entry)}<span>{entry.arrivalBasis === 'intake' ? 'From recorded arrival' : entry.arrivalBasis === 'listing_date' ? 'From listing date; arrival unconfirmed' : 'Arrival date unconfirmed'}</span></span>
                 </div>
                 <div className="ov-row-actions">
                   <RecordsLink vin={entry.vin} facts={entry.facts} name={name} />
@@ -723,13 +730,9 @@ function WorkQueueRow({ vehicle, fallbackName, stockNumber, work, detail, owner,
           <VehicleValue vehicle={vehicle} />
         </div>
       </div>
-      <div className="ov-work-detail">
-        <strong>{work}</strong>
-        <p>{detail}</p>
-      </div>
-      <div className="ov-work-owner">
-        <strong>{owner}</strong>
-        <small className={tone ? `ov-tone-${tone}` : undefined}>{status}</small>
+      <div className="ov-work-assignment">
+        <div className="ov-work-detail"><strong>{work}</strong><p>{detail}</p></div>
+        <div className="ov-work-owner"><strong>{owner}</strong><small className={tone ? `ov-tone-${tone}` : undefined}>{status}</small></div>
       </div>
       <div className="ov-work-actions">
         {actionHref ? <Link className={flowButtonClassName({variant:'primary',className:'ov-work-primary'})} to={actionHref}>{actionLabel}<ChevronRight aria-hidden="true" /></Link> : null}
@@ -804,7 +807,7 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
     content = service.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => (
       <WorkQueueRow key={vehicle.vin} vehicle={vehicle} fallbackName={vehicle.vehicleName} work="Waiting for service"
         detail={arrivalText(facts.service) || 'Arrival timing not recorded'}
-        owner={facts.service.store ?? vehicle.homeStore} status={facts.service.waitingDays !== undefined ? `${plural(facts.service.waitingDays, 'day')} waiting` : 'Waiting time not recorded'}
+        owner={facts.service.store ?? vehicle.homeStore} status={serviceAgeText(facts.service)}
         tone={facts.service.waitingDays !== undefined && facts.service.waitingDays >= overview.thresholds.serviceWaitingDays[1] ? 'danger' : undefined}
         actionLabel={serviceActionAllowed(vehicle, facts.service.store, role, homeStore) ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
     ))
@@ -844,12 +847,11 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
   return (
     <section className="ov-work-queue" aria-labelledby="ov-work-title">
       <FlowLedgerHeading className="ov-work-heading" titleId="ov-work-title" title={<><ClipboardCheck aria-hidden="true" />Work queue</>} variant="plain"
-        description="Vehicle-level work and evidence in this scope."
         actions={<Link className={flowButtonClassName({variant:'secondary',className:'ov-button'})} to={`/attention?${view === 'issues' ? 'category=issues&' : ''}scope=${scope}`}>{view === 'issues' ? 'Vehicle issue log' : 'Open Action center'}<ChevronRight aria-hidden="true" /></Link>} />
       <div className="ov-work-tabs" role="group" aria-label="Overview work queue">
         {WORK_QUEUE_VIEWS.map((entry) => <button key={entry.value} type="button" aria-label={`${entry.label} ${queueCounts[entry.value]}`} aria-pressed={view === entry.value} onClick={() => setView(entry.value)}>{entry.label}<span>{queueCounts[entry.value]}</span></button>)}
       </div>
-      <div className="ov-work-columns" aria-hidden="true"><span>Vehicle / value</span><span>Work</span><span>Owner / status</span><span>Next action</span></div>
+      <div className="ov-work-columns" aria-hidden="true"><span>Vehicle / value</span><span>Work / responsible</span><span>Next action</span></div>
       {queueCounts[view] ? <ul className="ov-work-rows">{content}</ul> : <p className="ov-work-empty">No {WORK_QUEUE_VIEWS.find((entry) => entry.value === view)!.label.toLowerCase()} in this scope.</p>}
       {queueCounts[view] > WORK_QUEUE_ROWS ? <p className="ov-work-more">Showing {WORK_QUEUE_ROWS} of {queueCounts[view]} items. Open the full ledger from the row action or section below.</p> : null}
     </section>

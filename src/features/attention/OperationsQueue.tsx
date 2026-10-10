@@ -141,7 +141,7 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
     <div className="workflow-toolbar"><PredictiveSearchInput className="workflow-search" value={query} onChange={value => { if (confirmUnsavedWork()) setQuery(value) }} ariaLabel="Search work queue" clearLabel="Clear queue search" placeholder="Search vehicle, stock, VIN, or task" candidates={statusItems.filter(item => category === 'all' || actionCategory(item) === category).filter(matchesSearch).map(item => ({ id: item.id, label: item.vehicleName || item.stockNumber || taskTitle(item), detail: taskTitle(item), value: item.stockNumber || item.vehicleName || taskTitle(item), searchValues: [taskTitle(item), item.vehicleName, item.stockNumber, item.vin, item.owner, item.assignedTo, item.store] }))} />
       <div className="workflow-scope action-status-buttons" role="group" aria-label="Task status"><button type="button" aria-pressed={status === 'open'} onClick={() => { if (confirmUnsavedWork()) setStatus('open') } }>Open</button><button type="button" aria-pressed={status === 'reviewed'} onClick={() => { if (confirmUnsavedWork()) setStatus('reviewed') } }>Reviewed</button></div><span className="workflow-muted" role="status"><span>{visible.length} {visible.length === 1 ? 'task' : 'tasks'}</span>{alsoWorthKnowing.length ? ` · ${alsoWorthKnowing.length} informational` : ''}</span>
     </div>
-    <div className="action-list" role="list" aria-label="Attention items"><div className="action-list-head" aria-hidden="true"><span>Vehicle</span><span>What needs doing</span><span>Owner / timing</span><span>Next step</span></div>
+    <div className="action-list" role="list" aria-label="Attention items"><div className="action-list-head" aria-hidden="true"><span>Vehicle / reference</span><span>Task / responsible</span><span>Configuration</span></div>
       {visible.map(row => <TaskRow key={row.key} row={row} vehicle={vehicleMap.get(row.lead.vin ?? '')} returnTo={returnTo} reportDate={reportDate} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/>)}
       {!visible.length ? <div className="workflow-empty"><CheckCircle2 aria-hidden="true"/><h2>{query || category !== 'all' ? alsoWorthKnowing.length ? 'No actionable tasks match this view' : 'No tasks match this view' : status === 'reviewed' ? 'No reviewed tasks yet' : 'Your store is caught up'}</h2><p>{alsoWorthKnowing.length ? `${alsoWorthKnowing.length} informational ${alsoWorthKnowing.length === 1 ? 'item matches' : 'items match'} below.` : status === 'open' ? 'New follow-ups appear here when there is a next step to take.' : 'Completed reviews will appear here.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { if (confirmUnsavedWork()) { setQuery(''); setCategory('all') } }}>Clear filters</button> : null}</div> : null}
     </div>
@@ -176,13 +176,25 @@ function TaskRow({ row, vehicle, returnTo, reportDate, role, homeStore, currentU
   // note about the hold has to land on the hold, not on the move that leads the
   // row. Service status is recorded on the service page instead.
   const followUps = row.items.filter(item => item.type !== 'service_pending' && item.type !== 'vehicle_issue')
-  return <article role="listitem" className="action-row"><div className="action-row-content">
-    <TaskVehicle item={lead} vehicle={vehicle}/>
-    <div className="action-task"><strong>{taskTitle(lead)}</strong>
-      {lead.type === 'vehicle_issue' ? <p className="workflow-muted">{lead.whyItMatters}</p> : null}
-      {relatedTasks.length > 0 ? <div className="action-task-related" aria-label="Other tasks for this vehicle">{relatedTasks.map(item => <Link key={item.id} to={withWorkspaceReturnPath(item.href!, returnTo)}>{taskLinkLabel(item)}</Link>)}</div> : null}
+  return <article role="listitem" className="action-row">
+    <div className="action-row-content">
+      <div className="action-vehicle-reference">
+        <TaskVehicle item={lead} vehicle={vehicle}/>
+        <div className="action-vehicle-identifiers" aria-label="Vehicle identifiers">
+          {(vehicle?.stockNumber || lead.stockNumber) && <CopyableValue label="stock number" text={(vehicle?.stockNumber || lead.stockNumber)!} compact><span className="action-identifier-fact"><span>Stock</span><strong>{vehicle?.stockNumber || lead.stockNumber}</strong></span></CopyableValue>}
+          {(vehicle?.vin || lead.vin) && <CopyableValue label="VIN" text={(vehicle?.vin || lead.vin)!} compact><span className="action-identifier-fact"><span>VIN</span><strong>{vehicle?.vin || lead.vin}</strong></span></CopyableValue>}
+        </div>
+      </div>
+      <div className="action-work-reference">
+        <div className="action-task"><strong>{taskTitle(lead)}</strong>
+          {lead.type === 'vehicle_issue' ? <p className="workflow-muted">{lead.whyItMatters}</p> : null}
+          {relatedTasks.length > 0 ? <div className="action-task-related" aria-label="Other tasks for this vehicle">{relatedTasks.map(item => <Link key={item.id} to={withWorkspaceReturnPath(item.href!, returnTo)}>{taskLinkLabel(item)}</Link>)}</div> : null}
+        </div>
+        <div className="action-owner"><span>Responsible</span><strong>{lead.assignedTo || lead.owner || 'Store manager'}</strong><span className={overdue ? 'workflow-overdue' : undefined}>{lead.followUpAt ? `Follow up ${formatDateTime(lead.followUpAt)}` : lead.dueAt ? `Due ${formatDate(lead.dueAt)}` : lead.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>
+      </div>
+      <div className="action-vehicle-context" aria-label="Supporting vehicle facts"><VehicleQuickFacts vehicle={vehicle} /></div>
     </div>
-    <div className="action-owner"><strong>{lead.assignedTo || lead.owner || 'Store manager'}</strong><span className={overdue ? 'workflow-overdue' : undefined}>{lead.followUpAt ? `Follow up ${formatDateTime(lead.followUpAt)}` : lead.dueAt ? `Due ${formatDate(lead.dueAt)}` : lead.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>
-    <TaskActions item={lead} vehicle={vehicle} returnTo={returnTo}/>
-  </div><div className="action-vehicle-context" aria-label="Supporting vehicle facts"><div className="action-vehicle-identifiers">{(vehicle?.stockNumber || lead.stockNumber) && <CopyableValue label="stock number" text={(vehicle?.stockNumber || lead.stockNumber)!} compact><span className="action-identifier-fact"><span>Stock</span><strong>{vehicle?.stockNumber || lead.stockNumber}</strong></span></CopyableValue>}{(vehicle?.vin || lead.vin) && <CopyableValue label="VIN" text={(vehicle?.vin || lead.vin)!} compact><span className="action-identifier-fact"><span>VIN</span><strong>{vehicle?.vin || lead.vin}</strong></span></CopyableValue>}</div><VehicleQuickFacts vehicle={vehicle} /></div>{followUps.map(item => <TaskFollowUp key={item.id} item={item} condition={followUps.length > 1 ? taskTitle(item) : undefined} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/>)}</article>
+    <div className="action-row-footer"><TaskActions item={lead} vehicle={vehicle} returnTo={returnTo}/></div>
+    {followUps.map(item => <TaskFollowUp key={item.id} item={item} condition={followUps.length > 1 ? taskTitle(item) : undefined} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/>)}
+  </article>
 }

@@ -935,6 +935,7 @@ export function VehicleWorkspace({
           <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />
           <WorkspacePanel id="overview" label="Overview" active={activePage === "overview"}>
             <div className="vdp-focus-overview">
+              <div className="vdp-focus-reference-column" aria-label="Vehicle photo and reference values">
                 <div className="vdp-focus-gallery-column">
                   <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
                   <dl className="vdp-focus-mobile-valuation" role="group" aria-label="Vehicle mileage and age">
@@ -942,6 +943,11 @@ export function VehicleWorkspace({
                     {vehicle.daysListed != null ? <Fact label="Days listed">{vehicle.daysListed} days</Fact> : null}
                   </dl>
                 </div>
+                {factoryPrices.original.value !== null || factoryPrices.base.value !== null ? <dl className="vdp-focus-pricing-facts" aria-label="Original vehicle pricing">
+                  {factoryPrices.original.value !== null ? <Fact label={factoryPriceLabel(factoryPrices.original.source)}><span className="vdp-focus-reference-value">{formatFactoryPrice(factoryPrices.original.value, factoryPrices.original.currency)}</span><small>{factoryPrices.original.source === "window-sticker" ? "Window sticker" : "vAuto equipment"}</small></Fact> : null}
+                  {factoryPrices.base.value !== null ? <Fact label={baseMsrpLabel}><CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue>{baseMsrpSource ? <small>{baseMsrpSource} · Before options &amp; destination</small> : null}</Fact> : null}
+                </dl> : null}
+              </div>
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <dl>
                   <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
@@ -978,6 +984,9 @@ export function VehicleWorkspace({
                 {vehicle.inventoryDecision?.comparison === 'conflict' ? <p className="vdp-focus-next-action" role="status"><strong>Records disagree</strong> · Review Inventory Flow and reported hold / disposition evidence.</p> : null}
                 {hasMovement ? <div className="vdp-focus-next-action"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
               </section>
+                <section className="vdp-focus-document-shortcuts" aria-label="Document shortcuts">
+                  <VehicleResourceCards vehicle={vehicle} variant="shortcuts" hiddenShortcutFactLabels={vehicleHistoryFacts.filter(([label]) => label === "Score" || label === "Owners").map(([label]) => label)} onOpenSection={openAndFocusSection} />
+                </section>
               <div className="vdp-focus-vehicle-context">
                 <div className="vdp-focus-vehicle-intelligence">
                   <section className="vdp-focus-specs" aria-label="Vehicle specifications">
@@ -996,13 +1005,6 @@ export function VehicleWorkspace({
                 <section className="vdp-focus-highlights" aria-label="Key equipment">
                   <FlowLedgerHeading level={3} className="vdp-focus-ledger-heading" title={<><Check size={20} aria-hidden="true" />Key equipment</>} actions={<button className={flowButtonClassName({ variant: "quiet" })} type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button>} />
                   {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
-                </section>
-                {factoryPrices.original.value !== null || factoryPrices.base.value !== null ? <dl className="vdp-focus-pricing-facts" aria-label="Original vehicle pricing">
-                  {factoryPrices.original.value !== null ? <Fact label={factoryPriceLabel(factoryPrices.original.source)}><span className="vdp-focus-reference-value">{formatFactoryPrice(factoryPrices.original.value, factoryPrices.original.currency)}</span><small>{factoryPrices.original.source === "window-sticker" ? "Window sticker" : "vAuto equipment"}</small></Fact> : null}
-                  {factoryPrices.base.value !== null ? <Fact label={baseMsrpLabel}><CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue>{baseMsrpSource ? <small>{baseMsrpSource} · Before options &amp; destination</small> : null}</Fact> : null}
-                </dl> : null}
-                <section className="vdp-focus-document-shortcuts" aria-label="Document shortcuts">
-                  <VehicleResourceCards vehicle={vehicle} variant="shortcuts" hiddenShortcutFactLabels={vehicleHistoryFacts.filter(([label]) => label === "Score" || label === "Owners").map(([label]) => label)} onOpenSection={openAndFocusSection} />
                 </section>
                 <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts">
                   <FlowLedgerHeading level={3} className="vdp-focus-ledger-heading" title={<><ShieldCheck size={20} aria-hidden="true" />Reference facts</>} />

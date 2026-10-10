@@ -16,7 +16,7 @@
   display: grid;
   grid-template-columns: var(--shell-nav-width) minmax(0, 1fr);
   grid-template-rows: var(--top-height) minmax(0, 1fr);
-  background: var(--ifx-neutral-50);
+  background: var(--ifx-canvas);
   color: var(--app-readable-text);
   font-size: var(--app-readable-body-size);
   line-height: 1.5;
@@ -518,7 +518,7 @@
   grid-column: 2;
   grid-row: 2;
   padding: 24px;
-  background: var(--ifx-neutral-50);
+  background: var(--ifx-canvas);
   color: var(--app-readable-text);
   font-size: var(--app-readable-body-size);
   line-height: 1.5;

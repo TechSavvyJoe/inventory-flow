@@ -27,6 +27,9 @@ export function ServiceStatusLink({ vin, service, detailed = false, compact = fa
       : status === 'serviced' && !service?.completedAt ? 'Ready is recorded; no completion date is available' : 'Open vehicle service workflow'
   const accessibleLabel = labelPrefix ? `${labelPrefix}: ${label}` : `${label}. Open service status for VIN ${vin}`
   return <WorkspaceLink to={`/service?vin=${encodeURIComponent(vin)}`} preserveOrigin className={`inventory-service-link inventory-service-link--${status}${detailed ? ' is-detailed' : ''}${compact ? ' is-compact' : ''}`} onClick={event => event.stopPropagation()} title={title} aria-label={accessibleLabel}>
-    <StatusIcon size={14} aria-hidden="true"/><span className="inventory-service-link__content"><span>{labelPrefix ? <span className="inventory-service-link__prefix">{labelPrefix}: </span> : null}{label}</span>{detailParts.length ? <small className="inventory-service-link__detail">{detailParts.map(part => <span key={part}>{part}</span>)}</small> : null}</span>
+    <StatusIcon size={14} aria-hidden="true"/><span className="inventory-service-link__content"><span>{labelPrefix ? <span className="inventory-service-link__prefix">{labelPrefix}: </span> : null}{label}</span>{detailParts.length ? <small className="inventory-service-link__detail">{detailParts.map(part => {
+      const datedPart = part.match(/^(.*?)(\d{2}\/\d{2}\/\d{4})$/)
+      return <span key={part}>{datedPart ? <>{datedPart[1]}<span className="inventory-service-link__date">{datedPart[2]}</span></> : part}</span>
+    })}</small> : null}</span>
   </WorkspaceLink>
 }

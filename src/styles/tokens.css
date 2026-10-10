@@ -85,7 +85,7 @@
   --ifx-info: var(--blue-600);
   --ifx-info-surface: var(--blue-050);
   /* Shared page anatomy follows the approved compact vehicle workspace. */
-  --ifx-workspace-header-background: var(--ifx-neutral-100);
+  --ifx-workspace-header-background: var(--ifx-panel-surface);
   --ifx-workspace-header-ink: var(--navy-900);
   --ifx-workspace-header-muted: var(--ink-600);
   --ifx-workspace-header-control: var(--blue-050);
@@ -201,6 +201,18 @@
 
   --ifx-border-subtle: var(--ifx-neutral-200);
   --ifx-border-control: var(--ifx-neutral-300);
+  /* Four distinct working surfaces keep dense records legible without adding
+     padding: recessed canvas, white panels, section bands, and action wells. */
+  --ifx-canvas: #f3f5f7;
+  --ifx-panel-surface: #ffffff;
+  --ifx-panel-header: #f4f6f8;
+  --ifx-panel-border: #aabdd0;
+  --ifx-ledger-line: #d5e0eb;
+  --ifx-evidence-surface: #f6f8fa;
+  --ifx-action-well: #f0f3f6;
+  --ifx-panel-shadow: 0 1px 2px rgb(6 43 80 / 6%);
+  --ifx-control-shadow: 0 1px 2px rgb(6 43 80 / 9%);
+  --ifx-primary-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), 0 2px 5px rgb(6 43 80 / 20%);
   --ifx-control-height-sm: 36px;
   --ifx-control-height-md: 44px;
   --ifx-control-height-lg: 48px;

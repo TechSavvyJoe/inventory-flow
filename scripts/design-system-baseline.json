@@ -216,6 +216,13 @@
       "important": 3,
       "idSelectors": 0
     },
+    "src/components/SourceWordmark.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/inventory/ServiceHistory.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -270,7 +277,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 4,
-      "idSelectors": 104
+      "idSelectors": 101
     },
     "src/features/transfers/transfers.css": {
       "smallText": 22,
@@ -284,7 +291,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 33
+      "idSelectors": 31
     },
     "src/features/inventory/inventory-modern.css": {
       "smallText": 50,

@@ -152,9 +152,10 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    // Each comparison row now includes its source evidence; paging still counts vehicles.
+    // Each vehicle owns four data cells and a separate one-cell action footer.
+    // Paging counts the vehicle rows, not their companion action rows.
     const vehicleRows = () => within(screen.getByRole('table')).getAllByRole('row')
-      .filter(row => within(row).queryAllByRole('cell').length > 0)
+      .filter(row => within(row).queryAllByRole('cell').length === 4)
     expect(vehicleRows()).toHaveLength(10)
 
     fireEvent.change(rowsSelect, { target: { value: '20' } })
@@ -415,8 +416,8 @@ describe('manager-friendly inventory UI', () => {
     )
     // One Records action shows source highlights and exact document links
     // without opening the full workspace or expanding the comparison rows.
-    const row = document.querySelector('.inv-desk-row') as HTMLElement
-    fireEvent.click(within(row).getByRole('button', { name: /Open vehicle records/ }))
+    const actions = screen.getByRole('group', { name: /^Actions for/ })
+    fireEvent.click(within(actions).getByRole('button', { name: /Open vehicle records/ }))
     const inspector = screen.getByRole('dialog', { name: /records$/i })
     expect(within(inspector).getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(inspector).getByText('92')).toBeVisible()

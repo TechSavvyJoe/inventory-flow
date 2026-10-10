@@ -190,7 +190,7 @@ describe('OverviewPage (server projection)', () => {
     expect(within(held[0]).getByText('source-reported')).toBeVisible()
 
     fireEvent.click(within(where).getByRole('button', { name: /Waiting for service/ }))
-    expect(within(where).getAllByRole('listitem')[0]).toHaveTextContent('Waiting 24 days · arrived 09/01/2026 (listing date)')
+    expect(within(where).getAllByRole('listitem')[0]).toHaveTextContent('24 days since listing · Listed 09/01/2026 · arrival unconfirmed')
   })
 
   it('shows return-home verification with a manager action, and exceptions with fixed copy and drill-downs', () => {
@@ -444,6 +444,31 @@ function withWorkQueue(role: UserRole): BootstrapData {
 }
 
 describe('Overview work queue and dispositions', () => {
+  it.each([
+    ['listing_date', 'Listed 09/01/2026 · arrival unconfirmed', '24 days since listing'],
+    ['intake', 'Arrived 09/01/2026 (intake)', '24 days waiting'],
+    ['unknown', 'Arrival timing not recorded', 'Waiting time not recorded'],
+  ] as const)('keeps %s service timing evidence distinct in the work queue', (arrivalBasis, arrival, age) => {
+    const data = bootstrap('group_manager')
+    const target = data.vehicles[0]
+    data.overview!.vehicleFacts[target.vin].service = {
+      ...data.overview!.vehicleFacts[target.vin].service,
+      arrivalBasis,
+      arrivalDate: arrivalBasis === 'unknown' ? undefined : '2026-09-01',
+      waitingDays: arrivalBasis === 'unknown' ? undefined : 24,
+    }
+    renderAs('group_manager', data)
+    const queue = screen.getByRole('region', { name: 'Work queue' })
+    fireEvent.click(within(queue).getByRole('button', { name: /^Service \d+$/ }))
+    const action = within(queue).getAllByRole('link', { name: /^(Update|View) service$/ })
+      .find(link => link.getAttribute('href')?.includes(`vin=${target.vin}`))!
+    expect(action).toBeDefined()
+    const row = action.closest('li')!
+    expect(row).toHaveTextContent(arrival)
+    expect(row).toHaveTextContent(age)
+    if (arrivalBasis !== 'intake') expect(row).not.toHaveTextContent(/Arrived|24 days waiting/)
+  })
+
   beforeEach(() => {
     window.localStorage.clear()
     api.getDisposition.mockReset()

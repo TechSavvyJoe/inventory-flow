@@ -502,14 +502,12 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByRole('heading', { name: 'Back home · move complete' })).toBeInTheDocument();
   });
 
-  it('keeps one primary move action and discloses authorized return and issue options', () => {
+  it('keeps authorized return and issue actions directly available beside the primary move action', () => {
     const onAction = vi.fn();
     render(<TransferTracker transfer={{ ...detail(['record-outcome', 'schedule-return', 'report-condition']), workflowMode: 'simple' }} onAction={onAction} />);
     const actions = screen.getByLabelText('Available move actions');
-    expect(actions.querySelectorAll(':scope > button')).toHaveLength(1);
-    expect(actions.querySelector('details')).not.toHaveAttribute('open');
+    expect(within(actions).getAllByRole('button')).toHaveLength(3);
     expect(within(actions).getByRole('button', { name: 'Update the showing outcome' })).toBeInTheDocument();
-    fireEvent.click(within(actions).getByText('Other options'));
     fireEvent.click(within(actions).getByRole('button', { name: 'Start return' }));
     expect(onAction).toHaveBeenCalledWith('schedule-return', expect.objectContaining({ id: 'transfer-return' }));
     expect(within(actions).getByRole('button', { name: 'Report a vehicle issue' })).toBeInTheDocument();
