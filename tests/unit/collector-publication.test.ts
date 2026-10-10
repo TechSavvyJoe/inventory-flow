@@ -310,6 +310,67 @@ describe('Brokered publication and independent tenant receipt',()=>{
   expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_attempts').get().n).toBe(1)
   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_started'").get().n).toBe(1)
  })
+ it.each(['before-state-read','before-release-batch','unchanged-before-batch'])('retains a newer legacy public release when a hold candidate races it %s',async mode=>{
+  const f=await setup(),batch=f.tenantEnv.INVENTORY_DB.batch
+  if(mode==='unchanged-before-batch')f.input.envelope=f.baseline
+  const newer=structuredClone(f.bundle),vehicle=newer.release.vehicles.find(v=>v.publicRecord)
+  const publicRecord=newer.release.publicSnapshot.vehicles[vehicle.vin]
+  publicRecord.listed_price+=1000;vehicle.publicRecord.listed_price=publicRecord.listed_price
+  newer.release.sourceRuns.public.sha256='c'.repeat(64)
+  // The newer public release completed before the hold capture. Ordering alone
+  // must not let that capture restore the old public price after publication.
+  newer.release.completedAt=new Date(now.getTime()-1000).toISOString()
+  const newerEnvelope=encryptBundle(newer,f.key)
+  let raced=false,afterLegacy
+  f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+   const atStateRead=statements.some(s=>s.sql==='SELECT revision FROM cloud_app_revision WHERE id=1')
+   const atReleaseBatch=statements.some(s=>s.sql.includes("UPDATE cloud_release_versions SET status='superseded'"))
+   const atUnchangedBatch=statements.some(s=>s.sql.includes('UPDATE cloud_release_versions SET metadata_json=?'))
+   if(!raced && (mode==='before-state-read'?atStateRead:mode==='before-release-batch'?atReleaseBatch:atUnchangedBatch)){
+    raced=true
+    const legacy=await publishRelease(new Request('https://synthetic.invalid/internal/releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(newerEnvelope)}),f.tenantEnv)
+    expect(legacy.status).toBe(201)
+    afterLegacy={revision:f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision,versions:f.tenant.prepare('SELECT * FROM cloud_release_versions ORDER BY release_id').all(),state:f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all(),intake:f.tenant.prepare('SELECT * FROM vehicle_service_intake ORDER BY vin').all()}
+   }
+   return batch(statements)
+  }
+  const publish=vi.spyOn(f.env.TENANT_NORTH_PUBLISHER,'publish')
+  const result=await publishCollector(f.env,f.machine,f.input,'legacy-baseline-race',now)
+  expect(raced).toBe(true)
+  expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(newerEnvelope.bundleSha256)
+  expect(f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision).toBe(afterLegacy.revision)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_versions ORDER BY release_id').all()).toEqual(afterLegacy.versions)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all()).toEqual(afterLegacy.state)
+  expect(f.tenant.prepare('SELECT * FROM vehicle_service_intake ORDER BY vin').all()).toEqual(afterLegacy.intake)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(result).toMatchObject({status:'revision_retryable',ready:false,bundleSha256:f.input.envelope.bundleSha256})
+  expect(f.sqlite.prepare('SELECT stage,expected_bundle_sha256 FROM platform_collector_attempts').get()).toMatchObject({stage:'captured',expected_bundle_sha256:f.input.envelope.bundleSha256})
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_revision_deferred'").get().n).toBe(1)
+  // No new baseline can be silently substituted into the frozen attempt.
+  await expect(publishCollector(f.env,f.machine,f.input,'legacy-baseline-race',now)).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
+  expect(publish).toHaveBeenCalledTimes(2)
+  expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(newerEnvelope.bundleSha256)
+ })
+ it.each(['database','lost-after-commit'])('keeps an unchanged candidate readback-only after an ambiguous %s reply',async mode=>{
+  const f=await setup(),batch=f.tenantEnv.INVENTORY_DB.batch
+  f.input.envelope=f.baseline
+  const beforeRevision=f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision
+  f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+   if(statements.some(s=>s.sql.includes('UPDATE cloud_release_versions SET metadata_json=?'))){
+    if(mode==='database')throw new Error('Synthetic unchanged batch unavailable')
+    await batch(statements)
+    throw new Error('Synthetic unchanged reply lost after commit')
+   }
+   return batch(statements)
+  }
+  const publish=vi.spyOn(f.env.TENANT_NORTH_PUBLISHER,'publish')
+  expect(await publishCollector(f.env,f.machine,f.input,'unchanged-ambiguous',now)).toMatchObject({status:'reconciliation_required',ready:false})
+  expect(f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision).toBe(beforeRevision)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(mode==='database'?0:1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_revision_deferred'").get().n).toBe(0)
+  expect(await publishCollector(f.env,f.machine,f.input,'unchanged-ambiguous',now)).toMatchObject({status:mode==='database'?'reconciliation_required':'unchanged_verified'})
+  expect(publish).toHaveBeenCalledTimes(1)
+ })
  it.each(['sqlite','d1'])('retries the exact candidate after an employee revision race atomically rolls back every tenant row (%s)',async mode=>{
   const f=await setup(),batch=f.tenantEnv.INVENTORY_DB.batch
   f.tenant.prepare('INSERT INTO cloud_memberships(email,user_id,name,role,home_store,enabled) VALUES (?,?,?,?,?,1)').run('synthetic-race@example.invalid','synthetic-race','Synthetic racing employee','sales','Howell')

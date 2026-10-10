@@ -75,6 +75,92 @@ afterEach(() => {
 })
 
 describe('collector host contract', () => {
+  const setupFailures = [
+    ['ACCESS_TOKEN_INVALID', 401],
+    ['COLLECTOR_AUTH_REQUIRED', 403],
+    ['COLLECTOR_PROFILE_MISMATCH', 409],
+  ]
+
+  it.each(setupFailures)('reports %s when a claim rejects authentication or enrolled profile authority', async (code, status) => {
+    const { root, profile } = fixture()
+    const captureFactory = vi.fn()
+    const routes: string[] = []
+    const result = await runOnce({
+      profileName: COLLECTOR_PROFILE_NAME,
+      profileDirectory: path.join(root, 'runtime/collector/profiles'),
+      credentialReader: () => ({ accessClientId: 'synthetic-id', accessClientSecret: 'SYNTHETIC_PRIVATE_SECRET' }),
+      runnerLoader: async () => ({ internals: { inspectCollectorBaseline: () => ({ receipt: { bundleSha256: 'a'.repeat(64) } }) } }),
+      captureFactory,
+      fetchImpl: async url => {
+        routes.push(url.pathname)
+        if (url.pathname === '/api/collector/contact') return Response.json({
+          collectorId: 'collector-1', connected: true, enabled: true, executionEnabled: true,
+          scopeSha256: 'b'.repeat(64), profileSha256: profile.profileSha256,
+          adapterVersion: COLLECTOR_ADAPTER_VERSION, checkedAt: new Date().toISOString(),
+        })
+        return Response.json({ code, message: 'SYNTHETIC_PRIVATE_SERVER_DETAIL' }, { status })
+      },
+    })
+    expect(result).toEqual({ status: 'blocked', code })
+    expect(routes).toEqual(['/api/collector/contact', '/api/collector/claim'])
+    expect(captureFactory).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('SYNTHETIC_PRIVATE')
+  })
+
+  it.each(setupFailures)('classifies remote doctor rejection %s for its bounded CLI error summary', async (code, status) => {
+    const { root } = fixture()
+    const fetchImpl = vi.fn(async () => Response.json({ code, message: 'SYNTHETIC_PRIVATE_SERVER_DETAIL' }, { status }))
+    const error = await doctor({
+      profileName: COLLECTOR_PROFILE_NAME, remote: true,
+      profileDirectory: path.join(root, 'runtime/collector/profiles'),
+      credentialReader: () => ({ accessClientId: 'synthetic-id', accessClientSecret: 'SYNTHETIC_PRIVATE_SECRET' }),
+      fetchImpl,
+    }).catch(value => value)
+    expect(error).toMatchObject({ message: code, status })
+    expect(collectorHostInternals.safeCode(error)).toBe(code)
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    expect(fetchImpl.mock.calls[0][0].pathname).toBe('/api/collector/contact')
+  })
+
+  it.each(setupFailures)('prints %s from a daemon contact rejection without changing pending evidence', async (code, status) => {
+    const { root, profile } = fixture()
+    const artifacts = privateAttemptArtifacts(root, 'attempt-auth-pending')
+    mkdirSync(artifacts.directory, { recursive: true })
+    for (const file of [artifacts.candidatePath, artifacts.manifestPath, artifacts.dealerMailPath]) writeFileSync(file, '{"marker":"SYNTHETIC_PRIVATE_CANDIDATE"}')
+    writeFileSync(artifacts.envelopePath, JSON.stringify({ reportDate: '2026-10-09', bundleSha256: 'a'.repeat(64), ciphertext: 'SYNTHETIC_PRIVATE_ENVELOPE' }))
+    saveAttemptState(artifacts.statePath, {
+      attemptId: 'attempt-auth-pending', fence: 2, reportDate: '2026-10-09', profileSha256: profile.profileSha256,
+      configSha256: 'b'.repeat(64), bundleSha256: 'a'.repeat(64), publicationIdempotencyKey: '12345678-1234-4234-8234-123456789012',
+      publicationPending: true, reconciliationRequired: true,
+    })
+    const files = [artifacts.candidatePath, artifacts.manifestPath, artifacts.dealerMailPath, artifacts.envelopePath, artifacts.statePath]
+    const before = files.map(file => readFileSync(file))
+    const controller = new AbortController(), output: string[] = []
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(chunk => { output.push(String(chunk)); controller.abort(); return true })
+    const fetchImpl = vi.fn(async () => Response.json({ code, message: 'SYNTHETIC_PRIVATE_SERVER_DETAIL' }, { status }))
+    try {
+      expect(await runDaemon({
+        profileName: COLLECTOR_PROFILE_NAME, profileDirectory: path.join(root, 'runtime/collector/profiles'),
+        signal: controller.signal, fetchImpl,
+        credentialReader: () => ({ accessClientId: 'synthetic-id', accessClientSecret: 'SYNTHETIC_PRIVATE_SECRET' }),
+      })).toEqual([{ status: 'error', code }])
+    } finally { write.mockRestore() }
+    expect(output).toEqual([JSON.stringify({ status: 'error', code }) + '\n'])
+    expect(output.join('')).not.toContain('SYNTHETIC_PRIVATE')
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    expect(fetchImpl.mock.calls[0][0].pathname).toBe('/api/collector/contact')
+    files.forEach((file, index) => expect(readFileSync(file)).toEqual(before[index]))
+  })
+
+  it.each(['ACCESS_TOKEN_INVALID_SYNTHETIC_PRIVATE_SECRET', 'SYNTHETIC_PRIVATE_UNKNOWN_FAILURE'])('redacts unrecognized remote error code %s and private response details', async code => {
+    const { profile } = fixture()
+    const error = await collectorRequest(profile, { accessClientId: 'synthetic-id', accessClientSecret: 'SYNTHETIC_PRIVATE_SECRET' }, '/api/collector/contact', {
+      fetchImpl: async () => Response.json({ code, message: 'SYNTHETIC_PRIVATE_SERVER_DETAIL', credential: 'SYNTHETIC_PRIVATE_SECRET' }, { status: 403 }),
+    }).catch(value => value)
+    expect(collectorHostInternals.safeCode(error)).toBe('BASELINE_INVALID')
+    expect(JSON.stringify({ status: 'error', code: collectorHostInternals.safeCode(error) })).not.toContain('SYNTHETIC_PRIVATE')
+  })
+
   it('accepts only the fixed commands and installed profile name', () => {
     expect(collectorHostInternals.parseArgs(['run-once', '--profile', 'group-dealermail-v1'])).toMatchObject({ command: 'run-once' })
     expect(() => collectorHostInternals.parseArgs(['run-once', '--profile', 'other'])).toThrow('PROFILE_NOT_INSTALLED')

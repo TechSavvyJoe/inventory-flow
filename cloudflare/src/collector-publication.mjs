@@ -164,7 +164,7 @@ export async function reconcileCollector(env,claims,groupId,input,now=new Date()
 export async function publishTenantCandidate(env,envelope,authorization,testTime=null) {
  const clock=()=>testTime??new Date(),now=clock()
  const {ticket,attempt}=await verifyPublicationTicket(env,authorization,'publish',now)
- let bundle,counts,baseline
+ let bundle,counts,baseline,config
  // Independently prove the tenant key and verified baseline are readable before
  // treating candidate decryption errors as definitive bad-input evidence.
  try{baseline=await readReleaseWithIdentity(env,{fresh:true})}catch{return {status:'preflight_retryable'}}
@@ -177,7 +177,7 @@ export async function publishTenantCandidate(env,envelope,authorization,testTime
   return {status:'preflight_retryable'}
  }
  try {
- const config=JSON.parse(attempt.config_json)
+ config=JSON.parse(attempt.config_json)
  if(baseline.bundleSha256!==config.baselineBundleSha256 || baseline.release.reportDate!==ticket.reportDate || bundle.release.sourceRuns.dealerMail.sha256!==attempt.source_sha256 || counts.dealerMailRowCount!==JSON.parse(attempt.capture_counts_json).dealerMailRows)collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  // Hold refresh may only change DealerMail evidence and its derived records.
  for(const field of ['publicSnapshot','publicChangeEvents','resourceSnapshot','managerDispositionOverlay'])if(canonical(bundle.release[field]??null)!==canonical(baseline.release[field]??null))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
@@ -189,7 +189,7 @@ export async function publishTenantCandidate(env,envelope,authorization,testTime
  if(config.dealerships.length!==4 || config.dealerships.some(d=>!storeNames[d.storeKey]))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  }catch{return {status:'rejected',code:'VALIDATION_FAILED'}}
  const request=new Request('https://collector-binding.invalid/internal/releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(envelope)})
- return (await publishRelease(request,env,{ticket,now,check:()=>assertPublicationFence(env,ticket,clock())})).json()
+ return (await publishRelease(request,env,{ticket,now,baselineBundleSha256:config.baselineBundleSha256,check:()=>assertPublicationFence(env,ticket,clock())})).json()
 }
 
 export async function readTenantPublicationReceipt(env,authorization,now=new Date()) {
