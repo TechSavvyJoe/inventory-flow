@@ -14,6 +14,22 @@ const source: OperationalProviderRecord = { vin: 'TESTDATAHWELL0001', provider: 
 const report: ProviderServiceReport = { vin: source.vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: source.capturedAt, dataState: 'current', historyStatus: 'reported', entries: [{ date: '2026-07-12', odometer: 21000, odometerUnit: 'mi', services: ['Synthetic oil and filter service'] }] }
 
 describe('provider-neutral vehicle evidence', () => {
+  it('keeps reserved DealerMail decision evidence out of the imported-provider ledger', () => {
+    const record = premiumVehicle({ operationalEvidence: { records: [source] }, inventoryDecision: {
+      status: 'unconfirmed', comparison: 'conflict', manualHold: null, importedHold: true, label: 'Review source records', reasons: [],
+      evidence: [{ ...source, effectiveHoldState: 'held', comparison: 'conflict', reasons: [] }, { ...source, provider: 'legacy-dealermail', sourceLabel: 'DealerMail', holdState: 'not_observed', effectiveHoldState: 'not_observed', comparison: 'conflict', reasons: [] }],
+    } })
+    const view = render(<ProviderEvidence vehicle={record} />)
+    const region = screen.getByRole('region', { name: 'Imported inventory evidence' })
+    expect(within(region).getAllByRole('listitem')).toHaveLength(1)
+    expect(region).toHaveTextContent('Synthetic CRM')
+    expect(region).toHaveTextContent('Records disagree')
+    expect(region).not.toHaveTextContent('DealerMail')
+    view.rerender(<ProviderEvidence vehicle={{ ...record, inventoryDecision: { ...record.inventoryDecision!, evidence: record.inventoryDecision!.evidence!.filter(item => item.provider === 'legacy-dealermail') } }} />)
+    expect(region).toHaveTextContent('No imported observations supplied.')
+    expect(within(region).queryByRole('list')).not.toBeInTheDocument()
+  })
+
   it('shows source holds in Held and excludes No hold without relabeling DealerMail', () => {
     const vehicle = premiumVehicle({ operationalEvidence: { records: [source] }, dealerMail: { dataState: 'unavailable', hasActiveHold: null } })
     const context = { scope: 'group' as const, homeStore: { id: 'howell', name: 'Howell' } }

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { ServicePage } from './ServicePage'
@@ -29,6 +29,43 @@ beforeEach(() => {
 })
 
 describe('Service readiness workspace', () => {
+  it.each(['current', 'stale_unverified'] as const)('keeps %s provider and pending manual holds independent of DealerMail and service readiness', async (dataState) => {
+    const vehicle = record(), vin = vehicle.vin
+    vehicle.hold = { state: 'none_observed', label: 'No current DealerMail hold found', backupCount: 0, canViewEvidence: false }
+    vehicle.operationalEvidence = { records: [{ vin, provider: 'synthetic-crm', sourceLabel: 'Synthetic CRM', capturedAt: '2026-10-10T12:00:00Z', dataState, readOnly: true, complete: true, holdState: 'held' }] }
+    vehicle.manualHold = { vin, state: 'requested', version: 1, expectedDeliveryDate: null, updatedAt: null, ownerStore: 'Howell', enabled: true, canManage: false, customerLabel: 'PRIVATE MANUAL CUSTOMER' }
+    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [vehicle] }
+    show(`/service?vin=${vin}`)
+    const summary = await screen.findByRole('region', { name: 'Recorded service status' })
+    const facts = screen.getByLabelText('Service decision facts')
+    expect(facts).toHaveTextContent('No current DealerMail hold found')
+    expect(facts).toHaveTextContent('Synthetic CRM')
+    expect(facts).toHaveTextContent(dataState === 'current' ? 'Hold observed' : 'Hold status not verified')
+    expect(facts).toHaveTextContent('Pending approval')
+    expect(facts).not.toHaveTextContent('PRIVATE MANUAL CUSTOMER')
+    expect(summary).toHaveTextContent('Waiting for service')
+    expect(within(summary).queryByText('Ready', { exact: true })).not.toBeInTheDocument()
+    expect(mocked.update).not.toHaveBeenCalled()
+  })
+
+  it('shows conflicting provider states and an approved app hold without replacing redacted DealerMail', async () => {
+    const vehicle = record(), vin = vehicle.vin
+    const observation = { vin, provider: 'synthetic-crm', sourceLabel: 'Synthetic CRM', capturedAt: '2026-10-10T12:00:00Z', dataState: 'current' as const, readOnly: true as const, complete: true, holdState: 'held' as const }
+    vehicle.hold = { state: 'primary', label: 'Held', backupCount: 0, canViewEvidence: false }
+    vehicle.operationalEvidence = { records: [observation, { ...observation, provider: 'synthetic-dms', sourceLabel: 'Synthetic DMS', holdState: 'not_observed' }] }
+    vehicle.manualHold = { vin, state: 'active', version: 1, expectedDeliveryDate: null, updatedAt: null, ownerStore: 'Howell', enabled: true, canManage: false, note: 'PRIVATE MANUAL NOTE' }
+    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [vehicle] }
+    show(`/service?vin=${vin}`)
+    await screen.findByRole('region', { name: 'Recorded service status' })
+    const facts = screen.getByLabelText('Service decision facts')
+    expect(facts).toHaveTextContent('HoldHeld')
+    expect(facts).toHaveTextContent('Synthetic CRMHold observed')
+    expect(facts).toHaveTextContent('Synthetic DMSNo hold observed')
+    expect(facts).toHaveTextContent('Inventory Flow holdApproved hold')
+    expect(facts).not.toHaveTextContent('PRIVATE MANUAL NOTE')
+    expect(mocked.update).not.toHaveBeenCalled()
+  })
+
   it('opens an all-store service total across stores and preserves scope in the vehicle return link', async () => {
     show('/service?status=serviced&scope=all')
     await waitFor(() => expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true'))

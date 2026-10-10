@@ -16,6 +16,7 @@ import { CopyableValue } from '../../components/CopyableValue'
 import { VehicleQuickFacts } from '../../components/VehicleQuickFacts'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleGallery } from '../inventory/VehicleGallery'
+import { providerHoldLabel } from '../inventory/provider-evidence-utils'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
 import { serviceEvidenceSummary, SourceServiceHistory } from './SourceServiceHistory'
 import { searchFieldsMatch } from '../../lib/search'
@@ -224,7 +225,9 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
       {/* Vehicle references come from the inventory record, not the service
           endpoint, so they stay readable when service detail fails to load. */}
       <dl className="service-fact-grid" aria-label="Service decision facts">
-        <div><dt>Hold</dt><dd>{['primary', 'backup', 'multiple'].includes(vehicle.hold?.state) ? vehicle.hold.label || 'Held — confirm availability' : vehicle.hold?.state === 'none_observed' ? 'No observed hold' : 'Review hold status'}</dd></div>
+        <div><dt>Hold</dt><dd>{vehicle.hold?.label || (['primary', 'backup', 'multiple'].includes(vehicle.hold?.state) ? 'Held — confirm availability' : 'Review hold status')}</dd></div>
+        {(vehicle.inventoryDecision?.evidence ?? vehicle.operationalEvidence?.records ?? []).filter(record => record.provider !== 'legacy-dealermail').map(record => <div key={record.provider}><dt>{record.sourceLabel}</dt><dd>{providerHoldLabel(record)}{record.holdState === 'held' && (record.dataState !== 'current' || !record.complete) ? record.dataState === 'stale_unverified' ? ' · Retained hold observation' : ' · Unverified hold observation' : ''}</dd></div>)}
+        {vehicle.manualHold?.state === 'active' || vehicle.manualHold?.state === 'requested' ? <div><dt>Inventory Flow hold</dt><dd>{vehicle.manualHold.state === 'active' ? 'Approved hold' : 'Pending approval · not a confirmed hold'}</dd></div> : null}
         <div><dt>Location</dt><dd>{vehicle.movement?.currentLocation || vehicle.sourceReportedLocation || 'Not confirmed'}<small>{vehicle.movement?.currentLocation && vehicle.movement.locationConfidence === 'verified' ? 'Confirmed location' : 'Confirm with the store'}</small></dd></div>
       </dl>
       <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>

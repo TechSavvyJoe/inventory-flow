@@ -170,10 +170,285 @@ describe('collector exact candidate local baseline lifecycle', () => {
     expect(f.captures()).toBe(1)
   })
 
+  const rejectCollectorAuthority = async (f, mode) => {
+    if (mode === 'revoked') {
+      await saveCollector(f.remote.env, COLLECTOR_OWNER, f.profile.groupId, {
+        operation: 'revoke', id: f.remote.collectorId, reason: 'Synthetic revocation before dispatch',
+        expectedRevision: f.remote.sqlite.prepare('SELECT revision FROM platform_revision').get().revision,
+      }, 'synthetic-pre-dispatch-revoke', new Date())
+    } else if (mode === 'enrollment-disabled') {
+      f.remote.sqlite.prepare('UPDATE platform_collectors SET enabled=0 WHERE id=?').run(f.remote.collectorId)
+    } else f.remote.env.PLATFORM_COLLECTOR_EXECUTION_ENABLED = 'false'
+  }
+
+  const artifactBytes = artifacts => Object.fromEntries(
+    ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath'].map(key => [key, readFileSync(artifacts[key])]),
+  )
+
+  it.each(['revoked', 'enrollment-disabled', 'execution-disabled'])('retires a new candidate on exact pre-dispatch %s authority rejection', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    const publish = vi.fn(f.remote.env.TENANT_NORTH_PUBLISHER.publish)
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    await f.queue()
+    let requests = 0, failureReceipts = 0, artifacts
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') {
+        requests += 1
+        artifacts = privateAttemptArtifacts(f.root, JSON.parse(String(options.body)).attemptId)
+        await rejectCollectorAuthority(f, mode)
+      }
+      if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'failure') failureReceipts += 1
+      return f.actualFetch(url, options)
+    } })
+    expect(outcome).toMatchObject({ status: 'failed', code: mode === 'revoked' ? 'COLLECTOR_REVOKED' : 'COLLECTOR_DISABLED' })
+    expect(requests).toBe(1)
+    expect(publish).not.toHaveBeenCalled()
+    expect(failureReceipts).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+    for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath']) expect(existsSync(artifacts[key])).toBe(false)
+    expect(existsSync(path.join(artifacts.directory, 'pending-claim.json'))).toBe(false)
+    expect(existsSync(path.join(artifacts.directory, 'capture-rollback.json'))).toBe(false)
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+    if (mode === 'revoked') await expect(f.runOnce(f.options)).rejects.toMatchObject({ message: 'COLLECTOR_REVOKED', status: 403 })
+    else expect(await f.runOnce(f.options)).toMatchObject({ status: 'disabled' })
+    expect(f.captures()).toBe(1)
+  })
+
+  it.each(['COLLECTOR_PUBLICATION_INVALID', 'COLLECTOR_LEASE_STALE', 'COLLECTOR_NO_CAPTURE'])('still retires a new candidate on direct publication %s/409 rejection', async code => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let requests = 0, artifacts
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') {
+        requests += 1
+        artifacts = privateAttemptArtifacts(f.root, JSON.parse(String(options.body)).attemptId)
+        return Response.json({ code }, { status: 409 })
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(outcome).toMatchObject({ status: 'failed' })
+    expect(requests).toBe(1)
+    expect(findPendingPublication(f.root)).toBe(null)
+    for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath']) expect(existsSync(artifacts[key])).toBe(false)
+    expect(f.captures()).toBe(1)
+  })
+
+  it.each(['revoked', 'execution-disabled'])('retires an undispatched capture-receipt recovery on exact %s authority rejection', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'capture') throw new TypeError('Synthetic capture receipt never dispatched')
+      return f.actualFetch(url, options)
+    } })).status).toBe('capture_receipt_pending')
+    const pending = findPendingPublication(f.root)
+    expect(pending.state.publicationPending).not.toBe(true)
+    const publish = vi.fn(f.remote.env.TENANT_NORTH_PUBLISHER.publish)
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') await rejectCollectorAuthority(f, mode)
+      return f.actualFetch(url, options)
+    } })
+    expect(outcome).toMatchObject({ status: 'failed', code: mode === 'revoked' ? 'COLLECTOR_REVOKED' : 'COLLECTOR_DISABLED' })
+    expect(findPendingPublication(f.root)).toBe(null)
+    for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath']) expect(existsSync(pending.artifacts[key])).toBe(false)
+    expect(existsSync(path.join(pending.artifacts.directory, 'pending-claim.json'))).toBe(false)
+    expect(publish).not.toHaveBeenCalled()
+    expect(f.captures()).toBe(1)
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+  })
+
+  it.each([
+    ['COLLECTOR_REVOKED', 401], ['COLLECTOR_REVOKED', 409],
+    ['COLLECTOR_DISABLED', 409], ['COLLECTOR_AUTH_REQUIRED', 403],
+    ['COLLECTOR_SCOPE_MISMATCH', 403], ['COLLECTOR_SCOPE_MISMATCH', 409],
+  ])('keeps a new candidate unknown for non-authoritative %s/%s responses', async (code, status) => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let artifacts, before, requests = 0
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') {
+        requests += 1
+        artifacts = privateAttemptArtifacts(f.root, JSON.parse(String(options.body)).attemptId)
+        before ??= artifactBytes(artifacts)
+        return Response.json({ code }, { status })
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(outcome.status).toBe('reconciliation_required')
+    expect(requests).toBe(2)
+    expect(findPendingPublication(f.root).state.reconciliationRequired).toBe(true)
+    expect(artifactBytes(artifacts)).toEqual(before)
+    expect(f.captures()).toBe(1)
+  })
+
+  it.each(['revoked', 'execution-disabled'].flatMap(mode => ['before-dispatch', 'after-commit'].map(loss => [mode, loss])))('preserves a new candidate when %s rejection follows the first %s lost reply', async (mode, loss) => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    const publish = vi.fn(f.remote.env.TENANT_NORTH_PUBLISHER.publish)
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    await f.queue()
+    let requests = 0, artifacts, before
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') {
+        requests += 1
+        if (requests === 1) {
+          artifacts = privateAttemptArtifacts(f.root, JSON.parse(String(options.body)).attemptId)
+          before = artifactBytes(artifacts)
+          if (loss === 'after-commit') await f.actualFetch(url, options)
+          await rejectCollectorAuthority(f, mode)
+          throw new TypeError('Synthetic first publication reply lost')
+        }
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(outcome.status).toBe('reconciliation_required')
+    expect(requests).toBe(2)
+    expect(publish).toHaveBeenCalledTimes(loss === 'after-commit' ? 1 : 0)
+    expect(findPendingPublication(f.root).state).toMatchObject({ publicationPending: true, reconciliationRequired: true })
+    expect(artifactBytes(artifacts)).toEqual(before)
+    expect(f.localHash()).toBe(baseline)
+    expect(f.captures()).toBe(1)
+  })
+
+  it.each(['revoked', 'execution-disabled'])('preserves a persisted unknown candidate after exact %s authority rejection', async mode => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/publication') throw new TypeError('Synthetic committed reply lost')
+      return response
+    } })).status).toBe('reconciliation_required')
+    const pending = findPendingPublication(f.root), before = artifactBytes(pending.artifacts)
+    const publish = vi.fn(f.remote.env.TENANT_NORTH_PUBLISHER.publish)
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') await rejectCollectorAuthority(f, mode)
+      return f.actualFetch(url, options)
+    } })
+    expect(outcome.status).toBe('reconciliation_required')
+    expect(findPendingPublication(f.root).state.attemptId).toBe(pending.state.attemptId)
+    expect(artifactBytes(pending.artifacts)).toEqual(before)
+    expect(publish).not.toHaveBeenCalled()
+    expect(f.captures()).toBe(1)
+  })
+
+  it('preserves exact candidate evidence if pre-dispatch authority cleanup cannot retire its marker', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    const rename = fs.renameSync
+    let artifacts, before, failures = 0
+    fs.renameSync = (from, to) => {
+      if (artifacts && from === artifacts.statePath && to === `${artifacts.statePath}.settled`) {
+        failures += 1
+        throw Object.assign(new Error('Synthetic marker locked'), { code: 'EBUSY' })
+      }
+      return rename(from, to)
+    }
+    syncBuiltinESMExports()
+    let outcome
+    try { outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') {
+        artifacts = privateAttemptArtifacts(f.root, JSON.parse(String(options.body)).attemptId)
+        before = artifactBytes(artifacts)
+        await rejectCollectorAuthority(f, 'execution-disabled')
+      }
+      return f.actualFetch(url, options)
+    } }) }
+    finally { fs.renameSync = rename; syncBuiltinESMExports() }
+    expect(failures).toBe(1)
+    expect(outcome).toMatchObject({ status: 'reconciliation_required', code: 'RECONCILIATION_REQUIRED' })
+    expect(findPendingPublication(f.root).state.attemptId).toBe(path.basename(artifacts.statePath, '.state.json'))
+    expect(artifactBytes(artifacts)).toEqual(before)
+    expect(f.captures()).toBe(1)
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  })
+
   const abortError = signal => new Promise((_, reject) => {
     const rejectAborted = () => reject(new Error('LEASE_STOPPED'))
     if (signal.aborted) rejectAborted()
     else signal.addEventListener('abort', rejectAborted, { once: true })
+  })
+
+  it.each(['revoked', 'execution-disabled', 'stale'])('preserves a candidate when a %s heartbeat aborts publication before its reply', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    let publicationStarted, artifacts, before, heartbeats = 0
+    const started = new Promise(resolve => { publicationStarted = resolve })
+    const running = f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') {
+        artifacts = privateAttemptArtifacts(f.root, JSON.parse(String(options.body)).attemptId)
+        before = artifactBytes(artifacts)
+        publicationStarted()
+        // The server may have admitted this request. Its reply is never seen.
+        return abortError(options.signal)
+      }
+      if (url.pathname === '/api/collector/heartbeat') {
+        heartbeats += 1
+        if (mode === 'stale') return Response.json({ code: 'COLLECTOR_LEASE_STALE' }, { status: 409 })
+      }
+      return f.actualFetch(url, options)
+    } })
+    await started
+    if (mode !== 'stale') await rejectCollectorAuthority(f, mode)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await running).toMatchObject({ status: 'reconciliation_required', code: mode === 'revoked' ? 'COLLECTOR_REVOKED' : mode === 'stale' ? 'COLLECTOR_LEASE_STALE' : 'COLLECTOR_DISABLED' })
+    expect(heartbeats).toBe(1)
+    expect(findPendingPublication(f.root).state).toMatchObject({ publicationPending: true, reconciliationRequired: true })
+    expect(artifactBytes(artifacts)).toEqual(before)
+    expect(f.localHash()).toBe(baseline)
+    expect(f.captures()).toBe(1)
+  })
+
+  it.each(['revoked', 'execution-disabled', 'stale'])('settles direct %s publication rejection despite a heartbeat abort after its complete body read', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    const publish = vi.fn(f.remote.env.TENANT_NORTH_PUBLISHER.publish)
+    f.remote.env.TENANT_NORTH_PUBLISHER.publish = publish
+    let artifacts, completeBodyRead = false, heartbeats = 0, publicationSignal
+    const outcome = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/heartbeat') heartbeats += 1
+      if (url.pathname !== '/api/collector/publication') return f.actualFetch(url, options)
+      artifacts = privateAttemptArtifacts(f.root, JSON.parse(String(options.body)).attemptId)
+      publicationSignal = options.signal
+      if (mode === 'stale') f.remote.sqlite.prepare('UPDATE platform_collector_attempts SET lease_until=? WHERE id=?').run(new Date(Date.now() - 1000).toISOString(), JSON.parse(String(options.body)).attemptId)
+      else await rejectCollectorAuthority(f, mode)
+      const response = await f.actualFetch(url, options)
+      expect(response.status).toBe(mode === 'stale' ? 409 : 403)
+      const reader = response.body.getReader()
+      response.body.getReader = () => ({
+        read: async () => {
+          const chunk = await reader.read()
+          if (chunk.done) {
+            completeBodyRead = true
+            // All rejection bytes arrived. The concurrent heartbeat aborts
+            // before the protocol's parsed error reaches the host catch.
+            const aborted = publicationSignal.aborted ? Promise.resolve() : new Promise(resolve => publicationSignal.addEventListener('abort', resolve, { once: true }))
+            await vi.advanceTimersByTimeAsync(30_000)
+            await aborted
+          }
+          return chunk
+        },
+        releaseLock: () => reader.releaseLock(),
+        cancel: () => reader.cancel(),
+      })
+      return response
+    } })
+    expect(completeBodyRead).toBe(true)
+    expect(heartbeats).toBe(1)
+    expect(publicationSignal.aborted).toBe(true)
+    expect(outcome).toMatchObject({ status: 'failed', code: mode === 'revoked' ? 'COLLECTOR_REVOKED' : mode === 'stale' ? 'COLLECTOR_LEASE_STALE' : 'COLLECTOR_DISABLED' })
+    expect(findPendingPublication(f.root)).toBe(null)
+    for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath']) expect(existsSync(artifacts[key])).toBe(false)
+    expect(existsSync(path.join(artifacts.directory, 'pending-claim.json'))).toBe(false)
+    expect(publish).not.toHaveBeenCalled()
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+    expect(f.captures()).toBe(1)
   })
 
   const failHeartbeat = mode => {

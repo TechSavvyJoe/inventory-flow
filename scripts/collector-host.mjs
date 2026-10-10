@@ -99,6 +99,12 @@ function isDefinitePreflightAuthorityFailure(error) {
     (error?.status === 409 && error?.message === 'COLLECTOR_SCOPE_MISMATCH')
 }
 
+function isDefinitePreHandlerAuthorityRejection(error) {
+  // The collector API authenticates these exact authority failures before
+  // entering the publication handler. They prove only this request undispatched.
+  return error?.status === 403 && ['COLLECTOR_REVOKED', 'COLLECTOR_DISABLED'].includes(error?.message)
+}
+
 function isDefinitePublicationRejection(error) {
   return error?.status === 409 && new Set([
     'COLLECTOR_PUBLICATION_INVALID', 'COLLECTOR_LEASE_STALE', 'COLLECTOR_NO_CAPTURE',
@@ -305,6 +311,9 @@ async function runClaimedAttempt(profile, credentials, claim, {
   const claimStartedAt = now().getTime()
   let stage
   let publicationRequestStarted = false
+  // Heartbeat cancellation may replace the outer error; only the direct first
+  // publication response can prove this dispatch rejected before publication.
+  let directPublicationRejection = null
   let priorPublicationUnknown = false
   try {
     const artifacts = privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)
@@ -382,8 +391,11 @@ async function runClaimedAttempt(profile, credentials, claim, {
       // happens before onRequestStarted. It is a definite failure, so retain
       // and report that error instead of turning it into an unknown outcome.
       if (!publicationRequestStarted) throw firstError
+      if (isDefinitePublicationRejection(firstError) || isDefinitePreHandlerAuthorityRejection(firstError)) {
+        directPublicationRejection = firstError
+        throw firstError
+      }
       if (abortController.signal.aborted) throw new Error('LEASE_STOPPED')
-      if (isDefinitePublicationRejection(firstError)) throw firstError
       // A retry uses the same encrypted envelope, attempt/fence and idempotency
       // key. The platform resolves its tenant receipt; no candidate is rebuilt.
       try { result = await submitCollectorPublication(profile, credentials, publication, {
@@ -423,6 +435,14 @@ async function runClaimedAttempt(profile, credentials, claim, {
   } catch (error) {
     if (heartbeat.failure && (error?.message === 'LEASE_STOPPED' || error?.name === 'AbortError')) error = heartbeat.failure
     const code = safeCode(error)
+    if (!priorPublicationUnknown && error === directPublicationRejection && isDefinitePreHandlerAuthorityRejection(error)) {
+      // No failure receipt can be authenticated after revocation/disable. The
+      // exact pre-handler response is the no-publication acknowledgement; an
+      // authority response after an earlier lost reply never reaches this path.
+      try { cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)) }
+      catch { return { status: 'reconciliation_required', attemptId: claim.attemptId, code: 'RECONCILIATION_REQUIRED' } }
+      return { status: 'failed', attemptId: claim.attemptId, code }
+    }
     if (heartbeat.transportFailed && !publicationRequestStarted && !priorPublicationUnknown) {
       // This attempt never dispatched publication. Retire only its private
       // candidate so it cannot resume later, and send no permanent failure
@@ -431,7 +451,7 @@ async function runClaimedAttempt(profile, credentials, claim, {
       catch { return { status: 'reconciliation_required', attemptId: claim.attemptId, code: 'RECONCILIATION_REQUIRED' } }
       return { status: 'lease_retryable', attemptId: claim.attemptId, code: 'LEASE_STOPPED' }
     }
-    if (!priorPublicationUnknown && publicationRequestStarted && isDefinitePublicationRejection(error)) {
+    if (!priorPublicationUnknown && error === directPublicationRejection && isDefinitePublicationRejection(error)) {
       cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId))
       return { status: 'failed', attemptId: claim.attemptId, code }
     }
@@ -532,6 +552,14 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
     cleanupVerifiedAttempt(artifacts)
     return { status: result.status, attemptId: state.attemptId, bundleSha256: state.bundleSha256, counts: result.counts }
   } catch (error) {
+    if (!priorPublicationUnknown && publicationRequestStarted && isDefinitePreHandlerAuthorityRejection(error)) {
+      try {
+        cleanupVerifiedAttempt(artifacts)
+        const key = getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256)
+        clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, key)
+        return { status: 'failed', attemptId: state.attemptId, code: safeCode(error) }
+      } catch { return { status: 'reconciliation_required', attemptId: state.attemptId, code: 'RECONCILIATION_REQUIRED' } }
+    }
     if (!priorPublicationUnknown && (isDefiniteStaleClaim(error) ||
         (retryableNoPublicationProof && isDefinitePreflightAuthorityFailure(error)))) {
       try {

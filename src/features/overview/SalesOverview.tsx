@@ -11,6 +11,7 @@ import { serviceWorkflowStatus } from '../../lib/service-readiness'
 import type { BootstrapData, StoreName, TransferRecord, UserRole, VehicleIssue, VehicleRecord } from '../../types'
 import type { InventoryVehicle } from '../inventory/types'
 import { formatMoney, publicListingLabel, resolveCurrentLocation, vehicleDisplayName } from '../inventory/inventory-utils'
+import { hasProviderHold, providerHoldLabel } from '../inventory/provider-evidence-utils'
 import { standoutEquipment } from '../inventory/vehicle-feature-utils'
 import { useSyncedCustomerLists } from '../inventory/useSyncedCustomerLists'
 import { TakeHomeSheet } from '../inventory/TakeHomeSheet'
@@ -113,6 +114,8 @@ function SalesVehicleRow({ vehicle, normalized, reasons = [] }: {
       <dl className="sales-overview__operational-facts">
         <div><dt><Tag aria-hidden="true" />Listing</dt><dd>{publicListingLabel(normalized)}</dd></div>
         <div><dt><PauseCircle aria-hidden="true" />Hold</dt><dd>{vehicle.hold.label}</dd></div>
+        {(vehicle.inventoryDecision?.evidence ?? vehicle.operationalEvidence?.records ?? []).filter(record => record.provider !== 'legacy-dealermail').map(record => <div key={record.provider}><dt>{record.sourceLabel}</dt><dd>{providerHoldLabel(record)}{record.holdState === 'held' && (record.dataState !== 'current' || !record.complete) ? record.dataState === 'stale_unverified' ? ' · Retained hold observation' : ' · Unverified hold observation' : ''}</dd></div>)}
+        {vehicle.manualHold?.state === 'active' || vehicle.manualHold?.state === 'requested' ? <div><dt>Inventory Flow hold</dt><dd>{vehicle.manualHold.state === 'active' ? 'Approved hold' : 'Pending approval · not a confirmed hold'}</dd></div> : null}
         <div><dt><MapPin aria-hidden="true" />Location</dt><dd>{location}</dd></div>
         <div><dt><Wrench aria-hidden="true" />Service</dt><dd>{serviceLabel(vehicle)}</dd></div>
         {reasons.length ? <div><dt>Why shown</dt><dd>{reasons.join(', ')}</dd></div> : null}
@@ -160,7 +163,7 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
   const fallbackHolds = data.stores.filter(entry => storeSet.has(entry.store)).reduce((sum, entry) => sum + entry.currentHolds, 0)
   // Match the provider-only holds drilldown; location and CRM affiliation do not own a hold.
   const providerOnlyHolds = data.vehicles.filter(vehicle => storeSet.has(vehicle.homeStore) &&
-    vehicle.operationalEvidence?.records.some(record => record.dataState === 'current' && record.complete && record.holdState === 'held') &&
+    hasProviderHold(inventoryByVin.get(vehicle.vin)!) &&
     !(data.overview?.vehicleFacts[vehicle.vin]?.holdActive || ['primary', 'backup', 'multiple'].includes(vehicle.hold.state))).length
   const metrics = [
     { label: stores.length === 1 ? 'On lot' : 'Browse group inventory', value: stores.length === 1 ? overviewCounts?.onLot ?? null : data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet)).length, href: scopedMetricHref('on-lot', stores) },
