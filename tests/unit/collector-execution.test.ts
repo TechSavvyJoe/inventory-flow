@@ -1,5 +1,6 @@
 // @ts-nocheck -- actual in-memory SQLite and separately attributed machine actors.
 // @vitest-environment node
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSyntheticCollector, COLLECTOR_OWNER as owner, COLLECTOR_SYNTHETIC_NOW as now } from '../../fixtures/synthetic-collector.mjs'
 import { claimCollector, contactCollector, heartbeatCollector, readCollectors, receiptCollector, saveCollector } from '../../cloudflare/src/collector-execution.mjs'
@@ -12,6 +13,52 @@ const revision=f=>f.sqlite.prepare('SELECT revision FROM platform_revision').get
 const queue=async(f,at=now)=>saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[0].connectionId,reason:'Synthetic refresh',expectedRevision:revision(f)},'request',at)
 const heartbeat=(f,a)=>({attemptId:a.attemptId,fence:a.fence,profileSha256:f.profileSha256,adapterVersion:'1'})
 describe('Collector enrollment, scope and fenced execution',()=>{
+ it('serializes different profiles across queued stores and retains the group reconciliation lock',async()=>{
+  const f=await setup(),other={common_name:'second-group-profile.access'}
+  const enrolled=await saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Second group host',accessClientId:other.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'different-profile',profileSha256:'c'.repeat(64),dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic second enrollment',expectedRevision:revision(f)},'group-enroll',now)
+  await saveCollector(f.env,owner,'synthetic-north',{operation:'enable',id:enrolled.id,reason:'Synthetic second activation',expectedRevision:revision(f)},'group-enable',now)
+  await queue(f)
+  await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic second store',expectedRevision:revision(f)},'second-store',now)
+  const results=await Promise.all([claimCollector(f.env,f.machine,{},'profile-a',now),claimCollector(f.env,other,{},'profile-b',now)])
+  expect(results.filter(Boolean)).toHaveLength(1)
+  const active=results.find(Boolean),winner=results[0]?f.machine:other,loser=results[0]?other:f.machine
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_attempts WHERE stage='claimed'").get().n).toBe(1)
+  expect(f.sqlite.prepare("PRAGMA index_info('platform_collector_one_group')").all().map(column=>column.name)).toEqual(['group_id'])
+  expect(f.sqlite.prepare("PRAGMA index_list('platform_collector_attempts')").all().find(index=>index.name==='platform_collector_one_group')).toMatchObject({unique:1,partial:1})
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_pull_requests WHERE state='queued'").get().n).toBe(1)
+  await receiptCollector(f.env,winner,{attemptId:active.attemptId,fence:active.fence,sequence:1,kind:'failure',code:'CAPTURE_FAILED'},now)
+  const next=await claimCollector(f.env,loser,{},'after-terminal',now)
+  expect(next).not.toBeNull();expect(next.requestId).not.toBe(active.requestId)
+  await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[2].connectionId,reason:'Synthetic parked request',expectedRevision:revision(f)},'parked-store',now)
+  for(const stage of ['captured','publishing','reconciliation_required']){
+   f.sqlite.prepare('UPDATE platform_collector_attempts SET stage=? WHERE id=?').run(stage,next.attemptId)
+   expect(await claimCollector(f.env,winner,{},`blocked-${stage}`,now)).toBeNull()
+  }
+  expect(await claimCollector(f.env,winner,{},'parked-lock',new Date(now.getTime()+130000))).toBeNull()
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts WHERE id=?').get(next.attemptId).stage).toBe('reconciliation_required')
+ })
+ it('refuses execution on the old platform schema before claiming or retiring work',async()=>{
+  const f=await setup();await queue(f);f.sqlite.exec('DROP INDEX platform_collector_one_group')
+  await expect(claimCollector(f.env,f.machine,{},'missing-group-schema',now)).rejects.toMatchObject({code:'COLLECTOR_SCHEMA_REQUIRED',status:503})
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_attempts').get().n).toBe(0)
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe('queued')
+ })
+ it('fails the forward serialization migration closed on overlapping historical active profiles',async()=>{
+  const f=await setup()
+  await queue(f);const a=await claimCollector(f.env,f.machine,{},'legacy-one',now)
+  f.sqlite.exec('DROP INDEX platform_collector_one_group')
+  const old=f.sqlite.prepare('SELECT * FROM platform_collector_attempts WHERE id=?').get(a.attemptId)
+  await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic legacy second',expectedRevision:revision(f)},'legacy-second',now)
+  const queued=f.sqlite.prepare("SELECT id FROM platform_pull_requests WHERE state='queued'").get()
+  const duplicate={...old,id:'synthetic-overlap',request_id:queued.id,profile_id:'legacy-other-profile',claim_key:'legacy-other-key'}
+  const values=Object.values(duplicate)
+  f.sqlite.prepare(`INSERT INTO platform_collector_attempts VALUES(${values.map(()=>'?').join(',')})`).run(...values)
+  const before=f.sqlite.prepare('SELECT * FROM platform_collector_attempts ORDER BY id').all()
+  expect(()=>f.sqlite.exec(readFileSync(new URL('../../cloudflare/platform-migrations/0005_collector_group_serialization.sql',import.meta.url),'utf8'))).toThrow()
+  expect(f.sqlite.prepare('SELECT * FROM platform_collector_attempts ORDER BY id').all()).toEqual(before)
+  expect(f.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='platform_collector_one_profile'").get()).toBeDefined()
+ })
+
  it('contacts separately from enabled execution and denies owner/employee machine substitution before reading a body',async()=>{
   const f=await setup();expect(await contactCollector(f.env,f.machine,{profileSha256:f.profileSha256,adapterVersion:'1'},now)).toMatchObject({connected:true,enabled:true})
   for(const identity of [owner,{email:'manager@example.invalid'},{common_name:'unenrolled'},{...f.machine,email:owner.email}])expect((await handleCollectorApi(new Request('https://owner.example.invalid/api/collector/claim',{method:'POST',body:'not json'}),f.env,identity,now)).status).toBe(403)
@@ -132,11 +179,13 @@ describe('Collector enrollment, scope and fenced execution',()=>{
   await saveCollector(f.env,owner,'synthetic-other',{operation:'enable',id:host.id,reason:'Synthetic other activation',expectedRevision:revision(f)},'other-enable',now)
   await saveDataControl(f.env,owner,'synthetic-other','pulls',{operation:'request',connectionId:other.dealers[0].connectionId,reason:'Synthetic other request',expectedRevision:revision(f)},'other-request')
   expect(await claimCollector(f.env,f.machine,{},'a-cannot-claim-b',now)).toBeNull()
+  await queue(f)
+  const north=await claimCollector(f.env,f.machine,{},'north-active',now);expect(north.groupId).toBe('synthetic-north')
   const b=await claimCollector(f.env,other.machine,{},'b-claim',now);expect(b.groupId).toBe('synthetic-other')
   await expect(heartbeatCollector(f.env,f.machine,heartbeat(f,b),now)).rejects.toMatchObject({code:'COLLECTOR_LEASE_STALE'})
   await expect(receiptCollector(f.env,f.machine,{attemptId:b.attemptId,fence:b.fence,sequence:1,kind:'failure',code:'CAPTURE_FAILED'},now)).rejects.toMatchObject({code:'COLLECTOR_LEASE_STALE'})
   await expect(claimCollector(f.env,f.machine,{groupId:'synthetic-other',connectionId:other.dealers[0].connectionId},'spoof',now)).rejects.toMatchObject({code:'COLLECTOR_INPUT_INVALID'})
-  f.env.TENANT_NORTH_DB=other.tenantEnv.INVENTORY_DB;await queue(f)
+  f.env.TENANT_NORTH_DB=other.tenantEnv.INVENTORY_DB
   await expect(claimCollector(f.env,f.machine,{},'swapped-tenant',now)).rejects.toMatchObject({code:'TENANT_CONFIGURATION_REQUIRED'})
  })
 })

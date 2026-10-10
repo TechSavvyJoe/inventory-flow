@@ -78,20 +78,22 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
  attempt.expected_bundle_sha256=input.envelope.bundleSha256;attempt.stage='publishing'
  try {
   const dispatched=await binding.publish(input.envelope,authorization)
-  // Only this positive RPC result proves that the tenant did not enter its
-  // publication path. A thrown/lost RPC reply remains readback-only forever.
-  if(dispatched?.status==='preflight_retryable') {
+  // A positive tenant RPC proof can release the no-redispatch fence. Preflight
+  // did not enter publication; a revision conflict entered it but definitively
+  // rolled back the atomic release/receipt batch. A thrown/lost reply cannot.
+  const revisionProof=dispatched?.status==='revision_retryable' && dispatched.atomicRollback===true && dispatched.attemptId===attempt.id && dispatched.fence===attempt.fence && dispatched.bundleSha256===attempt.expected_bundle_sha256 && dispatched.reportDate===attempt.report_date && Object.keys(dispatched).length===6 && Object.keys(dispatched).every(k=>['status','attemptId','fence','bundleSha256','reportDate','atomicRollback'].includes(k))
+  if(dispatched?.status==='preflight_retryable' || revisionProof) {
    const fresh=currentTime(),date=fresh.toISOString(),db=env.PLATFORM_DB
-   const proof={attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,preflightOnly:true},proofHash=await digest(proof),proofKey=`preflight:${attempt.id}`
+   const proof=revisionProof?{attemptId:attempt.id,fence:attempt.fence,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,atomicRollback:true}:{attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,preflightOnly:true},proofHash=await digest(proof),proofKey=`${revisionProof?'revision':'preflight'}:${attempt.id}`
    const priorProof=await db.prepare('SELECT request_hash FROM platform_audit WHERE actor_id=? AND request_key=?').bind(`collector:${row.id}`,proofKey).first()
    if(priorProof && priorProof.request_hash!==proofHash)collectorFail('COLLECTOR_RECEIPT_CONFLICT',409)
-   const proofAudit=()=>priorProof?[]:[machineAudit(db,row,attempt,'publication_preflight_deferred',proof,proofKey,proofHash,date)]
+   const proofAudit=()=>priorProof?[]:[machineAudit(db,row,attempt,revisionProof?'publication_revision_deferred':'publication_preflight_deferred',proof,proofKey,proofHash,date)]
    try{await db.batch([
     attemptGuard(db,row,scope,attempt,fresh,['publishing']),
     db.prepare("UPDATE platform_collector_attempts SET stage='captured' WHERE id=? AND stage='publishing' AND expected_bundle_sha256=?").bind(attempt.id,input.envelope.bundleSha256),
     ...proofAudit(),
    ])}catch{
-    // The RPC positively proved that no tenant publication began. If authority
+    // The RPC positively proved that no tenant publication committed. If authority
     // or time expired during it, retire ONLY this exact attempt. A fresh claim
     // can retry an otherwise-authorized request within the original budget.
     // Concurrent owner cancellation/revocation remains non-runnable; only its
@@ -104,7 +106,7 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
      ...proofAudit(),
     ])
    }
-   return {status:'preflight_retryable',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
+   return {status:revisionProof?'revision_retryable':'preflight_retryable',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
   }
   if(dispatched?.status==='rejected' && dispatched.code==='VALIDATION_FAILED') {
    const receipt={kind:'failure',code:'VALIDATION_FAILED',at:now.toISOString()},receiptHash=await digest(receipt)

@@ -70,9 +70,15 @@ test('service setup exposes captured OASIS details and an expandable photo witho
       const reference = (await page.getByRole('region', { name: 'Service reference', exact: true }).boundingBox())!
       const status = (await page.getByRole('region', { name: 'Service status', exact: true }).boundingBox())!
       const history = (await page.getByRole('region', { name: 'Vehicle service records', exact: true }).boundingBox())!
-      expect(reference.width).toBeCloseTo(vehicle.width, 0)
+      // Reference follows status in its own column so longer repair history
+      // cannot postpone read-only service facts beneath both panels.
+      expect(reference.x).toBeCloseTo(status.x, 0)
+      expect(reference.width).toBeCloseTo(status.width, 0)
+      expect(history.x).toBeGreaterThanOrEqual(status.x + status.width)
       expect(history.y).toBeCloseTo(status.y, 0)
-      expect(reference.y - Math.max(status.y + status.height, history.y + history.height)).toBeLessThanOrEqual(20)
+      expect(reference.y - (status.y + status.height)).toBeGreaterThanOrEqual(0)
+      expect(reference.y - (status.y + status.height)).toBeLessThanOrEqual(20)
+      expect(vehicle.y + vehicle.height).toBeLessThanOrEqual(status.y)
     }
     const note = page.getByLabel('Service note')
     await note.fill('Synthetic inspection draft')

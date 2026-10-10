@@ -176,6 +176,9 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
         </div>
       </div>
     </header>
+    {configuration.length > 0 && <dl className="service-vehicle-configuration" aria-label="Vehicle configuration">
+      {configuration.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+    </dl>}
     <dl className="service-editor-identifiers" aria-label="Vehicle identification">
       <div><dt>Stock</dt><dd><CopyableValue label="stock number" text={vehicle.stockNumber} compact>{vehicle.stockNumber}</CopyableValue></dd></div>
       <div className="service-editor-vin"><dt>VIN</dt><dd><CopyableValue label="VIN" text={vehicle.vin} compact>{vehicle.vin}</CopyableValue></dd></div>
@@ -226,17 +229,14 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
       </dl>
       <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>
     </>}
-    </section>
-    {configuration.length > 0 && <dl className="service-vehicle-configuration" aria-label="Vehicle configuration">
-      {configuration.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-    </dl>}
-    <SourceServiceHistory vehicle={vehicle} recordsHref={recordsHref} />
-    <ServiceVehicleContext vehicle={vehicle} recordsHref={recordsHref} />
       {!loading && detail && <>
         <section className="service-history" aria-labelledby="service-history-title"><h3 id="service-history-title">Status updates</h3>
           {detail.history.length ? <><ol>{detail.history.slice(0, 3).map(historyEntry)}</ol>{detail.history.length > 3 && <details><summary>Earlier updates ({detail.history.length - 3})</summary><ol>{detail.history.slice(3).map(historyEntry)}</ol></details>}</> : <p>{detail.version ? 'Detailed service history is limited to sales staff and managers.' : serviceWorkflowStatus(detail) === 'serviced' ? 'Ready is recorded. No completion date is available.' : 'Service has not been confirmed. A manager must mark this vehicle Ready after review.'}</p>}
         </section>
       </>}
+    </section>
+    <SourceServiceHistory vehicle={vehicle} recordsHref={recordsHref} />
+    <ServiceVehicleContext vehicle={vehicle} recordsHref={recordsHref} />
   </aside>
 }
 

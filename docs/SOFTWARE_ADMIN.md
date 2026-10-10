@@ -285,9 +285,10 @@ or enable its tenant gate while activating the first owner.
 2. Apply `cloudflare/platform-migrations/0001_platform.sql`, followed by
    `cloudflare/platform-migrations/0002_data_connections.sql` and
    `cloudflare/platform-migrations/0003_pull_scheduler.sql` and
-   `cloudflare/platform-migrations/0004_collector_execution.sql` to the new
+   `cloudflare/platform-migrations/0004_collector_execution.sql`, then
+   `cloudflare/platform-migrations/0005_collector_group_serialization.sql` to the new
    control-plane DB through the documented migration-ledger process. Migration
-   `0004` is a schema prerequisite before deploying this collector-capable owner
+   `0004` and `0005` are schema prerequisites before deploying this collector-capable owner
    Worker, even with execution disabled: Data connections reads collector tables.
    It does not enable collection. Tenant migration
    `0016_collector_publication_receipts.sql` and live execution are separate

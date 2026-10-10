@@ -78,6 +78,93 @@ describe('Brokered publication and independent tenant receipt',()=>{
   expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_attempts').get().n).toBe(1)
   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_started'").get().n).toBe(1)
  })
+ it.each(['sqlite','d1'])('retries the exact candidate after an employee revision race atomically rolls back every tenant row (%s)',async mode=>{
+  const f=await setup(),batch=f.tenantEnv.INVENTORY_DB.batch
+  f.tenant.prepare('INSERT INTO cloud_memberships(email,user_id,name,role,home_store,enabled) VALUES (?,?,?,?,?,1)').run('synthetic-race@example.invalid','synthetic-race','Synthetic racing employee','sales','Howell')
+  const before={revision:f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision,versions:f.tenant.prepare('SELECT * FROM cloud_release_versions ORDER BY release_id').all(),state:f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all(),intake:f.tenant.prepare('SELECT * FROM vehicle_service_intake ORDER BY vin').all()}
+  let raced=false
+  f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+   if(!raced && statements.some(s=>s.sql.includes('UPDATE cloud_app_revision SET revision=CASE'))){
+    raced=true
+    // This committed employee write lands after the publisher read revision,
+    // but before its receipt + release + intake transaction starts.
+    await batch([f.tenantEnv.INVENTORY_DB.prepare("UPDATE cloud_memberships SET role='manager' WHERE user_id='synthetic-race'"),f.tenantEnv.INVENTORY_DB.prepare('UPDATE cloud_app_revision SET revision=revision+1 WHERE id=1')])
+   }
+   try{return await batch(statements)}catch(error){
+    if(mode==='d1')throw new Error(`D1_ERROR: ${error.message}: SQLITE_CONSTRAINT`)
+    throw error
+   }
+  }
+  const publish=vi.spyOn(f.env.TENANT_NORTH_PUBLISHER,'publish')
+  expect(await publishCollector(f.env,f.machine,f.input,'revision-race',now)).toMatchObject({status:'revision_retryable',ready:false,bundleSha256:f.envelope.bundleSha256})
+  expect(raced).toBe(true)
+  expect(f.objects.has(`releases/${f.envelope.reportDate}/${f.envelope.bundleSha256}.json.enc`)).toBe(true)
+  expect(f.tenant.prepare('SELECT revision FROM cloud_app_revision').get().revision).toBe(before.revision+1)
+  expect(f.tenant.prepare("SELECT role FROM cloud_memberships WHERE user_id='synthetic-race'").get().role).toBe('manager')
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_versions ORDER BY release_id').all()).toEqual(before.versions)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_state ORDER BY key').all()).toEqual(before.state)
+  expect(f.tenant.prepare('SELECT * FROM vehicle_service_intake ORDER BY vin').all()).toEqual(before.intake)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(f.sqlite.prepare('SELECT stage,expected_bundle_sha256 FROM platform_collector_attempts').get()).toMatchObject({stage:'captured',expected_bundle_sha256:f.envelope.bundleSha256})
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_revision_deferred'").get().n).toBe(1)
+  await expect(publishCollector(f.env,f.machine,{...f.input,envelope:{...f.envelope,bundleSha256:'b'.repeat(64)}},'revision-race',now)).rejects.toMatchObject({code:'COLLECTOR_RECEIPT_CONFLICT'})
+  expect(await publishCollector(f.env,f.machine,f.input,'revision-race',now)).toMatchObject({status:'published_verified',ready:true})
+  expect(publish).toHaveBeenCalledTimes(2)
+  expect(publish.mock.calls[1][0]).toEqual(publish.mock.calls[0][0])
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_started'").get().n).toBe(1)
+  expect(await publishCollector(f.env,f.machine,f.input,'revision-race',now)).toMatchObject({status:'published_verified'})
+  expect(publish).toHaveBeenCalledTimes(2)
+ })
+ it.each(['database','generic-conflict','other-constraint','lost-cas-reply','post-commit'])('retains readback-only reconciliation after ambiguous %s failure',async mode=>{
+  const f=await setup(),batch=f.tenantEnv.INVENTORY_DB.batch
+  let dispatchBatches=0
+  f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+   if(statements.some(s=>s.sql.includes('UPDATE cloud_app_revision SET revision=CASE'))){
+    dispatchBatches++
+    if(mode==='database')throw new Error('Synthetic D1 transport unavailable')
+    if(mode==='generic-conflict')throw Object.assign(new Error('PUBLISH_CONFLICT_RETRY'),{code:'PUBLISH_CONFLICT_RETRY'})
+    if(mode==='other-constraint')throw new Error('NOT NULL constraint failed: cloud_release_versions.report_date')
+    if(mode==='lost-cas-reply'){
+     f.tenant.prepare('UPDATE cloud_app_revision SET revision=revision+1 WHERE id=1').run()
+     try{await batch(statements)}catch{throw new Error('Synthetic lost batch reply')}
+    }
+    await batch(statements)
+    throw new Error('Synthetic reply lost after commit')
+   }
+   return batch(statements)
+  }
+  expect(await publishCollector(f.env,f.machine,f.input,mode,now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_revision_deferred'").get().n).toBe(0)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(mode==='post-commit'?1:0)
+  expect(await publishCollector(f.env,f.machine,f.input,mode,now)).toMatchObject({status:mode==='post-commit'?'published_verified':'reconciliation_required'})
+  expect(dispatchBatches).toBe(1)
+ })
+ it('does not classify preparation or fence failures as an atomic revision rollback',async()=>{
+  const f=await setup(),prepare=f.tenantEnv.INVENTORY_DB.prepare
+  f.tenantEnv.INVENTORY_DB.prepare=sql=>{
+   if(sql.includes('UPDATE cloud_app_revision SET revision=CASE'))throw new Error('NOT NULL constraint failed: cloud_app_revision.revision')
+   return prepare(sql)
+  }
+  const publish=vi.spyOn(f.env.TENANT_NORTH_PUBLISHER,'publish')
+  expect(await publishCollector(f.env,f.machine,f.input,'prepare-failure',now)).toMatchObject({status:'reconciliation_required'})
+  expect(await publishCollector(f.env,f.machine,f.input,'prepare-failure',now)).toMatchObject({status:'reconciliation_required'})
+  expect(publish).toHaveBeenCalledTimes(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_revision_deferred'").get().n).toBe(0)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+ })
+ it.each(['missing-proof','foreign-attempt','foreign-fence','foreign-hash','foreign-date','extra-field'])('rejects a malformed or mismatched revision rollback proof: %s',async mode=>{
+  const f=await setup(),proof={status:'revision_retryable',attemptId:f.attempt.attemptId,fence:f.attempt.fence,bundleSha256:f.envelope.bundleSha256,reportDate:f.envelope.reportDate,atomicRollback:true}
+  if(mode==='missing-proof')delete proof.atomicRollback
+  if(mode==='foreign-attempt')proof.attemptId='other-attempt'
+  if(mode==='foreign-fence')proof.fence++
+  if(mode==='foreign-hash')proof.bundleSha256='b'.repeat(64)
+  if(mode==='foreign-date')proof.reportDate='2026-08-29'
+  if(mode==='extra-field')proof.customer='SYNTHETIC_PRIVATE_VALUE'
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async()=>proof)
+  expect(await publishCollector(f.env,f.machine,f.input,mode,now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('reconciliation_required')
+ })
  it('rejects a corrupt candidate only after independently proving the baseline key works',async()=>{
   const f=await setup();f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
   await expect(publishCollector(f.env,f.machine,f.input,'corrupt',now)).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
@@ -100,6 +187,29 @@ describe('Brokered publication and independent tenant receipt',()=>{
   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_preflight_deferred'").get().n).toBe(1)
   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
   if(['lease','deadline'].includes(mode))expect(await claimCollector(f.env,f.machine,{},'retry-after-positive-expiry',later)).toMatchObject({fence:2})
+ })
+ it.each(['lease','deadline','third-attempt','cancel','revoke','disabled'])('keeps revision rollback retries fenced and bounded after concurrent %s',async mode=>{
+  const f=await setup(),later=new Date(now.getTime()+121000),batch=f.tenantEnv.INVENTORY_DB.batch
+  if(mode==='deadline')f.sqlite.prepare('UPDATE platform_collector_attempts SET lease_until=?,hard_deadline=?').run(new Date(now.getTime()+120000).toISOString(),new Date(now.getTime()+120000).toISOString())
+  if(mode==='third-attempt'){f.sqlite.prepare('UPDATE platform_collector_attempts SET fence=3').run();f.input.fence=3}
+  f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+   if(statements.some(s=>s.sql.includes('UPDATE cloud_app_revision SET revision=CASE')))f.tenant.prepare('UPDATE cloud_app_revision SET revision=revision+1 WHERE id=1').run()
+   return batch(statements)
+  }
+  const publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  f.env.TENANT_NORTH_PUBLISHER.publish=async(...args)=>{
+   const proof=await publish(...args)
+   if(mode==='cancel')await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'cancel',connectionId:f.dealers[0].connectionId,requestId:f.attempt.requestId,reason:'Synthetic cancelled after rollback',expectedRevision:revision(f)},'cancel-cas')
+   if(mode==='revoke')await saveCollector(f.env,owner,'synthetic-north',{operation:'revoke',id:f.collectorId,reason:'Synthetic revoked after rollback',expectedRevision:revision(f)},'revoke-cas',now)
+   if(mode==='disabled')f.env.PLATFORM_COLLECTOR_EXECUTION_ENABLED='false'
+   return proof
+  }
+  expect(await publishCollector(f.env,f.machine,f.input,`late-cas-${mode}`,now,()=>later)).toMatchObject({status:'revision_retryable'})
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe(['cancel','revoke'].includes(mode)?'reconciliation_required':'expired')
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe(['cancel','revoke'].includes(mode)?'reconciliation_required':['disabled','third-attempt'].includes(mode)?'failed':'queued')
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_revision_deferred'").get().n).toBe(1)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  if(['lease','deadline'].includes(mode))expect(await claimCollector(f.env,f.machine,{},'retry-after-rollback-expiry',later)).toMatchObject({fence:2})
  })
  it('preserves an unknown outcome when a positive preflight response is lost',async()=>{
   const f=await setup();f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async()=>{throw new Error('Synthetic lost preflight reply')})

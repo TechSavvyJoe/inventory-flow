@@ -12,6 +12,7 @@ export function createSyntheticPlatformAdmin({groupId='synthetic-north',showcase
   sqlite.exec(readFileSync(new URL('../cloudflare/platform-migrations/0002_data_connections.sql',import.meta.url),'utf8'))
   sqlite.exec(readFileSync(new URL('../cloudflare/platform-migrations/0003_pull_scheduler.sql',import.meta.url),'utf8'))
   sqlite.exec(readFileSync(new URL('../cloudflare/platform-migrations/0004_collector_execution.sql',import.meta.url),'utf8'))
+  sqlite.exec(readFileSync(new URL('../cloudflare/platform-migrations/0005_collector_group_serialization.sql',import.meta.url),'utf8'))
   sqlite.prepare('INSERT INTO platform_owners VALUES(?,?,?,1)').run('synthetic-owner','owner@example.invalid','Demo software owner')
   sqlite.prepare('INSERT INTO platform_groups VALUES(?,?,?,?,?)').run(groupId,'Northside Motors','active','2026-10-05T08:00:00Z','2026-10-05T08:00:00Z')
   sqlite.prepare('INSERT INTO platform_groups VALUES(?,?,?,?,?)').run('synthetic-lake','Lakeside Auto Group','setup','2026-10-05T08:00:00Z','2026-10-05T08:00:00Z')

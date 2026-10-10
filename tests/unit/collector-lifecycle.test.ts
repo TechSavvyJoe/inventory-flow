@@ -197,7 +197,67 @@ describe('collector exact candidate local baseline lifecycle', () => {
     expect(f.localHash()).toBe(retried.bundleSha256)
   })
 
-  it('uses retained preflight proof to retire an expired undispatched retry and complete a fresh claim', async () => {
+  it('retains one capture and retries the same encrypted candidate after a proven atomic revision rollback', async () => {
+    const f = await lifecycleFixture(), baseline = f.localHash(), batch = f.remote.tenantEnv.INVENTORY_DB.batch
+    await f.queue()
+    let raced = false
+    f.remote.tenantEnv.INVENTORY_DB.batch = async (statements: any[]) => {
+      if (!raced && statements.some(s => s.sql.includes('UPDATE cloud_app_revision SET revision=CASE'))) {
+        raced = true
+        f.remote.tenant.prepare('UPDATE cloud_app_revision SET revision=revision+1 WHERE id=1').run()
+      }
+      return batch(statements)
+    }
+    const first = await f.runOnce(f.options)
+    expect(first.status).toBe('revision_retryable')
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS count FROM collector_publication_receipts').get().count).toBe(0)
+    const pending = findPendingPublication(f.root)
+    expect(pending.state).toMatchObject({ revisionRetryable: true, preflightRetryable: false, reconciliationRequired: false, publicationPending: true })
+    const envelope = readFileSync(pending.artifacts.envelopePath, 'utf8'), key = pending.state.publicationIdempotencyKey
+    const second = await f.runOnce(f.options)
+    expect(second.status).toBe('published_verified')
+    expect(f.envelopes).toHaveLength(2)
+    expect(f.envelopes[0]).toEqual(JSON.parse(envelope))
+    expect(f.envelopes[1]).toEqual(JSON.parse(envelope))
+    expect(key).toBeTruthy()
+    expect(f.captures()).toBe(1)
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS count FROM collector_publication_receipts').get().count).toBe(1)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS count FROM platform_audit WHERE action='publication_started'").get().count).toBe(1)
+    expect(f.localHash()).toBe(second.bundleSha256)
+    expect(f.cloudHash()).toBe(second.bundleSha256)
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
+  it('clears revision rollback proof before a retry whose committed response is lost', async () => {
+    const f = await lifecycleFixture(), batch = f.remote.tenantEnv.INVENTORY_DB.batch
+    await f.queue()
+    let raced = false
+    f.remote.tenantEnv.INVENTORY_DB.batch = async (statements: any[]) => {
+      if (!raced && statements.some(s => s.sql.includes('UPDATE cloud_app_revision SET revision=CASE'))) {
+        raced = true
+        f.remote.tenant.prepare('UPDATE cloud_app_revision SET revision=revision+1 WHERE id=1').run()
+      }
+      return batch(statements)
+    }
+    expect((await f.runOnce(f.options)).status).toBe('revision_retryable')
+    const retained = findPendingPublication(f.root)
+    const retry = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/publication') throw new Error('Synthetic committed retry response lost')
+      return response
+    } })
+    expect(retry.status).toBe('reconciliation_required')
+    expect(findPendingPublication(f.root).state).toMatchObject({ revisionRetryable: false, reconciliationRequired: true })
+    expect(f.cloudHash()).toBe(retained.state.bundleSha256)
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+    expect(f.captures()).toBe(1)
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS count FROM collector_publication_receipts').get().count).toBe(1)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS count FROM platform_audit WHERE action='publication_started'").get().count).toBe(1)
+  })
+
+  it.each(['preflight_retryable', 'revision_retryable'])('uses retained %s proof to retire an expired uncommitted retry and complete a fresh claim', async status => {
     const f = await lifecycleFixture()
     await f.queue()
     let preflight = false
@@ -206,14 +266,14 @@ describe('collector exact candidate local baseline lifecycle', () => {
         preflight = true
         const publication = JSON.parse(String(options.body))
         return Response.json({
-          status: 'preflight_retryable', attemptId: publication.attemptId,
+          status, attemptId: publication.attemptId,
           bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate,
           ready: false,
         })
       }
       return f.actualFetch(url, options)
     } })
-    expect(first.status).toBe('preflight_retryable')
+    expect(first.status).toBe(status)
     vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
     const recovered = await f.runOnce(f.options)
     expect(recovered.status).toBe('published_verified')

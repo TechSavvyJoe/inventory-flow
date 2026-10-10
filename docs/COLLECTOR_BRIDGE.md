@@ -80,9 +80,10 @@ The profile lives outside Git at
 It binds schema/adapter version, group/profile identity, exact dealership/source
 IDs and legacy store mappings, fixed control-plane origin, workspace root,
 credential/key reference names and the three installed capture/build dependency
-SHA-256 values. Its computed fingerprint also includes the bridge's installed
-code and the resolved relative-import dependency graph. An adapter/dependency
-change therefore requires a reviewed new enrollment.
+SHA-256 values. Its computed fingerprint also binds the normalized absolute
+workspace root and includes the bridge's installed code and the resolved
+relative-import dependency graph. An adapter/dependency/workspace change
+therefore requires a reviewed new enrollment.
 The profile loader rejects unsupported adapters/origins, extra fields, foreign
 store sets, path traversal and symlinked required directories/files.
 
@@ -136,16 +137,21 @@ commands, filesystem paths, browser targets, tenant binding or publication URL.
 Lease lifetime is 120 seconds, heartbeat interval 30 seconds and maximum attempt
 duration 45 minutes. The platform freezes configuration and scope hashes and
 issues a fence. Concurrent claims, duplicate request keys and stale receipts
-cannot grant another worker the same active profile. Source edits are blocked
+cannot grant another worker an active attempt in the same group. Source edits are blocked
 for unresolved work. Group suspension, source pause, host revocation and stale
 leases stop further admission. An already admitted publication may finish;
 cross-service instantaneous rollback is not promised.
 
 An expired capture can be retried at most twice automatically, for three total
 attempts. A tenant publication with an unknown result is never dispatched again.
-The bridge may retry the same retained request: the platform publishes only
-when its durable state proves that dispatch has not started, otherwise it reads
-back the exact candidate's saved result. Neither path performs another capture.
+The bridge may retry the same retained request only after a positive tenant RPC
+result proves either preflight rejection before publication or the exact atomic
+D1 revision-guard rollback. The latter can leave an immutable staged R2 object,
+but no committed release pointer or publication receipt. Its `revision_retryable`
+proof binds the attempt, fence, candidate hash and report date; it retains the
+same candidate and idempotency state without extending the lease, deadline or
+original three-attempt budget. Other RPC, database or network failures remain
+unknown and use readback only. Neither retry path performs another capture.
 
 The platform signs short-lived tenant admission/read tickets. The tenant
 rechecks its singleton identity, active group, enrollment, grants, configuration,
@@ -183,9 +189,18 @@ Use `cloudflare/platform.wrangler.example.jsonc` and
 configuration. The owner requires separate collector audience/signing key and
 an explicit group-to-tenant service-binding map. The tenant requires its
 singleton identity, platform D1 gate, bridge verification key and execution flag.
-Platform migration `0004_collector_execution.sql` is required before deploying
+Platform migrations `0004_collector_execution.sql` and the forward
+`0005_collector_group_serialization.sql` are required before deploying
 the collector-capable owner Worker, even with execution disabled: Data
-connections reads its collector tables. It does not activate collection. Tenant
+connections reads its collector tables. Neither migration activates collection.
+Migration 0005 adds group-wide active-attempt uniqueness without rewriting 0004,
+dropping its index or deleting history. Existing overlapping active attempts
+make it fail closed. Stop new admission and separately reconcile every overlap
+before an authorized migration retry; never discard an unknown publication.
+A missing group-exclusion index refuses claims with `COLLECTOR_SCHEMA_REQUIRED`
+(503), leaving queued requests unchanged. Roll back by disabling execution,
+revoking the affected enrollment and stopping its host; preserve the forward
+index, attempts, receipts and audit history. Tenant
 migration `0016_collector_publication_receipts.sql` is a separate prerequisite
 for the collector pilot. Apply each through the documented migration-ledger
 process only in its authorized release. Do not run a generic migration command
@@ -212,5 +227,11 @@ This first adapter uses `America/New_York` for its report date and accepts only
 connections configured in that timezone. It reads the complete four-store hold
 snapshot for each queued connection request. Requests are bounded and isolated,
 but simultaneous requests for several stores are not yet coalesced into one pull.
+All enabled profiles for one group share one active-attempt exclusion: claimed,
+captured, publishing and reconciliation-required attempts block another claim.
+A positively undispatched retry remains captured and retains the same exclusion.
+Only a terminal attempt releases it; another group may execute independently.
+An expired capture is recovered only by matching immutable profile authority;
+a different profile cannot retire it or bypass a parked unknown publication.
 Review cadence before enabling a real group; enrollment and a passing synthetic
 check do not establish installed source access or production activation.

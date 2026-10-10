@@ -96,6 +96,7 @@ export async function contactCollector(env,claims,input,now=new Date()) {
 
 export async function claimCollector(env,claims,input,key,now=new Date()) {
  exactFields(input,[]);text(key);const row=await collectorIdentity(env,claims),scope=await collectorScope(env,row,{active:true}),db=env.PLATFORM_DB,date=timestamp(now)
+ if(!await db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='platform_collector_one_group'").first())collectorFail('COLLECTOR_SCHEMA_REQUIRED',503)
  const tenant=await tenantDatabase(env,row.group_id)
  const baseline=await tenant.prepare("SELECT v.bundle_sha256,v.report_date FROM cloud_release_state s JOIN cloud_release_versions v ON v.release_id=s.value WHERE s.key='current_release_id' AND v.status='current'").first()
  const prior=await db.prepare('SELECT * FROM platform_collector_attempts WHERE collector_id=? AND claim_key=?').bind(row.id,key).first()
@@ -107,6 +108,10 @@ export async function claimCollector(env,claims,input,key,now=new Date()) {
   db.prepare("UPDATE platform_collector_attempts SET stage=CASE WHEN stage='publishing' THEN 'reconciliation_required' ELSE 'expired' END,failure_code='DURATION_EXCEEDED' WHERE group_id=? AND profile_id=? AND stage IN ('claimed','captured','publishing') AND lease_until<=? AND json_extract(config_json,'$.profileSha256')=? AND json_extract(config_json,'$.adapterId')=? AND json_extract(config_json,'$.adapterVersion')=?").bind(row.group_id,row.profile_id,date,row.profile_sha256,row.adapter_id,row.adapter_version),
  ])
 
+ // All profiles publish one group snapshot. Unknown outcomes retain this lock.
+ const groupIdle="NOT EXISTS(SELECT 1 FROM platform_collector_attempts WHERE group_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required'))"
+ if(await db.prepare("SELECT id FROM platform_collector_attempts WHERE group_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required') LIMIT 1").bind(row.group_id).first())return null
+
  const request=await db.prepare("SELECT p.* FROM platform_pull_requests p JOIN platform_collector_grants g ON g.connection_id=p.connection_id AND g.group_id=p.group_id WHERE g.collector_id=? AND p.state='queued' AND NOT EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE a.request_id=p.id AND (json_extract(a.config_json,'$.profileSha256') IS NOT ? OR json_extract(a.config_json,'$.adapterId') IS NOT ? OR json_extract(a.config_json,'$.adapterVersion') IS NOT ?)) ORDER BY p.created_at,p.id LIMIT 1").bind(row.id,row.profile_sha256,row.adapter_id,row.adapter_version).first()
  if(!request)return null
  const reportDate=new Intl.DateTimeFormat('en-CA',{timeZone:COLLECTOR_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(now)
@@ -117,7 +122,7 @@ export async function claimCollector(env,claims,input,key,now=new Date()) {
  const guard=scopeGuard(row,scope)
  try{
   await db.batch([
-   db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN state='queued' AND ${guard.sql} THEN 'running' ELSE NULL END,updated_at=? WHERE id=?`).bind(...guard.args,date,request.id),
+   db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN state='queued' AND ${guard.sql} AND ${groupIdle} THEN 'running' ELSE NULL END,updated_at=? WHERE id=?`).bind(...guard.args,row.group_id,date,request.id),
    db.prepare("INSERT INTO platform_collector_attempts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'claimed',NULL,NULL,NULL,NULL,?,NULL,NULL)").bind(id,request.id,row.id,row.group_id,row.profile_id,row.generation,fence,key,configJson,configSha,row.scope_sha256,date,lease,deadline,reportDate),
    db.prepare('UPDATE platform_revision SET revision=revision+1 WHERE id=1'),
    machineAudit(db,row,{id},'claimed',{requestId:request.id,fence,stage:'claimed'},`claim:${key}`,configSha,date),

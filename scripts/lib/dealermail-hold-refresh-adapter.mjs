@@ -238,6 +238,7 @@ export function saveAttemptState(filePath, state) {
     publicationPending: state.publicationPending === true,
     reconciliationRequired: state.reconciliationRequired === true,
     preflightRetryable: state.preflightRetryable === true,
+    revisionRetryable: state.revisionRetryable === true,
     publicationIdempotencyKey: state.publicationIdempotencyKey,
   }
   const temporary = `${filePath}.${randomUUID()}.tmp`

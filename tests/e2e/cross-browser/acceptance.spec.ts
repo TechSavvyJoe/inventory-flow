@@ -1117,3 +1117,65 @@ test('simple moves use one manager decision and physical location updates throug
   await expectNoOverflow(page)
   await capture(page, testInfo, 'simple-back-home')
 })
+
+test('service deep link keeps vehicle identity above current status and source history at every canonical viewport', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('maxey-role', 'manager')
+    localStorage.setItem('maxey-home-store', 'Lincoln')
+  })
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1024, height: 768 },
+    { width: 1320, height: 820 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/service?vin=TESTDATALNCN00002&returnTo=%2Foverview')
+
+    const summary = page.getByRole('region', { name: 'Vehicle summary', exact: true })
+    const configuration = summary.getByLabel('Vehicle configuration', { exact: true })
+    const identification = summary.getByLabel('Vehicle identification', { exact: true })
+    const status = page.getByRole('region', { name: 'Recorded service status', exact: true })
+    const sourceRecords = page.getByRole('region', { name: 'Vehicle service records', exact: true })
+    const actions = page.getByRole('group', { name: 'Service actions', exact: true })
+
+    await expect(summary).toHaveCount(1)
+    await expect(summary).toBeVisible()
+    await expect(summary.getByRole('heading', { name: '2022 Lincoln Corsair Grand Touring', exact: true })).toBeVisible()
+    await expect(summary.getByRole('button', { name: /^Open photo gallery for 2022 Lincoln Corsair Grand Touring$/ })).toBeVisible()
+    await expect(configuration).toContainText('2.5L Plug-In Hybrid')
+    await expect(configuration).toContainText('AWD')
+    await expect(identification).toContainText('DEMO-L02')
+    await expect(identification).toContainText('TESTDATALNCN00002')
+    await expect(status).toContainText('Waiting for service')
+    await expect(sourceRecords).toContainText('8 service visits reported')
+    await expect(sourceRecords).toContainText('Used-car inspection')
+    await expect(actions).toBeVisible()
+
+    const summaryBounds = (await summary.boundingBox())!
+    const statusBounds = (await status.boundingBox())!
+    const historyBounds = (await sourceRecords.boundingBox())!
+    expect(summaryBounds.x).toBeGreaterThanOrEqual(0)
+    expect(summaryBounds.x + summaryBounds.width).toBeLessThanOrEqual(viewport.width + 1)
+    expect(summaryBounds.y).toBeGreaterThanOrEqual(0)
+    expect(summaryBounds.y + summaryBounds.height).toBeLessThanOrEqual(viewport.height)
+    expect(summaryBounds.y + summaryBounds.height).toBeLessThanOrEqual(statusBounds.y)
+    expect(summaryBounds.y + summaryBounds.height).toBeLessThanOrEqual(historyBounds.y)
+    for (const identityArea of [summary, configuration, identification]) {
+      const overflow = await identityArea.evaluate(element => ({
+        horizontal: element.scrollWidth - element.clientWidth,
+        vertical: element.scrollHeight - element.clientHeight,
+      }))
+      expect(overflow.horizontal, 'vehicle identity horizontal clipping').toBeLessThanOrEqual(1)
+      expect(overflow.vertical, 'vehicle identity vertical clipping').toBeLessThanOrEqual(1)
+    }
+
+    for (const action of await actions.getByRole('button').all()) {
+      const bounds = (await action.boundingBox())!
+      expect(bounds.height, 'active service action touch target height').toBeGreaterThanOrEqual(44)
+      expect(bounds.width, 'active service action touch target width').toBeGreaterThanOrEqual(44)
+    }
+    await expectNoOverflow(page)
+  }
+})

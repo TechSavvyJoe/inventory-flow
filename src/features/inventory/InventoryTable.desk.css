@@ -161,8 +161,8 @@
 .if-srp-grid .inventory-sort-header-group__menu .inventory-sort-header:hover { background:var(--surface-soft); }
 .if-srp-grid .inventory-sort-header-group__menu .inventory-sort-header.is-active { color:var(--blue-700); background:var(--blue-050); }
 .if-srp-grid :is(button,a):focus-visible,.if-srp-mobile-list :is(button,a):focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
-/* Tablet presents priority facts above configuration and complete source ledgers. */
-@container inventory-table (max-width:1100px) {
+/* Stack only when five readable columns no longer fit the available workspace. */
+@container inventory-table (max-width:1000px) {
   .if-srp-grid .inv-desk-table { display:block; }
   .if-srp-grid :is(thead,.inv-desk-vehicle-rows) { display:block; }
   .if-srp-grid thead > tr,.if-srp-grid .inv-desk-row { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,.9fr) minmax(0,1.3fr); }

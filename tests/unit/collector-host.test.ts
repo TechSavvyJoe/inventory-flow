@@ -168,6 +168,17 @@ describe('collector host contract', () => {
     await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, { fetchImpl: unsafeFetch as any })).rejects.toThrow('PUBLICATION_RESPONSE_INVALID')
   })
 
+  it('accepts only the exact bound non-ready revision retry projection', async () => {
+    const { profile } = fixture()
+    const publication = { attemptId: 'attempt-1', fence: 1, configSha256: 'b'.repeat(64), idempotencyKey: 'idempotency-key', envelope: { bundleSha256: 'a'.repeat(64), reportDate: '2026-10-09', ciphertext: 'synthetic' } }
+    const responseBody = { status: 'revision_retryable', attemptId: publication.attemptId, bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate, ready: false }
+    const reply = (body: any) => async () => ({ status: 200, ok: true, text: async () => JSON.stringify(body) })
+    await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, { fetchImpl: reply(responseBody) as any })).resolves.toEqual(responseBody)
+    for (const body of [{ ...responseBody, ready: true }, { ...responseBody, atomicRollback: true }, { ...responseBody, bundleSha256: 'b'.repeat(64) }, { ...responseBody, reportDate: '2026-10-08' }, { ...responseBody, attemptId: 'other-attempt' }]) {
+      await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, { fetchImpl: reply(body) as any })).rejects.toThrow(/PUBLICATION_RESPONSE_(INVALID|MISMATCH)/)
+    }
+  })
+
   it('rejects an oversized publication wrapper before making any POST', async () => {
     const { profile } = fixture()
     const maxBytes = 25 * 1024 * 1024

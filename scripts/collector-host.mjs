@@ -374,9 +374,9 @@ async function runClaimedAttempt(profile, credentials, claim, {
       saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true })
       return { status: 'reconciliation_required', attemptId: claim.attemptId, bundleSha256: savedEnvelope.bundleSha256 }
     }
-    if (result.status === 'preflight_retryable') {
-      saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false, preflightRetryable: true })
-      return { status: 'preflight_retryable', attemptId: claim.attemptId, bundleSha256: savedEnvelope.bundleSha256 }
+    if (result.status === 'preflight_retryable' || result.status === 'revision_retryable') {
+      saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false, preflightRetryable: result.status === 'preflight_retryable', revisionRetryable: result.status === 'revision_retryable' })
+      return { status: result.status, attemptId: claim.attemptId, bundleSha256: savedEnvelope.bundleSha256 }
     }
     if (result.status !== 'published_verified' && result.status !== 'unchanged_verified') throw new Error('RECONCILIATION_REQUIRED')
     const promotionRunner = await runnerLoader(profile)
@@ -435,7 +435,7 @@ async function runClaimedAttempt(profile, credentials, claim, {
 async function reconcilePendingPublication(profile, credentials, pending, fetchImpl, signal, { runnerLoader = loadRunner, promotion = (runner, values) => runner.internals.promoteVerifiedCollectorCandidate(values) } = {}) {
   const { artifacts, candidate, envelope } = pending
   let state = pending.state
-  let retryablePreflightProof = state.preflightRetryable === true
+  let retryableNoPublicationProof = state.preflightRetryable === true || state.revisionRetryable === true
   if (state.attemptId !== path.basename(artifacts.statePath, '.state.json') ||
       state.profileSha256 !== profile.profileSha256 || !Number.isSafeInteger(state.fence) || state.fence < 1 ||
       !/^[a-f0-9]{64}$/.test(state.configSha256 ?? '') || !/^[A-Za-z0-9_-]{20,80}$/.test(state.publicationIdempotencyKey ?? '') ||
@@ -451,8 +451,8 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
       await postCaptureReceipt(profile, credentials, { attemptId: state.attemptId, fence: state.fence }, stage, fetchImpl, signal)
       state = saveAttemptState(artifacts.statePath, { ...state, captureReceiptPending: false, captureReceiptSent: true })
     }
-    retryablePreflightProof = state.preflightRetryable === true
-    state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true, preflightRetryable: false })
+    retryableNoPublicationProof = state.preflightRetryable === true || state.revisionRetryable === true
+    state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true, preflightRetryable: false, revisionRetryable: false })
     const result = await submitCollectorPublication(profile, credentials, {
       attemptId: state.attemptId,
       fence: state.fence,
@@ -460,9 +460,9 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
       envelope,
       idempotencyKey: state.publicationIdempotencyKey,
     }, { fetchImpl })
-    if (result.status === 'preflight_retryable') {
-      state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false, preflightRetryable: true })
-      return { status: 'preflight_retryable', attemptId: state.attemptId, bundleSha256: state.bundleSha256 }
+    if (result.status === 'preflight_retryable' || result.status === 'revision_retryable') {
+      state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false, preflightRetryable: result.status === 'preflight_retryable', revisionRetryable: result.status === 'revision_retryable' })
+      return { status: result.status, attemptId: state.attemptId, bundleSha256: state.bundleSha256 }
     }
     if (result.status === 'reconciliation_required') {
       saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true })
@@ -488,7 +488,7 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
     cleanupVerifiedAttempt(artifacts)
     return { status: result.status, attemptId: state.attemptId, bundleSha256: state.bundleSha256, counts: result.counts }
   } catch (error) {
-    if (retryablePreflightProof && (isDefiniteStaleClaim(error) || isDefinitePreflightAuthorityFailure(error))) {
+    if (retryableNoPublicationProof && (isDefiniteStaleClaim(error) || isDefinitePreflightAuthorityFailure(error))) {
       try {
         cleanupVerifiedAttempt(artifacts)
         const claimKey = getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256)

@@ -1,63 +1,86 @@
 # Software Admin account connection — October 7, 2026
 
-This release connects the existing four-store account to Joe's separate Software
-Admin console. The main app exposes **Software Admin** in its account menu only
-when the authenticated employee is also an enabled software owner. An active,
-verified dealership account exposes **Open dealership app** in the owner console.
-These navigation hints grant no authentication or additional employee role.
+> **Historical release evidence — October 7, 2026.** The versions, exact
+> timestamps, counts, reconciliation, and Windows task states below are
+> transcribed from [PR71](https://github.com/TechSavvyJoe/inventory-flow/pull/71)
+> and describe observations reported then.
+> They have not been reverified for PR76 or the current deployment. Treat the
+> named release IDs and operational evidence as historical provenance, not a
+> current serving-version, source-freshness, authorization, or task-state
+> claim. No credentials, exports, raw API payloads, screenshots, or customer
+> records are included here.
+
+The October 7 release connected the existing four-store account to Joe's separate
+Software Admin console. The main app exposed **Software Admin** in its account
+menu only when the authenticated employee was also an enabled software owner.
+An active, verified dealership account exposed **Open dealership app** in the
+owner console. These navigation hints granted no authentication or additional
+employee role.
 
 The existing account was registered in Setup with its four store keys and an
 attributed audit through the normal platform service. Tenant identity activation
 and deployment require the release gates below; registration alone is not a
 working connection. The retained inventory publication is dated October 1, 2026.
 
-## Historical deployed release record
-
-The following preserves the release evidence recorded in PR
-[#71](https://github.com/TechSavvyJoe/inventory-flow/pull/71). It describes the
-October 7 deployment, not the current serving versions or a new deployment.
+## Deployed release
 
 PR [#70](https://github.com/TechSavvyJoe/inventory-flow/pull/70) merged at
-`108305e2a07c631a165eb13d2fb4a085629d911e`.
-[Exact-main CI](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/37669316118)
-passed test/build, end-to-end, Chromium/WebKit and strict visuals. The recorded
-paired release check passed 3,531 tests (three skipped, 228 files), typecheck,
-repository safety, design-system checks, build, Companion packaging, Cloudflare
-validation and the read-only migration-ledger check.
+`108305e2a07c631a165eb13d2fb4a085629d911e`. The
+[exact-main CI](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/37669316118)
+passed test/build, end-to-end, Chromium/WebKit and strict visual checks. The
+paired release command passed 3,531 tests with three skipped across 228 files,
+typecheck, repository safety, design-system checks, build, Companion packaging,
+Cloudflare validation and the read-only existing migration-ledger check.
 
-| Target | Recorded version |
+All four deployments used that clean main commit, tag `108305e`, and were
+independently read back at 100% traffic:
+
+| Target | Version |
 | --- | --- |
 | Software Admin staging | `077c44a2-b14d-417d-8c30-a7f6bd56e88a` |
 | Software Admin production | `fb81437b-9334-45e6-8cfb-e7d6bbbf0aa5` |
 | App | `669625d0-c502-4c0c-9419-6008e2269ac1` |
 | Integrations | `aee172fa-13b8-488e-a66f-19a3f8363bd9` |
 
-The historical record reported 100% traffic on each version and a passed
-900-second connected monitor with no Worker exceptions, error events, 5xx
-responses or disconnected streams. It recorded verified additive tenant identity
-and immutable triggers, audited account activation with four enabled stores and
-two active employees, no configured feed connections/pulls, and disabled
-scheduling. These observations do not establish source freshness or fleet capacity.
+The paired receipt is `release-JsrbeB`. The 900-second connected monitor passed
+for the three production versions: 49 app, 15 integration and one owner event,
+all HTTP 200 with `ok` outcomes. There were no Worker exceptions, console-error
+events, 5xx responses or disconnected streams; all six streams drained cleanly.
+This observation does not establish source freshness or fleet-scale capacity.
 
-Independent integration reconciliation was recorded at `2026-10-07T19:50:23Z`
-against the independently prepared retained October 1 publication expectation.
-The temporary read-only verification grant was revoked, subsequent access returned
-403, and its local credential file was removed. An earlier grant-creation failure
-had an unknown cause; the record found no remaining grant/file from that attempt.
+The additive tenant identity table and its two immutable triggers were verified
+against the reviewed SQL. The normal attributed owner controls registered and
+activated the account; before deployment it read back active and connected with
+four enabled stores and two active employees. Configured data connections and
+feed pull requests remain empty, with scheduling disabled and no Cron triggers.
 
-Authenticated reciprocal navigation acceptance was recorded at
-`2026-10-07T19:52:26Z` using the actual employee role without preview: the main
-app exposed **Software Admin**, and the connected owner account exposed
-**Open dealership app**. Both guarded destinations loaded; manual controls and
-Issues/report controls were visible at all four canonical viewports. The read-only
-QA attempted no writes. Native new-window click behavior and hosted OAuth-client
-sign-in remained unverified.
+Independent integration reconciliation passed at `2026-10-07T19:50:23Z`: 235
+public records, with Howell 83, Fowlerville 46, Ford Detroit 65 and Lincoln 41.
+The October 1 report date and retained release hash matched the independently
+prepared expectation. The one-hour read-only verification grant was revoked by
+its exact client ID, subsequent access returned HTTP 403, and its exact local
+credential file was removed. An earlier creation attempt failed without retaining
+its underlying error; read-only checks found no residual matching grant or file.
+One reviewed retry added fixed-code diagnostics and passed. The original cause
+remains unknown; no source or release code was changed for that retry.
 
-The historical Windows readback recorded paused publisher/source-refresh tasks
-and no running publisher. It did not claim all legacy tasks were inactive.
-Private exports, raw operation receipts, credential files and diagnostic helpers
-remain outside Git. Repeat the applicable gates before any future deployment;
-this code-merge task does not refresh or activate that retained dealership data.
+Authenticated owner/employee browser acceptance passed at `2026-10-07T19:52:26Z`.
+The app returned HTTP 200 with the deployed version and Joe's actual group-manager
+role, without role/store preview. Its account menu rendered **Software Admin**;
+the connected owner account rendered **Open dealership app**. Both destinations
+loaded in guarded verification tabs. The Other disposition option was visible.
+Manual controls and Issues/report controls were visible at all four canonical
+viewports.
+Browser QA attempted no writes and blocked off-origin requests. Native new-window
+click behavior and a hosted OAuth client's real sign-in remain unverified.
+
+The final Windows readback at `2026-10-07T19:52:53Z` confirmed DailyRun,
+DailyPublish, IntradayHolds and DealerMailKeeper disabled, with no publisher
+running. AutomationBrowser and IntradayHolds-Monitor remained Ready; this is not
+a claim that every legacy task is inactive. The legacy checkout remained clean
+at `0e48dd66ac6998e35a10d146469a10417e0b4367`. Inventory remains the stale
+October 1 publication. Private exports, operation receipts and diagnostic
+helpers remain outside Git.
 
 ## Scope and validation
 
@@ -88,7 +111,11 @@ reviewed connection tree passed 3,531 tests with three skipped across 228 files,
 including the exact fixed inventory/control binding guard. Require CI on the
 exact merged commit before deployment.
 
-## Production gates
+## Production gates recorded before the October 7 deployment
+
+These are the gates recorded before the historical deployment. The report above
+records which outcomes were later observed at that time. This is not a current
+release checklist or deployment authorization.
 
 1. Preserve and verify private exports of both databases, the three serving
    Worker versions, and their complete previous bindings/variables.

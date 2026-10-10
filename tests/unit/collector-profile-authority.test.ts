@@ -2,11 +2,11 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { STORE_CONFIG } from '../../server/importer.mjs'
-import { profileFingerprint } from '../../scripts/lib/collector-profile.mjs'
+import { profileFingerprint, validateCollectorProfile } from '../../scripts/lib/collector-profile.mjs'
 
 const roots=[]
 function profileFixture() {
@@ -33,6 +33,16 @@ function profileFixture() {
   return {schemaVersion:1,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-profile',groupId:'synthetic-group',source:'dealermail',stores,controlPlaneOrigin:'https://inventory-admin-staging.joegallant.me',credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',releaseKeyRef:'synthetic-release-key',workspaceRoot,dependencyHashes}
 }
 
+function profileAtCopiedWorkspace(profile) {
+  const workspaceRoot=mkdtempSync(path.join(os.tmpdir(),'collector-profile-authority-copy-'))
+  roots.push(workspaceRoot)
+  for(const relative of ['work/run-status','work/app-feed-status','outputs','apps/inventory-ops'])mkdirSync(path.join(workspaceRoot,relative),{recursive:true})
+  for(const relative of ['apps/inventory-ops/scripts/capture-dealermail.mjs','work/build_v2_snapshot.mjs','work/finalize_cloud_snapshot.mjs']){
+    const target=path.join(workspaceRoot,relative);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.join(profile.workspaceRoot,relative),target)
+  }
+  return {...profile,workspaceRoot}
+}
+
 afterEach(()=>roots.splice(0).forEach(root=>rmSync(root,{recursive:true,force:true})))
 
 describe('collector profile authority fingerprint',()=>{
@@ -50,5 +60,15 @@ describe('collector profile authority fingerprint',()=>{
     const profile=profileFixture(),original=profileFingerprint(profile)
     const changed={...profile,stores:profile.stores.map((store,index)=>index===0?{...store,connectionId:'replacement-connection'}:store)}
     expect(profileFingerprint(changed)).not.toBe(original)
+  })
+
+  it('binds the absolute workspace root even when dependency source is identical',()=>{
+    const profile=profileFixture(),copied=profileAtCopiedWorkspace(profile)
+    expect(profileFingerprint(copied)).not.toBe(profileFingerprint(profile))
+  })
+
+  it('rejects a recorded fingerprint when the profile workspace root changes',()=>{
+    const profile=profileFixture(),recorded={...profile,profileSha256:profileFingerprint(profile)}
+    expect(()=>validateCollectorProfile(profileAtCopiedWorkspace(recorded))).toThrow('PROFILE_HASH_MISMATCH')
   })
 })

@@ -417,17 +417,27 @@ export async function publishRelease(request, env, bridge=null) {
   const objectKey=`releases/${envelope.reportDate}/${envelope.bundleSha256}.json.enc`, serialized=JSON.stringify(envelope)
   await env.RELEASE_SNAPSHOTS.put(objectKey,serialized,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{reportDate:envelope.reportDate,bundleSha256:envelope.bundleSha256}})
   const id=existing?.release_id??crypto.randomUUID(), time=new Date().toISOString()
-  try {
-    if(bridge)await bridge.check()
-    await env.INVENTORY_DB.batch([
+  if(bridge)await bridge.check()
+  const statements=[
       ...(bridge?[publicationReceiptStatement(env,bridge.ticket,counts,'published',bridge.now)]:[]),
       env.INVENTORY_DB.prepare('UPDATE cloud_app_revision SET revision=CASE WHEN revision=? THEN revision+1 ELSE NULL END WHERE id=1').bind(revision),
       env.INVENTORY_DB.prepare("UPDATE cloud_release_versions SET status='superseded' WHERE status='current'"),
       env.INVENTORY_DB.prepare(`INSERT INTO cloud_release_versions (release_id,report_date,bundle_sha256,object_key,object_bytes,public_source_sha256,dealermail_source_sha256,public_row_count,dealermail_row_count,status,published_at,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,'current',?,?) ON CONFLICT(release_id) DO UPDATE SET status='current',published_at=excluded.published_at,metadata_json=excluded.metadata_json`).bind(id,envelope.reportDate,envelope.bundleSha256,objectKey,encoder.encode(serialized).length,bundle.release.sourceRuns.public.sha256,bundle.release.sourceRuns.dealerMail.sha256,counts.publicRowCount,counts.dealerMailRowCount,time,metadata),
       env.INVENTORY_DB.prepare("INSERT INTO cloud_release_state(key,value,updated_at) VALUES('current_release_id',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(id,time),
       ...serviceIntakeRows(bundle.release,time).map(row=>env.INVENTORY_DB.prepare('INSERT OR IGNORE INTO vehicle_service_intake (vin,first_arrival_date,observed_at) VALUES (?,?,?)').bind(row.vin,row.first_arrival_date,row.observed_at)),
-    ])
-  } catch {throw new HttpError('PUBLISH_CONFLICT_RETRY',409)}
+  ]
+  try {
+    await env.INVENTORY_DB.batch(statements)
+  } catch(error) {
+    // Only this guard's exact SQLite constraint proves the complete atomic D1
+    // batch (including the receipt) rolled back. Network/database failures,
+    // other constraints and lost replies cannot grant another dispatch. R2
+    // may already hold the immutable candidate; it is not the release pointer.
+    if(bridge && /^(?:D1_ERROR: )?NOT NULL constraint failed: cloud_app_revision\.revision(?:: SQLITE_CONSTRAINT)?$/.test(error?.message??'')) {
+      return json(409,{status:'revision_retryable',attemptId:bridge.ticket.attemptId,fence:bridge.ticket.fence,bundleSha256:envelope.bundleSha256,reportDate:envelope.reportDate,atomicRollback:true})
+    }
+    throw new HttpError('PUBLISH_CONFLICT_RETRY',409)
+  }
   return json(201,{status:'published',reportDate:envelope.reportDate})
 }
 async function appApi(request,url,env,context,claims) {
