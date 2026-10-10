@@ -1184,7 +1184,9 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
     ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
     ...(fordOasis?.extendedCoverageExpirations ?? []),
-    ...(serviceHistory?.reports ?? []).flatMap((report) => [report.sourceLabel, ...report.entries.flatMap((entry) => entry.services)]),
+    // Report labels and common service descriptions do not narrow inventory.
+    // Keep event facts searchable while the full report remains in Records.
+    ...(serviceHistory?.reports ?? []).flatMap((report) => report.entries.flatMap((entry) => [entry.date, entry.openDate, entry.closeDate, entry.odometer])),
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions?.length ? 'open recall field service action' : null,
     warrantyCheck?.dataState,

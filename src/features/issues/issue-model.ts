@@ -39,7 +39,7 @@ export function issueNextStep(issue: VehicleIssue) {
 export function issueNextAction(issue: VehicleIssue): VehicleIssueAction | null {
   const allowed = new Set(issue.allowedActions)
   if (issue.status === 'awaiting_review' && allowed.has('complete')) return 'complete'
-  if (issue.status === 'completed') return null
+  if (issue.status === 'completed') return allowed.has('reopen') ? 'reopen' : null
   const preferred: VehicleIssueAction[] = issue.status === 'open' && !issue.assignee
     ? ['assign', 'add_note', 'request_completion']
     : issue.status === 'open'

@@ -177,7 +177,7 @@ export function inventoryDecision(vehicle) {
     reasons.push(...evidence.flatMap(record => record.reasons))
     // Legacy CRM evidence stays distinct from supplied providers and carries no private fields.
     if (observed !== null || vehicle.hold?.lastKnownActiveHold === true) evidence.unshift({
-      vin: vehicle.vin, provider: records.some(record => record.provider === 'dealermail') ? 'legacy-dealermail' : 'dealermail', sourceLabel: 'DealerMail',
+      vin: vehicle.vin, provider: 'legacy-dealermail', sourceLabel: 'DealerMail',
       dataState: observed === null ? 'stale_unverified' : 'current', readOnly: true, complete: observed !== null,
       holdState: observed === true || vehicle.hold?.lastKnownActiveHold === true ? 'held' : observed === false ? 'not_observed' : 'unknown',
       effectiveHoldState: observed === true ? 'held' : observed === false ? 'not_observed' : 'unknown',

@@ -89,6 +89,19 @@ describe('vehicle issue ledger', () => {
     expect(within(list).getByRole('link', { name: 'View issue: Cleaning · DEMO-unsupported' })).toHaveAttribute('href', '/attention?issue=unsupported')
   })
 
+  it('offers the authorized reopen route for completed work without reopening it automatically', () => {
+    const records = [
+      issue('reopen', { status: 'completed', allowedActions: ['reopen', 'add_note'] }),
+      issue('closed', { status: 'completed', allowedActions: [] }),
+    ]
+    show({ ...fixture(), vehicleIssuesEnabled: true, vehicles: [], vehicleIssues: records })
+    fireEvent.click(screen.getByRole('button', { name: /Completed/ }))
+    const list = screen.getByRole('list', { name: 'Reported vehicle issues' })
+    expect(within(list).getByRole('link', { name: 'Reopen issue: Cleaning · DEMO-reopen' })).toHaveAttribute('href', '/attention?issue=reopen&action=reopen')
+    expect(within(list).getByRole('link', { name: 'View issue: Cleaning · DEMO-closed' })).toHaveAttribute('href', '/attention?issue=closed')
+    expect(screen.queryByRole('button', { name: 'Reopen issue' })).not.toBeInTheDocument()
+  })
+
   it('keeps a saved report successful when a custom refresh callback rejects without resubmitting', async () => {
     const onChanged = vi.fn().mockRejectedValueOnce(new Error('refresh offline')).mockResolvedValue(undefined)
     show({ ...fixture(), vehicleIssuesEnabled: true }, false, onChanged)

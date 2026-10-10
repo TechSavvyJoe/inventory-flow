@@ -55,10 +55,19 @@ Each resource record may include:
 
 Freshness is `current`, `stale_unverified`, `incomplete` or `unknown`.
 A not-observed hold requires a current complete observation. Service dates are
-strict calendar dates; units are never guessed. Customer/owner/contact narratives,
-addresses, private identifiers and unsupported fields must be removed before
-creating these public evidence records; validators reject recognizable private
-text and unsupported keys. Arbitrary prose is not a safe redaction boundary.
+strict calendar dates; units are never guessed. Each service description must
+match a complete allowed mechanical phrase, such as `Engine mounts replaced`,
+`Front brake pads replaced`, `Oil and filter changed`, or a supported inspection
+label. Known component/action phrases, scheduled mileage service and oil-grade
+facts remain intact. A synthetic prefix uses the same phrase grammar. Names,
+approval/attribution suffixes, addresses, mixed narratives and unsupported
+phrases are rejected in full, even when they contain a recognized service.
+Adapters must emit individual documented mechanical facts in the `services`
+array, never copy free-form comments or strip a narrative until it matches.
+New description vocabulary requires an explicit grammar addition and regression
+coverage. Strict import, Worker release validation and employee projection share
+this rule; optional publishing drops an unsafe service-history channel instead
+of retaining part of its narrative. Other unsupported fields remain rejected.
 
 The Node importer and Worker share the optional-channel validators and retain
 provenance verification. `operationalEvidenceCount` and `serviceHistoryCount`

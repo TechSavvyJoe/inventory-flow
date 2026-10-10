@@ -336,7 +336,7 @@ describe('safe independent provider evidence', () => {
     const noLegacy = inventoryDecision({ vin: VIN, hold: { state: 'unknown' }, operationalEvidence: { records: [observation] } })
     expect(noLegacy.evidence.map(record => record.provider)).toEqual(['crm-one'])
     const retained = inventoryDecision({ vin: VIN, hold: { state: 'stale', lastKnownActiveHold: true }, operationalEvidence: { records: [] } })
-    expect(retained.evidence).toEqual([expect.objectContaining({ provider: 'dealermail', dataState: 'stale_unverified', holdState: 'held', effectiveHoldState: 'unknown', complete: false, comparison: 'unverified' })])
+    expect(retained.evidence).toEqual([expect.objectContaining({ provider: 'legacy-dealermail', dataState: 'stale_unverified', holdState: 'held', effectiveHoldState: 'unknown', complete: false, comparison: 'unverified' })])
     const keep = inventoryDecision({ vin: VIN, appDisposition: { code: 'keep' }, operationalEvidence: { records: [{ ...observation, holdState: 'not_observed', reportedDisposition: 'not_observed' }] } })
     expect(keep).toMatchObject({ status: 'unconfirmed', reasons: [], reviewRequired: false })
     const absence = inventoryDecision({ vin: VIN, operationalEvidence: { records: [{ ...observation, provider: 'crm-two', reportedDisposition: 'not_observed' }, { ...observation, reportedDisposition: 'delivered' }] } })

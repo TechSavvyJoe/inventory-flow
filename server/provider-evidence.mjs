@@ -2,9 +2,22 @@
 const VIN = /^[A-HJ-NPR-Z0-9]{17}$/
 const STATES = new Set(['current', 'stale_unverified', 'incomplete', 'unknown'])
 const CONTROL = /[\x00-\x1f\x7f]/
-// These exclusions catch recognizable private narratives; they are not a universal name detector.
-const SERVICE_PRIVATE_NARRATIVE = /\b(?:customer|owner|salesperson|contact|client|buyer|seller)\b|\b(?:vehicle|car|unit)\s+(?:was\s+)?(?:collected|delivered|picked\s+up)\b|\b(?:pick[ -]?up|collection|delivery)\s+(?:at|to|from|by|arranged|requested)\b|\b(?:collected|delivered)\s+(?:at|to|from|by)\b/i
-const SERVICE_ADDRESS = /\b\d{1,6}[a-z]?\s+(?:[a-z][a-z.'-]*\s+){1,5}(?:street|st|road|rd|avenue|ave|boulevard|blvd|drive|dr|lane|ln|court|ct|way|place|pl|terrace|ter|highway|hwy)\b/i
+// Public service descriptions use complete mechanical phrases, never arbitrary
+// prose with a blacklist. A recognized fact followed by attribution still fails.
+// The synthetic prefix is accepted only with the same complete phrase grammar.
+const SERVICE_COMPONENT = '(?:(?:front|rear)\\s+)?(?:brakes?|brake\\s+(?:pads?|rotors?|discs?|calipers?|lines?|fluid)|tires?|wheels?|transmission(?:\\s+(?:fluid|filter))?|engine\\s+mounts?|(?:engine|motor)\\s+oil|(?:cabin\\s+air|air|fuel|oil)\\s+filters?|battery|spark\\s+plugs?|(?:timing|drive|serpentine)\\s+belt|water\\s+pump|alternator|coolant|differential(?:\\s+fluid)?|fuel\\s+system|cooling\\s+system|steering|suspension|exhaust)'
+const SERVICE_MECHANICAL = [
+  `${SERVICE_COMPONENT}\\s+(?:replaced|changed|serviced|inspected|checked|tested|adjusted|flushed|repaired|installed|cleaned|lubricated)`,
+  '(?:oil|engine\\s+oil)\\s*(?:(?:and|&|/)\\s*(?:oil\\s+)?filter)\\s+(?:changed|service|serviced)',
+  '(?:vehicle\\s+)?(?:serviced(?:\\s+or\\s+inspected)?|inspected|road\\s+tested)',
+  '(?:(?:multiple\\s+point|multi[ -]point)\\s+(?:vehicle\\s+)?|certified\\s+pre[ -]owned\\s+|pre[ -]purchase\\s+|used[ -]car\\s+|safety\\s+|maintenance\\s+|brake\\s+|tire\\s+|emissions\\s+)?inspection(?:/service|\\s+(?:performed|completed))?',
+  'tires?\\s+(?:rotated|balanced|rotation)',
+  '(?:wheel\\s+)?alignment\\s+(?:performed|checked|adjusted)',
+  'pickup\\s+truck\\s+fuel\\s+filter\\s+replaced',
+  '(?:manufacturer\\s+recommended\\s+)?maintenance\\s+(?:performed|service)',
+  '\\d{1,3}(?:,\\d{3})?[ -]mile\\s+service\\s+performed',
+  '(?:0|5|10|15|20)W-(?:20|30|40|50|60)\\s+engine\\s+oil\\s+installed',
+].map(phrase => new RegExp(`^(?:synthetic\\s+)?(?:${phrase})$`, 'i'))
 const CONTACT = /@|https?:\/\/|www\.|\b(?:owner|customer)\s*(?:name|id|:)|(?:\+?\d[\s().-]*){7,}/i
 function ensure(condition, message) { if (!condition) throw new Error(`Invalid provider evidence: ${message}`) }
 function keys(value, allowed, label) {
@@ -17,7 +30,7 @@ function text(value, max, label) {
 }
 function serviceText(value) {
   const result = text(value, 240, 'service')
-  ensure(!SERVICE_PRIVATE_NARRATIVE.test(result) && !SERVICE_ADDRESS.test(result), 'service must describe mechanical work without customer, contact, collection, or address narratives')
+  ensure(SERVICE_MECHANICAL.some(pattern => pattern.test(result)), 'service must describe mechanical work without customer, contact, collection, or address narratives')
   return result
 }
 function timestamp(value) {

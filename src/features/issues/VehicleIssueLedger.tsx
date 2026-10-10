@@ -69,7 +69,7 @@ export function VehicleIssueLedger({ data, homeStore, role, currentUser, allStor
       const location = vehicle?.movement?.locationConfidence === 'verified' ? `Confirmed at ${vehicle.movement.currentLocation}` : vehicle?.sourceReportedLocation ? `Reported at ${vehicle.sourceReportedLocation}` : null
       const value = vehicle ? [vehicle.listedPrice != null ? formatCurrency(vehicle.listedPrice) : null, vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : null, serviceStatusLabel(vehicle.serviceReadiness)].filter(Boolean).join(' · ') : null
       const nextAction = data.vehicleIssuesEnabled === true ? issueNextAction(issue) : null
-      const actionLabels: Partial<Record<VehicleIssueAction, string>> = { assign: 'Assign issue', start_work: 'Start work', add_note: 'Add update', request_completion: 'Send for review', complete: 'Review work' }
+      const actionLabels: Partial<Record<VehicleIssueAction, string>> = { assign: 'Assign issue', start_work: 'Start work', add_note: 'Add update', request_completion: 'Send for review', complete: 'Review work', reopen: 'Reopen issue' }
       const actionLabel = nextAction ? actionLabels[nextAction] : 'View issue'
       return <article className="issue-ledger__row" role="listitem" key={issue.id}>
         <div className="issue-ledger__vehicle"><VehicleThumbnail vehicle={vehicle} className="issue-ledger__photo"/><div><strong>{vehicle?.vehicleName ?? issue.vehicleName}</strong>{value ? <p>{value}</p> : null}<p>Stock {issue.stockNumber} · {issue.vin}</p><p>{vehicle ? location ?? 'Location not confirmed' : 'Not in current inventory'}</p></div></div>

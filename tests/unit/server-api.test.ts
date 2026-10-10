@@ -795,7 +795,7 @@ describe('Inventory Flow API', () => {
       target.resourceRecord.warrantyCheck.carfax.inServiceDate = '2024-03-14'
       target.resourceRecord.serviceHistory = {
         reports: [{ vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-08-30T09:20:00-04:00', dataState: 'current', historyStatus: 'reported', entries: [
-          { date: '2026-07-12', odometer: 21000, odometerUnit: 'mi', services: ['Synthetic transmission service verification'] },
+          { date: '2026-07-12', odometer: 21000, odometerUnit: 'mi', services: ['Transmission serviced'] },
         ] }],
       }
       target.resourceRecord.factoryEquipment.packages = [{ name: 'Synthetic searchable equipment package', code: 'SYNTHETIC-EQUIPMENT-ONLY', features: [] }]
@@ -809,13 +809,43 @@ describe('Inventory Flow API', () => {
     expect(coverageNoteSearch.items).toEqual([])
     const dateSearch = await fetch(`${baseUrl}/api/vehicles?q=2024-03-14&limit=20`, { headers }).then((response) => response.json())
     expect(dateSearch.items.some((vehicle: { vin: string }) => vehicle.vin === vin)).toBe(true)
-    for (const term of ['Synthetic transmission service verification', 'SYNTHETIC-EQUIPMENT-ONLY']) {
+    for (const term of ['2026-07-12', '21000', 'SYNTHETIC-EQUIPMENT-ONLY']) {
       const result = await fetch(`${baseUrl}/api/vehicles?q=${encodeURIComponent(term)}&limit=20`, { headers }).then((response) => response.json())
       const matchingVins = result.items.map((vehicle: { vin: string }) => vehicle.vin)
       expect(matchingVins, term).toEqual([vin])
     }
     const detail = await fetch(`${baseUrl}/api/vehicles/${vin}`, { headers }).then((response) => response.json())
     expect(detail.warrantyCheck.carfax.coverages).toEqual([coverage])
+  })
+
+  it('keeps repeated provider labels and mechanical descriptions out of inventory search while retaining event facts and records', async () => {
+    let vin = ''
+    let lotCount = 0
+    const { baseUrl } = await harness((release) => {
+      lotCount = release.vehicles.length
+      const target = release.vehicles.find(row => row.publicRecord)
+      vin = target.vin
+      for (const vehicle of release.vehicles) {
+        vehicle.resourceRecord ??= {}
+        vehicle.resourceRecord.serviceHistory = { reports: [{
+          vin: vehicle.vin, provider: 'autocheck', sourceLabel: 'Experian AutoCheck service report',
+          capturedAt: '2026-08-30T09:20:00-04:00', dataState: 'current', historyStatus: 'reported',
+          entries: [{ date: vehicle.vin === vin ? '2025-02-17' : '2026-07-12', odometer: vehicle.vin === vin ? 19873 : 21000, odometerUnit: 'mi', services: ['Vehicle inspected', 'Oil and filter changed'] }],
+        }] }
+      }
+    })
+    const headers = roleHeaders('sales', 'Howell', 'Synthetic sales')
+    for (const term of ['Experian', 'inspection', 'Vehicle inspected', 'Oil and filter changed']) {
+      const result = await fetch(`${baseUrl}/api/vehicles?q=${encodeURIComponent(term)}&limit=20`, { headers }).then(response => response.json())
+      expect(result.items.length, term).toBeLessThan(lotCount)
+    }
+    for (const term of ['2025-02-17', '19873']) {
+      const result = await fetch(`${baseUrl}/api/vehicles?q=${term}&limit=20`, { headers }).then(response => response.json())
+      expect(result.items.map(vehicle => vehicle.vin), term).toEqual([vin])
+    }
+    const detail = await fetch(`${baseUrl}/api/vehicles/${vin}`, { headers }).then(response => response.json())
+    expect(detail.serviceHistory.reports[0].sourceLabel).toBe('Experian AutoCheck service report')
+    expect(detail.serviceHistory.reports[0].entries[0].services).toEqual(['Vehicle inspected', 'Oil and filter changed'])
   })
 
   it('keeps a DealerMail loaner alert text from porters, drivers and coordinators while keeping the loaner badge', async () => {

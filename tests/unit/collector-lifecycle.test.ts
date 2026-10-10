@@ -14,7 +14,7 @@ import { publishRelease } from '../../cloudflare/src/worker.mjs'
 import { cloudBundleSha256, encryptBundle } from '../../scripts/publish-cloud-release.mjs'
 import { receiptSourceHashes, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
 import { COLLECTOR_PROFILE_NAME, installedStoreSet, profileFingerprint } from '../../scripts/lib/collector-profile.mjs'
-import { findPendingPublication } from '../../scripts/lib/dealermail-hold-refresh-adapter.mjs'
+import { findPendingPublication, privateAttemptArtifacts } from '../../scripts/lib/dealermail-hold-refresh-adapter.mjs'
 
 const hashFile = (filePath: string) => createHash('sha256').update(readFileSync(filePath)).digest('hex')
 const writeJson = (filePath: string, value: any) => { mkdirSync(path.dirname(filePath), { recursive: true }); writeFileSync(filePath, JSON.stringify(value, null, 2) + '\n') }
@@ -45,7 +45,7 @@ async function lifecycleFixture() {
   process.env.INVENTORY_WORKSPACE_ROOT = local.workspaceRoot
   vi.resetModules()
   const runner = await import('../../scripts/run-inventory-flow-daily.mjs')
-  const { runOnce } = await import('../../scripts/collector-host.mjs')
+  const { runOnce, collectorHostInternals } = await import('../../scripts/collector-host.mjs')
   const root = local.workspaceRoot, date = local.reportDate
   const manifestPath = path.join(root, 'work/run-status', `${date}.json`)
   const originalManifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -117,7 +117,7 @@ async function lifecycleFixture() {
     const revision = remote.sqlite.prepare('SELECT revision FROM platform_revision').get().revision
     return saveDataControl(remote.env, COLLECTOR_OWNER, profile.groupId, 'pulls', { operation: 'request', connectionId: remote.dealers[0].connectionId, reason: 'Synthetic lifecycle request', expectedRevision: revision }, `lifecycle-request-${requestNumber}`, COLLECTOR_SYNTHETIC_NOW)
   }
-  return { root, remote, profile, runner, runOnce, options, queue, actualFetch, envelopes, dealerPath, manifestPath, receiptPath, releasePath,
+  return { root, remote, profile, runner, runOnce, collectorHostInternals, options, queue, actualFetch, envelopes, dealerPath, manifestPath, receiptPath, releasePath,
     captures: () => captures, publications: () => publications,
     localHash: () => JSON.parse(readFileSync(receiptPath, 'utf8')).bundleSha256,
     cloudHash: () => remote.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256,
@@ -125,6 +125,204 @@ async function lifecycleFixture() {
 }
 
 describe('collector exact candidate local baseline lifecycle', () => {
+  const abortError = signal => new Promise((_, reject) => {
+    const rejectAborted = () => reject(new Error('LEASE_STOPPED'))
+    if (signal.aborted) rejectAborted()
+    else signal.addEventListener('abort', rejectAborted, { once: true })
+  })
+
+  const failHeartbeat = mode => {
+    if (mode === 'network') throw new TypeError('Synthetic heartbeat network failure')
+    if (mode === 'timeout') throw new DOMException('Synthetic heartbeat timeout', 'TimeoutError')
+    if (mode === 'invalid') return new Response(JSON.stringify({ continue: true }), { status: 200 })
+    return new Response(JSON.stringify({ code: 'COLLECTOR_UNAVAILABLE' }), { status: 503 })
+  }
+
+  it.each(['network', 'timeout', 'server', 'invalid'])('expires and requeues capture after an unconfirmed %s heartbeat without a permanent failure or old publication', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    let captureStarted
+    const started = new Promise(resolve => { captureStarted = resolve })
+    const capture = f.options.captureFactory()
+    const running = f.runOnce({ ...f.options,
+      captureFactory: (_profile, { signal }) => async args => {
+        captureStarted()
+        await abortError(signal).catch(() => undefined)
+        // A capture finishing as cancellation arrives can still stage files.
+        // None of those old attempt files may become a pending publication.
+        await capture(args)
+      },
+      fetchImpl: (url, options) => url.pathname === '/api/collector/heartbeat' ? failHeartbeat(mode) : f.actualFetch(url, options),
+    })
+    await started
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await running).toMatchObject({ status: 'lease_retryable', code: 'LEASE_STOPPED' })
+    const old = f.remote.sqlite.prepare('SELECT * FROM platform_collector_attempts').get()
+    expect(old.stage).toBe('claimed')
+    expect(f.remote.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_receipts').get().n).toBe(0)
+    expect(f.publications()).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+    const artifacts = privateAttemptArtifacts(f.root, old.id)
+    for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath']) expect(existsSync(artifacts[key])).toBe(false)
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+    expect(await f.runOnce(f.options)).toMatchObject({ status: 'idle' })
+    expect(f.captures()).toBe(1)
+    vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+    expect(f.remote.sqlite.prepare('SELECT stage FROM platform_collector_attempts WHERE id=?').get(old.id).stage).toBe('expired')
+    expect(f.remote.sqlite.prepare('SELECT fence FROM platform_collector_attempts WHERE id<>?').get(old.id).fence).toBe(2)
+    expect(f.captures()).toBe(2)
+    expect(f.publications()).toBe(1)
+  })
+
+  it('retires only the unpublished candidate after a heartbeat transport failure while a capture receipt reply is pending', async () => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    let receiptStarted
+    const started = new Promise(resolve => { receiptStarted = resolve })
+    const running = f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/heartbeat') return failHeartbeat('network')
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/receipts') { receiptStarted(); await abortError(options.signal) }
+      return response
+    } })
+    await started
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await running).toMatchObject({ status: 'lease_retryable' })
+    expect(f.remote.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('captured')
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(f.publications()).toBe(0)
+    expect(f.localHash()).toBe(baseline)
+    vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+    expect(f.captures()).toBe(2)
+  })
+
+  it.each([
+    ['COLLECTOR_REVOKED', 403], ['COLLECTOR_DISABLED', 403], ['COLLECTOR_SCOPE_MISMATCH', 409], ['LEASE_STOPPED', 200],
+  ])('keeps definitive %s heartbeat rejection fail closed with a bounded failure receipt', async (code, status) => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    let captureStarted
+    const started = new Promise(resolve => { captureStarted = resolve })
+    const running = f.runOnce({ ...f.options,
+      captureFactory: (_profile, { signal }) => async () => { captureStarted(); await abortError(signal) },
+      fetchImpl: (url, options) => url.pathname === '/api/collector/heartbeat'
+        ? new Response(JSON.stringify(status === 200 ? { continue: false } : { code }), { status }) : f.actualFetch(url, options),
+    })
+    await started
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await running).toMatchObject({ status: 'failed', code })
+    expect(f.remote.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('failed')
+    expect(f.remote.sqlite.prepare("SELECT sanitized_json FROM platform_collector_receipts WHERE kind='failure'").get().sanitized_json).toContain(status === 200 ? 'HOST_IO_FAILED' : 'VALIDATION_FAILED')
+    expect(f.publications()).toBe(0)
+    expect(f.captures()).toBe(0)
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+  })
+
+  it('reclaims a definitively stale heartbeat with a fresh fence and no failure receipt for the expired capture', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    let captureStarted, firstCapture = true
+    const started = new Promise(resolve => { captureStarted = resolve })
+    const running = f.runOnce({ ...f.options,
+      captureFactory: (_profile, { signal }) => async args => {
+        if (!firstCapture) return f.options.captureFactory()(args)
+        firstCapture = false
+        captureStarted()
+        await abortError(signal)
+      },
+      fetchImpl: (url, options) => {
+        if (url.pathname === '/api/collector/heartbeat') vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
+        return f.actualFetch(url, options)
+      },
+    })
+    await started
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect((await running).status).toBe('published_verified')
+    expect(f.remote.sqlite.prepare('SELECT stage,fence FROM platform_collector_attempts ORDER BY fence').all()).toEqual([
+      { stage: 'expired', fence: 1 }, { stage: 'completed', fence: 2 },
+    ])
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(0)
+    expect(f.captures()).toBe(1)
+    expect(f.publications()).toBe(1)
+  })
+
+  it('retains the exact candidate for readback after heartbeat transport failure during a dispatched publication', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    let publicationStarted
+    const started = new Promise(resolve => { publicationStarted = resolve })
+    const running = f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/heartbeat') return failHeartbeat('network')
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/publication') { publicationStarted(); await abortError(options.signal) }
+      return response
+    } })
+    await started
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect((await running).status).toBe('reconciliation_required')
+    const pending = findPendingPublication(f.root)
+    expect(pending.state).toMatchObject({ publicationPending: true, reconciliationRequired: true })
+    const candidateBytes = readFileSync(pending.artifacts.candidatePath)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(0)
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+    expect(f.captures()).toBe(1)
+    expect(f.envelopes[1]).toEqual(f.envelopes[0])
+    expect(cloudBundleSha256(JSON.parse(candidateBytes.toString()))).toBe(f.localHash())
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
+  it('preserves earlier durable publication uncertainty when a stale heartbeat interrupts capture receipt recovery before dispatch', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    expect((await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/publication') throw new TypeError('Synthetic publication reply lost')
+      return response
+    } })).status).toBe('reconciliation_required')
+    const pending = findPendingPublication(f.root)
+    // Exercise the conservative durable-state boundary directly: earlier
+    // uncertainty must win even when capture acknowledgement needs recovery.
+    writeJson(pending.artifacts.statePath, { ...pending.state, captureReceiptSent: false, captureReceiptPending: true })
+    const candidateBytes = readFileSync(pending.artifacts.candidatePath)
+    const envelopeBytes = readFileSync(pending.artifacts.envelopePath)
+    vi.useFakeTimers()
+    vi.setSystemTime(COLLECTOR_SYNTHETIC_NOW)
+    let receiptStarted
+    const started = new Promise(resolve => { receiptStarted = resolve })
+    const recovered = f.collectorHostInternals.runClaimedAttempt(f.profile, f.options.credentialReader(), {
+      ...pending.state, hardDeadline: new Date(Date.now() + 45 * 60_000).toISOString(),
+    }, { ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/heartbeat') return Response.json({ code: 'COLLECTOR_LEASE_STALE' }, { status: 409 })
+      if (url.pathname === '/api/collector/receipts') { receiptStarted(); return abortError(options.signal) }
+      throw new Error('Must not publish or write a failure receipt')
+    } })
+    await started
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await recovered).toMatchObject({ status: 'reconciliation_required', code: 'COLLECTOR_LEASE_STALE' })
+    expect(readFileSync(pending.artifacts.candidatePath)).toEqual(candidateBytes)
+    expect(readFileSync(pending.artifacts.envelopePath)).toEqual(envelopeBytes)
+    expect(findPendingPublication(f.root).state.reconciliationRequired).toBe(true)
+    expect(f.captures()).toBe(1)
+    expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='failure'").get().n).toBe(0)
+    expect((await f.runOnce(f.options)).status).toBe('published_verified')
+    expect(f.captures()).toBe(1)
+  })
+
   const oversizedWrapper = pending => {
     const envelope = { ...pending.envelope, ciphertext: '' }
     envelope.ciphertext = 'x'.repeat(25 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(envelope)) - 20)

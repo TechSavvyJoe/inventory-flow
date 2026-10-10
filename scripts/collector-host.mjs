@@ -199,6 +199,8 @@ async function acquireRunnerLock(profile) {
 function heartbeatLoop({ profile, credentials, claim, fetchImpl, abortController, intervalMs = 30_000 }) {
   let running = false
   let stopped = false
+  let transportFailed = false
+  let failure = null
   const heartbeat = async () => {
     if (running || stopped) return
     running = true
@@ -208,11 +210,19 @@ function heartbeatLoop({ profile, credentials, claim, fetchImpl, abortController
         fetchImpl,
         signal: AbortSignal.timeout(25_000),
       })
-      if (response.body?.continue !== true || !response.body?.leaseUntil || !Number.isFinite(Date.parse(response.body.leaseUntil)) || Date.parse(response.body.leaseUntil) <= Date.now()) {
+      if (response.body?.continue === false) {
+        stopped = true
+        abortController.abort()
+      } else if (response.body?.continue !== true || !response.body?.leaseUntil || !Number.isFinite(Date.parse(response.body.leaseUntil)) || Date.parse(response.body.leaseUntil) <= Date.now()) {
+        transportFailed = true
         stopped = true
         abortController.abort()
       }
-    } catch {
+    } catch (error) {
+      // No authority response was received on transport/server failure. Stop
+      // capture, but leave the server's bounded lease-expiry retry available.
+      transportFailed = error?.status === undefined || error.status === 408 || error.status === 429 || error.status >= 500
+      if (!transportFailed) failure = error
       stopped = true
       abortController.abort()
     } finally { running = false }
@@ -223,6 +233,8 @@ function heartbeatLoop({ profile, credentials, claim, fetchImpl, abortController
   return {
     stop() { clearInterval(timer); clearTimeout(deadlineTimer); stopped = true },
     get stopped() { return stopped },
+    get transportFailed() { return transportFailed },
+    get failure() { return failure },
   }
 }
 
@@ -292,6 +304,7 @@ async function runClaimedAttempt(profile, credentials, claim, {
   const claimStartedAt = now().getTime()
   let stage
   let publicationRequestStarted = false
+  let priorPublicationUnknown = false
   try {
     const artifacts = privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)
     const existing = ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath'].map(key => existsSync(artifacts[key]))
@@ -300,6 +313,8 @@ async function runClaimedAttempt(profile, credentials, claim, {
     let state
     if (existing.every(Boolean)) {
       state = JSON.parse(readFileSync(artifacts.statePath, 'utf8'))
+      priorPublicationUnknown = (state.publicationPending === true || state.reconciliationRequired === true) &&
+        state.preflightRetryable !== true && state.revisionRetryable !== true
       savedEnvelope = JSON.parse(readFileSync(artifacts.envelopePath, 'utf8'))
       const candidate = JSON.parse(readFileSync(artifacts.candidatePath, 'utf8'))
       if (state.attemptId !== claim.attemptId || state.fence !== claim.fence || state.reportDate !== claim.reportDate ||
@@ -405,17 +420,26 @@ async function runClaimedAttempt(profile, credentials, claim, {
     cleanupVerifiedAttempt(artifacts)
     return { status: result.status, attemptId: claim.attemptId, bundleSha256: savedEnvelope.bundleSha256, counts: result.counts }
   } catch (error) {
+    if (heartbeat.failure && (error?.message === 'LEASE_STOPPED' || error?.name === 'AbortError')) error = heartbeat.failure
     const code = safeCode(error)
-    if (publicationRequestStarted && isDefinitePublicationRejection(error)) {
+    if (heartbeat.transportFailed && !publicationRequestStarted && !priorPublicationUnknown) {
+      // This attempt never dispatched publication. Retire only its private
+      // candidate so it cannot resume later, and send no permanent failure
+      // receipt: a matching fresh claim must wait for server lease expiry.
+      try { cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)) }
+      catch { return { status: 'reconciliation_required', attemptId: claim.attemptId, code: 'RECONCILIATION_REQUIRED' } }
+      return { status: 'lease_retryable', attemptId: claim.attemptId, code: 'LEASE_STOPPED' }
+    }
+    if (!priorPublicationUnknown && publicationRequestStarted && isDefinitePublicationRejection(error)) {
       cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId))
       return { status: 'failed', attemptId: claim.attemptId, code }
     }
-    if (!publicationRequestStarted && isDefiniteStaleClaim(error)) {
+    if (!priorPublicationUnknown && !publicationRequestStarted && isDefiniteStaleClaim(error)) {
       try { cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)) }
       catch { return { status: 'reconciliation_required', attemptId: claim.attemptId, code: 'RECONCILIATION_REQUIRED' } }
       return { status: 'retry_fresh_claim', attemptId: claim.attemptId, code: 'COLLECTOR_LEASE_STALE' }
     }
-    if (claim.attemptId && claim.fence && code !== 'PUBLICATION_OUTCOME_UNKNOWN' && code !== 'RECONCILIATION_REQUIRED') {
+    if (!priorPublicationUnknown && claim.attemptId && claim.fence && code !== 'PUBLICATION_OUTCOME_UNKNOWN' && code !== 'RECONCILIATION_REQUIRED') {
       let savedState = null
       try {
         const artifacts = privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)
@@ -426,7 +450,7 @@ async function runClaimedAttempt(profile, credentials, claim, {
       }
       if (!publicationRequestStarted) await postFailureReceipt(profile, credentials, claim, code, fetchImpl, savedState?.captureReceiptSent ? 2 : 1)
     }
-    if (publicationRequestStarted || code === 'PUBLICATION_OUTCOME_UNKNOWN' || code === 'RECONCILIATION_REQUIRED') {
+    if (publicationRequestStarted || priorPublicationUnknown || code === 'PUBLICATION_OUTCOME_UNKNOWN' || code === 'RECONCILIATION_REQUIRED') {
       try {
         const artifacts = privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)
         if (existsSync(artifacts.statePath)) {
@@ -677,6 +701,7 @@ export const collectorHostInternals = Object.freeze({
   postCaptureReceipt,
   postFailureReceipt,
   ensureCandidateState,
+  runClaimedAttempt,
   reconcilePendingPublication,
   receiptFailureCode,
   isDefiniteStaleClaim,
