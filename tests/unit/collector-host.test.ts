@@ -13,6 +13,7 @@ import { handleCollectorApi } from '../../cloudflare/src/platform-worker.mjs'
 import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
 import { encryptBundle } from '../../scripts/publish-cloud-release.mjs'
 import { doctor, runDaemon, runOnce, collectorHostInternals } from '../../scripts/collector-host.mjs'
+import { acquirePublicationLock, releasePublicationLock } from '../../scripts/sync-cloud-release.mjs'
 import { profileFingerprint, validateCollectorProfile, COLLECTOR_ADAPTER_ID, COLLECTOR_ADAPTER_VERSION, COLLECTOR_PROFILE_NAME } from '../../scripts/lib/collector-profile.mjs'
 import { assertBaselineBundleMatchesClaim, assertClaimMatchesProfile, assertContactMatchesProfile, collectorRequest, submitCollectorPublication, validateReceiptPayload } from '../../scripts/lib/collector-protocol.mjs'
 import { adapterInternals, checkCollectorDependencies, findPendingPublication, getOrCreateClaimIdempotencyKey, clearPendingClaimIdempotencyKey, makeDealerMailCapture, privateAttemptArtifacts, saveAttemptState } from '../../scripts/lib/dealermail-hold-refresh-adapter.mjs'
@@ -75,6 +76,53 @@ afterEach(() => {
 })
 
 describe('collector host contract', () => {
+  it.each(['active', 'ambiguous'])('preserves the bounded %s publication-lock diagnosis and pending evidence in run-once and daemon output', async mode => {
+    const { root, profile } = fixture()
+    const artifacts = privateAttemptArtifacts(root, 'attempt-lock-pending')
+    mkdirSync(artifacts.directory, { recursive: true })
+    for (const file of [artifacts.candidatePath, artifacts.manifestPath, artifacts.dealerMailPath]) writeFileSync(file, '{"marker":"SYNTHETIC_PRIVATE_CANDIDATE"}')
+    writeFileSync(artifacts.envelopePath, JSON.stringify({ reportDate: '2026-10-09', bundleSha256: 'a'.repeat(64), ciphertext: 'SYNTHETIC_PRIVATE_ENVELOPE' }))
+    saveAttemptState(artifacts.statePath, {
+      attemptId: 'attempt-lock-pending', fence: 2, reportDate: '2026-10-09', profileSha256: profile.profileSha256,
+      configSha256: 'b'.repeat(64), bundleSha256: 'a'.repeat(64), publicationIdempotencyKey: '12345678-1234-4234-8234-123456789012',
+      publicationPending: true, reconciliationRequired: true,
+    })
+    const lockPath = path.join(root, 'work/app-feed-status/.publication.lock')
+    const ownerBefore = process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID
+    delete process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID
+    const lock = mode === 'active' ? acquirePublicationLock(lockPath) : null
+    if (!lock) writeFileSync(lockPath, 'SYNTHETIC_PRIVATE_AMBIGUOUS_LOCK')
+    const files = [artifacts.candidatePath, artifacts.manifestPath, artifacts.dealerMailPath, artifacts.envelopePath, artifacts.statePath, lockPath]
+    const before = files.map(file => readFileSync(file))
+    const code = 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+    const fetchImpl = vi.fn(async () => Response.json({
+      collectorId: 'collector-1', connected: true, enabled: true, executionEnabled: true,
+      scopeSha256: 'b'.repeat(64), profileSha256: profile.profileSha256,
+      adapterVersion: COLLECTOR_ADAPTER_VERSION, checkedAt: new Date().toISOString(),
+    }))
+    const options = {
+      profileName: COLLECTOR_PROFILE_NAME, profileDirectory: path.join(root, 'runtime/collector/profiles'), fetchImpl,
+      credentialReader: () => ({ accessClientId: 'synthetic-id', accessClientSecret: 'SYNTHETIC_PRIVATE_SECRET' }),
+    }
+    try {
+      const error = await runOnce(options).catch(value => value)
+      expect(error.message).toBe(code)
+      expect(collectorHostInternals.safeCode(error)).toBe(code)
+      const controller = new AbortController(), output: string[] = []
+      const write = vi.spyOn(process.stdout, 'write').mockImplementation(chunk => { output.push(String(chunk)); controller.abort(); return true })
+      try { expect(await runDaemon({ ...options, signal: controller.signal })).toEqual([{ status: 'error', code }]) }
+      finally { write.mockRestore() }
+      expect(output).toEqual([JSON.stringify({ status: 'error', code }) + '\n'])
+      expect(output.join('')).not.toContain('SYNTHETIC_PRIVATE')
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+      expect(fetchImpl.mock.calls.every(([url]) => url.pathname === '/api/collector/contact')).toBe(true)
+      files.forEach((file, index) => expect(readFileSync(file)).toEqual(before[index]))
+    } finally {
+      if (lock) releasePublicationLock(lock)
+      if (ownerBefore === undefined) delete process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID
+      else process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID = ownerBefore
+    }
+  })
   const setupFailures = [
     ['ACCESS_TOKEN_INVALID', 401],
     ['COLLECTOR_AUTH_REQUIRED', 403],

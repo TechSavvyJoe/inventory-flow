@@ -49,7 +49,205 @@ const encryptMalformedSyntheticCandidate=(bundle,key)=>{
  const ciphertext=Buffer.concat([cipher.update(plaintext),cipher.final(),cipher.getAuthTag()])
  return {version,reportDate:bundle.reportDate,bundleSha256,iv:iv.toString('base64url'),ciphertext:ciphertext.toString('base64url')}
 }
+const stopDuringTenantPublication=async(f,mode,key='fence-owner-stop')=>{
+ if(mode==='cancel')await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'cancel',connectionId:f.dealers[0].connectionId,requestId:f.attempt.requestId,reason:'Synthetic stop at tenant publication fence',expectedRevision:revision(f)},key)
+ else if(mode==='revoke')await saveCollector(f.env,owner,'synthetic-north',{operation:'revoke',id:f.collectorId,reason:'Synthetic revoke at tenant publication fence',expectedRevision:revision(f)},key,now)
+ else {f.env.PLATFORM_COLLECTOR_EXECUTION_ENABLED='false';f.tenantEnv.PLATFORM_COLLECTOR_EXECUTION_ENABLED='false'}
+}
+const raceTenantFence=(f,point,action)=>{
+ if(point==='binding-entry'){
+  const publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  let raced=false
+  f.env.TENANT_NORTH_PUBLISHER.publish=async(...args)=>{if(!raced){raced=true;await action()}return publish(...args)}
+  return ()=>raced
+ }
+ const method=point==='entry'?'get':point==='new-commit'?'put':'head',original=f.bucket[method]
+ let raced=false
+ f.bucket[method]=vi.fn(async(...args)=>{
+  const result=await original(...args)
+  if(!raced){raced=true;await action()}
+  return result
+ })
+ return ()=>raced
+}
 describe('Brokered publication and independent tenant receipt',()=>{
+ it.each(['binding-entry','entry','new-commit','unchanged-commit'].flatMap(point=>['cancel','revoke','disabled'].map(mode=>({point,mode}))))('settles exact precommit fence proof after $mode at $point without tenant acceptance or owner-decision changes',async({point,mode})=>{
+  const f=await setup()
+  if(point==='unchanged-commit')f.input.envelope=f.baseline
+  const nextRequest=await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic unrelated queued work',expectedRevision:revision(f)},'fence-next-request')
+  const original=f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get(),tenant={revision:f.tenant.prepare('SELECT revision FROM cloud_app_revision').get(),versions:f.tenant.prepare('SELECT * FROM cloud_release_versions').all(),state:f.tenant.prepare('SELECT * FROM cloud_release_state').all(),intake:f.tenant.prepare('SELECT * FROM vehicle_service_intake').all()}
+  const baselineObject=f.objects.get(`releases/${f.baseline.reportDate}/${f.baseline.bundleSha256}.json.enc`).body
+  let ownerAudit,collector,tenantProof,tenantError
+  const raced=raceTenantFence(f,point,async()=>{
+   await stopDuringTenantPublication(f,mode)
+   ownerAudit=f.sqlite.prepare("SELECT * FROM platform_audit WHERE request_key='fence-owner-stop'").get()
+   collector=f.sqlite.prepare('SELECT * FROM platform_collectors').get()
+  })
+  const publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{try{tenantProof=await publish(...args);return tenantProof}catch(error){tenantError={message:error.message,code:error.code};throw error}})
+  const batch=f.env.PLATFORM_DB.batch,settlementErrors=[]
+  f.env.PLATFORM_DB.batch=async statements=>{try{return await batch(statements)}catch(error){settlementErrors.push(error.message);throw error}}
+  const outcome=await publishCollector(f.env,f.machine,f.input,'precommit-fence',now)
+  expect(settlementErrors).toEqual([])
+  expect(tenantError).toBeUndefined()
+  expect(tenantProof?.status).toBe('fence_rejected')
+  expect(outcome).toMatchObject({status:'preflight_retryable',ready:false,bundleSha256:f.input.envelope.bundleSha256})
+  expect(raced()).toBe(true)
+  expect(tenantProof).toMatchObject({status:'fence_rejected',precommitOnly:true,attemptId:original.id,groupId:original.group_id,collectorId:original.collector_id,fence:original.fence,grantGeneration:original.grant_generation,configSha256:original.config_sha256,scopeSha256:original.scope_sha256,bundleSha256:f.input.envelope.bundleSha256,reportDate:original.report_date})
+  const settled=f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get()
+  expect(settled.stage).toBe(['cancel','revoke'].includes(mode)?'cancelled':'expired')
+  expect(settled.failure_code).toBe(mode==='cancel'?'CANCELLED_BY_OWNER':mode==='revoke'?'COLLECTOR_REVOKED':'COLLECTOR_DISABLED')
+  for(const field of ['id','request_id','collector_id','group_id','fence','grant_generation','config_sha256','scope_sha256','config_json','source_sha256','report_date'])expect(settled[field]).toBe(original[field])
+  expect(settled.expected_bundle_sha256).toBe(f.input.envelope.bundleSha256)
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests WHERE id=?').get(f.attempt.requestId).state).toBe(['cancel','revoke'].includes(mode)?'cancelled':'failed')
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests WHERE id=?').get(nextRequest.id).state).toBe('queued')
+  expect(f.sqlite.prepare('SELECT * FROM platform_collectors').get()).toEqual(collector)
+  expect(f.sqlite.prepare("SELECT * FROM platform_audit WHERE request_key='fence-owner-stop'").get()).toEqual(ownerAudit)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_attempts WHERE stage IN ('claimed','captured','publishing','reconciliation_required')").get().n).toBe(0)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_fence_rejected'").get().n).toBe(1)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(f.tenant.prepare('SELECT revision FROM cloud_app_revision').get()).toEqual(tenant.revision)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_versions').all()).toEqual(tenant.versions)
+  expect(f.tenant.prepare('SELECT * FROM cloud_release_state').all()).toEqual(tenant.state)
+  expect(f.tenant.prepare('SELECT * FROM vehicle_service_intake').all()).toEqual(tenant.intake)
+  expect(f.objects.get(`releases/${f.baseline.reportDate}/${f.baseline.bundleSha256}.json.enc`).body).toBe(baselineObject)
+  expect(f.objects.size).toBe(point==='new-commit'?2:1)
+  if(mode==='cancel')expect(await claimCollector(f.env,f.machine,{},'after-precommit-fence',now)).toMatchObject({requestId:nextRequest.id})
+  if(mode==='revoke')await expect(claimCollector(f.env,f.machine,{},'revoked-after-precommit-fence',now)).rejects.toMatchObject({code:'COLLECTOR_REVOKED'})
+  if(mode==='disabled'){
+   expect(f.env.PLATFORM_COLLECTOR_EXECUTION_ENABLED).toBe('false');expect(f.tenantEnv.PLATFORM_COLLECTOR_EXECUTION_ENABLED).toBe('false')
+   await expect(claimCollector(f.env,f.machine,{},'disabled-after-precommit-fence',now)).rejects.toMatchObject({code:'COLLECTOR_DISABLED'})
+  }
+ })
+ it.each(['signature','expired','wrong-operation','foreign-fence','missing-binding','lookup-stale','lookup-disabled'])('requires authenticated frozen ticket identity before initial OFF fence proof: %s',async mode=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  f.bucket.get=vi.fn(f.bucket.get);f.bucket.put=vi.fn(f.bucket.put);f.bucket.head=vi.fn(f.bucket.head)
+  let proof
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(envelope,authorization)=>{
+   await stopDuringTenantPublication(f,'disabled')
+   const attempt=f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get()
+   if(mode==='signature')authorization='synthetic-invalid-signature'
+   if(mode==='expired')authorization=await publicationTicket(f.env,attempt,'publish',new Date(now.getTime()-60000))
+   if(mode==='wrong-operation')authorization=await publicationTicket(f.env,attempt,'read',now)
+   if(mode==='foreign-fence')authorization=await publicationTicket(f.env,{...attempt,fence:attempt.fence+1},'publish',now)
+   if(mode==='missing-binding')f.tenantEnv.PLATFORM_CONTROL_DB=null
+   if(mode.startsWith('lookup-')){
+    const prepare=f.tenantEnv.PLATFORM_CONTROL_DB.prepare
+    f.tenantEnv.PLATFORM_CONTROL_DB.prepare=sql=>{
+     const statement=prepare(sql)
+     if(sql.startsWith('SELECT a.*,p.state AS request_state')){
+      const bind=statement.bind
+      statement.bind=(...args)=>{const bound=bind.apply(statement,args);bound.first=async()=>{throw Object.assign(new Error('Synthetic initial identity lookup outage'),{code:mode==='lookup-stale'?'COLLECTOR_LEASE_STALE':'COLLECTOR_DISABLED'})};return bound}
+     }
+     return statement
+    }
+   }
+   proof=await publish(envelope,authorization)
+   return proof
+  })
+  expect(await publishCollector(f.env,f.machine,f.input,'invalid-initial-fence-proof',now)).toMatchObject({status:'reconciliation_required',ready:false})
+  expect(proof).toBeUndefined()
+  expect(f.sqlite.prepare('SELECT stage,completed_at FROM platform_collector_attempts').get()).toEqual({stage:'reconciliation_required',completed_at:null})
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_fence_rejected'").get().n).toBe(0)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_attempts WHERE stage IN ('publishing','reconciliation_required')").get().n).toBe(1)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(f.baseline.bundleSha256)
+  expect(f.bucket.get).not.toHaveBeenCalled();expect(f.bucket.put).not.toHaveBeenCalled();expect(f.bucket.head).not.toHaveBeenCalled()
+  expect(f.env.PLATFORM_COLLECTOR_EXECUTION_ENABLED).toBe('false');expect(f.tenantEnv.PLATFORM_COLLECTOR_EXECUTION_ENABLED).toBe('false')
+ })
+ it.each(['lost','extra','missing','false-precommit','foreign-group','foreign-collector','foreign-generation','foreign-config','foreign-scope','foreign-attempt','foreign-request','foreign-fence','foreign-bundle','foreign-baseline','foreign-source','foreign-date','forged-code'])('keeps the group readback-only when exact precommit fence proof is %s',async mutation=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  raceTenantFence(f,'new-commit',()=>stopDuringTenantPublication(f,'cancel'))
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{
+   const proof=await publish(...args)
+   if(mutation==='lost')throw new Error('Synthetic lost precommit fence proof')
+   const changed={...proof}
+   if(mutation==='extra')changed.unrecognized=true
+   if(mutation==='missing')delete changed.requestId
+   if(mutation==='false-precommit')changed.precommitOnly=false
+   const fields={'foreign-group':'groupId','foreign-collector':'collectorId','foreign-generation':'grantGeneration','foreign-config':'configSha256','foreign-scope':'scopeSha256','foreign-attempt':'attemptId','foreign-request':'requestId','foreign-fence':'fence','foreign-bundle':'bundleSha256','foreign-baseline':'baselineBundleSha256','foreign-source':'sourceSha256','foreign-date':'reportDate','forged-code':'code'}
+   const field=fields[mutation]
+   if(field)changed[field]=typeof changed[field]==='number'?changed[field]+1:'synthetic-foreign-proof'
+   return changed
+  })
+  expect(await publishCollector(f.env,f.machine,f.input,'unknown-fence-proof',now)).toMatchObject({status:'reconciliation_required',ready:false})
+  expect(f.sqlite.prepare('SELECT stage,failure_code,completed_at FROM platform_collector_attempts').get()).toEqual({stage:'reconciliation_required',failure_code:'CANCELLED_BY_OWNER',completed_at:null})
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_fence_rejected'").get().n).toBe(0)
+  expect(await reconcileCollector(f.env,owner,'synthetic-north',{attemptId:f.attempt.attemptId},now)).toMatchObject({status:'reconciliation_required'})
+  expect(await claimCollector(f.env,f.machine,{},'blocked-by-unknown-fence',now)).toBeNull()
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(f.baseline.bundleSha256)
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+ })
+ it.each(['fence','config','scope','generation','bundle','dispatch'])('does not settle an exact precommit proof against a changed saved %s',async mutation=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  raceTenantFence(f,'entry',()=>stopDuringTenantPublication(f,'cancel'))
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{
+   const proof=await publish(...args)
+   const field={fence:'fence',config:'config_sha256',scope:'scope_sha256',generation:'grant_generation',bundle:'expected_bundle_sha256'}[mutation]
+   if(field)f.sqlite.prepare(`UPDATE platform_collector_attempts SET ${field}=?`).run(['fence','generation'].includes(mutation)?99:'b'.repeat(64))
+   else f.sqlite.prepare("UPDATE platform_audit SET target_id='synthetic-foreign-attempt' WHERE action='publication_started'").run()
+   return proof
+  })
+  expect(await publishCollector(f.env,f.machine,f.input,'saved-fence-proof',now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare('SELECT stage,completed_at FROM platform_collector_attempts').get()).toEqual({stage:'reconciliation_required',completed_at:null})
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_fence_rejected'").get().n).toBe(0)
+ })
+ it.each(['COLLECTOR_LEASE_STALE','COLLECTOR_DISABLED'])('does not turn an infrastructure throw with spoofed %s code into precommit fence proof',async code=>{
+  const f=await setup(),prepare=f.tenantEnv.PLATFORM_CONTROL_DB.prepare
+  let lookups=0
+  f.tenantEnv.PLATFORM_CONTROL_DB.prepare=sql=>{
+   const statement=prepare(sql)
+   if(sql==='SELECT * FROM platform_collectors WHERE id=? AND group_id=?'){
+    const bind=statement.bind
+    statement.bind=(...args)=>{
+     const bound=bind.apply(statement,args),first=bound.first
+     bound.first=async()=>{if(++lookups===2)throw Object.assign(new Error('Synthetic control DB outage'),{code});return first.call(bound)}
+     return bound
+    }
+   }
+   return statement
+  }
+  expect(await publishCollector(f.env,f.machine,f.input,'spoofed-fence-outage',now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('reconciliation_required')
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_fence_rejected'").get().n).toBe(0)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+ })
+ it('rolls back exact fence-proof retirement atomically when its control-plane batch fails',async()=>{
+  const f=await setup(),batch=f.env.PLATFORM_DB.batch
+  raceTenantFence(f,'entry',()=>stopDuringTenantPublication(f,'cancel'))
+  f.env.PLATFORM_DB.batch=async statements=>{
+   if(statements.some(statement=>statement.params?.includes('publication_fence_rejected')))return batch([...statements,f.env.PLATFORM_DB.prepare('UPDATE platform_revision SET revision=NULL WHERE id=1')])
+   return batch(statements)
+  }
+  expect(await publishCollector(f.env,f.machine,f.input,'atomic-fence-proof',now)).toMatchObject({status:'reconciliation_required'})
+  expect(f.sqlite.prepare('SELECT stage,failure_code,completed_at FROM platform_collector_attempts').get()).toEqual({stage:'reconciliation_required',failure_code:'CANCELLED_BY_OWNER',completed_at:null})
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests').get().state).toBe('reconciliation_required')
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_fence_rejected'").get().n).toBe(0)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+ })
+ it.each(['cancel','revoke','disabled'])('preserves exact committed publication readback when %s races after the atomic batch',async mode=>{
+  const f=await setup(),batch=f.tenantEnv.INVENTORY_DB.batch
+  let stopped=false,ownerAudit,collector
+  f.tenantEnv.INVENTORY_DB.batch=async statements=>{
+   const result=await batch(statements)
+   if(!stopped && statements.some(statement=>statement.sql.startsWith('INSERT INTO collector_publication_receipts'))){
+    stopped=true
+    await stopDuringTenantPublication(f,mode,'after-commit-owner-stop')
+    ownerAudit=f.sqlite.prepare("SELECT * FROM platform_audit WHERE request_key='after-commit-owner-stop'").get()
+    collector=f.sqlite.prepare('SELECT * FROM platform_collectors').get()
+   }
+   return result
+  }
+  expect(await publishCollector(f.env,f.machine,f.input,'committed-fence-race',now)).toMatchObject({status:'published_verified',ready:true,bundleSha256:f.envelope.bundleSha256})
+  expect(stopped).toBe(true)
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('completed')
+  expect(f.sqlite.prepare('SELECT * FROM platform_collectors').get()).toEqual(collector)
+  expect(f.sqlite.prepare("SELECT * FROM platform_audit WHERE request_key='after-commit-owner-stop'").get()).toEqual(ownerAudit)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_audit WHERE action='publication_fence_rejected'").get().n).toBe(0)
+  expect(await reconcileCollector(f.env,owner,'synthetic-north',{attemptId:f.attempt.attemptId},now)).toMatchObject({status:'published_verified',ready:true})
+ })
  it.each(['valid','bad-provenance','preflight-outage'])('handles provenance-bound status-only CARFAX coverage through publication and receipt readback: %s',async mode=>{
   const f=await setup(async f=>{
    const resource=f.bundle.release.vehicles.find(v=>v.resourceRecord).resourceRecord

@@ -92,6 +92,27 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
  attempt.expected_bundle_sha256=input.envelope.bundleSha256;attempt.stage='publishing'
  try {
   const dispatched=await binding.publish(input.envelope,authorization)
+  const fenceFields=['status','attemptId','requestId','groupId','collectorId','fence','grantGeneration','configSha256','scopeSha256','bundleSha256','baselineBundleSha256','sourceSha256','reportDate','precommitOnly','code']
+  const fenceProof=dispatched?.status==='fence_rejected' && dispatched.precommitOnly===true && ['COLLECTOR_DISABLED','COLLECTOR_LEASE_STALE'].includes(dispatched.code) &&
+   Object.keys(dispatched).length===fenceFields.length && Object.keys(dispatched).every(field=>fenceFields.includes(field)) &&
+   dispatched.attemptId===attempt.id && dispatched.requestId===attempt.request_id && dispatched.groupId===attempt.group_id && dispatched.collectorId===attempt.collector_id &&
+   dispatched.fence===attempt.fence && dispatched.grantGeneration===attempt.grant_generation && dispatched.configSha256===attempt.config_sha256 && dispatched.scopeSha256===attempt.scope_sha256 &&
+   dispatched.bundleSha256===attempt.expected_bundle_sha256 && dispatched.baselineBundleSha256===JSON.parse(attempt.config_json).baselineBundleSha256 && dispatched.sourceSha256===attempt.source_sha256 && dispatched.reportDate===attempt.report_date
+  if(fenceProof) {
+   const date=currentTime().toISOString(),db=env.PLATFORM_DB,proofHash=await digest(dispatched)
+   // No tenant release/receipt batch was admitted. Retire only this exact
+   // dispatch; owner stops remain stops and execution OFF never requeues it.
+   const match="a.id=? AND a.collector_id=? AND a.group_id=? AND a.request_id=? AND a.fence=? AND a.grant_generation=? AND a.config_sha256=? AND a.scope_sha256=? AND a.expected_bundle_sha256=? AND a.report_date=? AND a.config_json=? AND a.source_sha256=? AND a.capture_counts_json=? AND a.stage IN ('publishing','reconciliation_required')"
+   const args=[attempt.id,row.id,attempt.group_id,attempt.request_id,attempt.fence,attempt.grant_generation,attempt.config_sha256,attempt.scope_sha256,attempt.expected_bundle_sha256,attempt.report_date,attempt.config_json,attempt.source_sha256,attempt.capture_counts_json]
+   const ownerStopped="failure_code IN ('CANCELLED_BY_OWNER','COLLECTOR_REVOKED')"
+   await db.batch([
+    db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required')) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') AND NOT EXISTS(SELECT 1 FROM platform_collector_receipts WHERE attempt_id=? AND kind='publication') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash,attempt.id),
+    db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.${ownerStopped}) THEN 'cancelled' ELSE 'failed' END,updated_at=? WHERE id=? AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(...args,date,attempt.request_id,...args),
+    db.prepare(`UPDATE platform_collector_attempts AS a SET stage=CASE WHEN ${ownerStopped} THEN 'cancelled' ELSE 'expired' END,failure_code=CASE WHEN ${ownerStopped} THEN failure_code ELSE ? END,completed_at=? WHERE ${match}`).bind(dispatched.code,date,...args),
+    machineAudit(db,row,attempt,'publication_fence_rejected',dispatched,`fence-rejected:${attempt.id}`,proofHash,date),
+   ])
+   return {status:'preflight_retryable',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
+  }
   // A positive tenant RPC proof can release the no-redispatch fence. Preflight
   // did not enter publication; a revision conflict entered it but definitively
   // rolled back the atomic release/receipt batch. A thrown/lost reply cannot.
@@ -162,7 +183,19 @@ export async function reconcileCollector(env,claims,groupId,input,now=new Date()
 // These functions are RPC business logic, never employee HTTP endpoints.
 export async function publishTenantCandidate(env,envelope,authorization,testTime=null) {
  const clock=()=>testTime??new Date(),now=clock()
- const {ticket,attempt}=await verifyPublicationTicket(env,authorization,'publish',now)
+ const {ticket,attempt}=await verifyPublicationTicket(env,authorization,'publish',now,{deferFence:true})
+ // This sentinel can originate only in an intentional precommit-check denial,
+ // before publishRelease admits a release/receipt batch. Never classify a
+ // generic thrown error or a post-admission failure as no-publication proof.
+ const fenceRejection=new Error('Intentional precommit publication fence denial')
+ let denialCode
+ const check=async()=>{
+  let rejected
+  try{await assertPublicationFence(env,ticket,clock(),{onRejected:code=>{rejected=code}})}
+  catch(error){if(rejected){denialCode=rejected;throw fenceRejection}throw error}
+ }
+ try {
+ await check()
  let bundle,counts,baseline,config
  // Independently prove the tenant key and verified baseline are readable before
  // treating candidate decryption errors as definitive bad-input evidence.
@@ -190,7 +223,11 @@ export async function publishTenantCandidate(env,envelope,authorization,testTime
  if(config.dealerships.length!==4 || config.dealerships.some(d=>!storeNames[d.storeKey]))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  }catch{return {status:'rejected',code:'VALIDATION_FAILED'}}
  const request=new Request('https://collector-binding.invalid/internal/releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(envelope)})
- return (await publishRelease(request,env,{ticket,now,baselineBundleSha256:config.baselineBundleSha256,check:()=>assertPublicationFence(env,ticket,clock())})).json()
+ return (await publishRelease(request,env,{ticket,now,baselineBundleSha256:config.baselineBundleSha256,check})).json()
+ }catch(error){
+  if(error!==fenceRejection)throw error
+  return {status:'fence_rejected',attemptId:ticket.attemptId,requestId:attempt.request_id,groupId:ticket.groupId,collectorId:ticket.collectorId,fence:ticket.fence,grantGeneration:ticket.grantGeneration,configSha256:ticket.configSha256,scopeSha256:ticket.scopeSha256,bundleSha256:ticket.bundleSha256,baselineBundleSha256:JSON.parse(attempt.config_json).baselineBundleSha256,sourceSha256:attempt.source_sha256,reportDate:ticket.reportDate,precommitOnly:true,code:denialCode}
+ }
 }
 
 export async function readTenantPublicationReceipt(env,authorization,now=new Date()) {
