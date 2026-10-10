@@ -357,6 +357,63 @@ describe('focused vehicle workspace', () => {
     expect(more).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('uses the imported active hold as the Holds & moves headline when the app hold is empty', async () => {
+    const unit = vehicle();
+    unit.manualHold = { vin:unit.vin, state:null, version:0, ownerStore:'Howell', canManage:true, enabled:true, expectedDeliveryDate:null, updatedAt:null };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+      dispositionContext={{ role:'manager', homeStore:'Howell', onChanged:vi.fn() }} />);
+    await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+    const pane = screen.getByRole('tabpanel', { name:'Holds & moves' });
+    const controls = within(pane).getByRole('region', { name:'Hold and disposition controls' });
+    expect(within(controls).getByText('Held · Reported', { selector:'strong' })).toBeVisible();
+    expect(controls).toHaveTextContent('Inventory Flow: No hold recorded');
+    expect(within(controls).getByRole('button', { name:'Place hold' })).toBeVisible();
+    expect(within(pane).getByText('Customer appointment')).toBeVisible();
+  });
+
+  it('keeps a requested app hold qualified while the Holds & moves headline reflects imported held evidence', async () => {
+    const unit = vehicle();
+    unit.manualHold = { vin:unit.vin, state:'requested', version:1, ownerStore:'Howell', canManage:true, canApprove:true, approvalEnabled:true, enabled:true, expectedDeliveryDate:'2026-09-02', updatedAt:null };
+    unit.inventoryDecision = { status:'held', comparison:'source_only', reasons:[], manualHold:'requested', importedHold:true, label:'Held' };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+      dispositionContext={{ role:'manager', homeStore:'Howell', onChanged:vi.fn() }} />);
+    await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+    const pane = screen.getByRole('tabpanel', { name:'Holds & moves' });
+    const controls = within(pane).getByRole('region', { name:'Hold and disposition controls' });
+    expect(within(controls).getByText('Pending approval', { selector:'strong' })).toBeVisible();
+    expect(controls).toHaveTextContent('Inventory Flow: Pending approval');
+    expect(within(controls).getByRole('button', { name:'Review hold request' })).toBeVisible();
+    expect(within(pane).getByText('Customer appointment')).toBeVisible();
+  });
+
+  it.each([
+    ['stale', true, 'Last verified hold'],
+    ['unavailable', false, 'Hold status unverified'],
+  ] as const)('keeps %s source certainty in the Holds & moves headline with a closed app hold', async (dataState, lastKnownActiveHold, headline) => {
+    const unit = vehicle();
+    unit.manualHold = { vin:unit.vin, state:'released', version:1, ownerStore:'Howell', canManage:false, enabled:true, expectedDeliveryDate:null, updatedAt:null };
+    unit.dealerMail = { ...unit.dealerMail, dataState, hasActiveHold:null, lastKnownActiveHold };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+    const pane = screen.getByRole('tabpanel', { name:'Holds & moves' });
+    const controls = within(pane).getByRole('region', { name:'Hold and disposition controls' });
+    expect(within(controls).getByText(headline, { selector:'strong' })).toBeVisible();
+    expect(controls).toHaveTextContent('Inventory Flow: Hold released');
+    expect(within(pane).getByText('Customer appointment')).toBeVisible();
+  });
+
+  it('keeps imported active evidence as the Holds & moves headline after the app hold closes', async () => {
+    const unit = vehicle();
+    unit.manualHold = { vin:unit.vin, state:'released', version:1, ownerStore:'Howell', canManage:false, enabled:true, expectedDeliveryDate:null, updatedAt:null };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+    const pane = screen.getByRole('tabpanel', { name:'Holds & moves' });
+    const controls = within(pane).getByRole('region', { name:'Hold and disposition controls' });
+    expect(within(controls).getByText('Held · Reported', { selector:'strong' })).toBeVisible();
+    expect(controls).toHaveTextContent('Inventory Flow: Hold released');
+    expect(within(pane).getByText('Customer appointment')).toBeVisible();
+  });
+
   it.each([
     [null, true, 'Last verified hold', null],
     [null, false, 'Hold status unverified', null],
