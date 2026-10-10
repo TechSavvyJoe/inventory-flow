@@ -374,7 +374,17 @@ export function TransfersPage() {
   const safeReturnTo = origin ?? '/transfers'
   const currentPath = currentWorkspaceReturnPath(location)
   const movePath = (path: string) => withWorkspaceReturnPath(path, origin ?? currentPath)
-  useWorkspaceScroll(accessContext, requestMode ? 'transfers.new' : params.has('id') || params.has('vin') ? 'transfers.detail' : 'transfers.queue')
+  const requestedId = params.get('id')
+  const requestedVin = params.get('vin')?.toUpperCase()
+  const [mobileDetail, setMobileDetail] = useState(() => window.matchMedia?.('(max-width: 760px)').matches ?? false)
+  useEffect(() => {
+    const media = window.matchMedia?.('(max-width: 760px)')
+    if (!media) return
+    const update = () => setMobileDetail(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
   const [query, setQuery] = useWorkspaceState(accessContext, 'transfers.query', '')
   const [requestQuery, setRequestQuery] = useWorkspaceState(accessContext, 'transfers.vehicle-query', '')
   const [queueView, setQueueView] = useWorkspaceState<TransferQueueView>(accessContext, 'transfers.view', 'active')
@@ -427,11 +437,17 @@ export function TransfersPage() {
     }))
   }, [data, role])
 
+  const requestedSelection = requestedId || requestedVin ? selectRequestedTransfer(details, requestedId, requestedVin) : null
+  const detailKey = requestedSelection ? `transfers.detail:id:${requestedSelection.record.id}`
+    : requestedId ? `transfers.detail:id:${requestedId}` : `transfers.detail:vin:${requestedVin}`
+  useWorkspaceScroll(accessContext, requestMode ? 'transfers.new' : requestedId || requestedVin ? detailKey : 'transfers.queue', {
+    initialTop: !requestMode && (requestedId || requestedVin) && mobileDetail ? 0 : undefined,
+    preserveRecordedPositionOnExit: true,
+  })
+
   if (!data) return null
   const simple = !details.length || details.some(({ record }) => record.workflowMode === 'simple')
 
-  const requestedId = params.get('id')
-  const requestedVin = params.get('vin')?.toUpperCase()
   const managerGroupFilters = storeScope === 'group' && (role === 'manager' || role === 'group_manager')
   // A manager filter saved in All stores never silently narrows My store.
   // An Overview link may open a manager view for any role that can see the count.
@@ -516,7 +532,7 @@ export function TransfersPage() {
     })
   // An authorized deep link opens the exact move, including completed moves or
   // a different store. Filtering the queue must never substitute another move.
-  const selected = selectRequestedTransfer(requestedId || requestedVin ? details : filteredDetails, requestedId, requestedVin)
+  const selected = requestedId || requestedVin ? requestedSelection : selectRequestedTransfer(filteredDetails, requestedId, requestedVin)
   const queueCounts = {
     'needs-action': scopedDetails.filter(({ record, detail }) => !isTerminalTransfer(record) && needsTransferAction(detail)).length,
     active: scopedDetails.filter(({ record }) => !isTerminalTransfer(record)).length,

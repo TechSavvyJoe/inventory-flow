@@ -10,16 +10,22 @@ export function clearWorkspaceMemory(): void {
   views.clear()
 }
 
-export function useWorkspaceScroll(context: string | undefined, key: string): void {
+export function useWorkspaceScroll(context: string | undefined, key: string, {
+  initialTop,
+  preserveRecordedPositionOnExit = false,
+}: { initialTop?: number; preserveRecordedPositionOnExit?: boolean } = {}): void {
   useLayoutEffect(() => {
     if (!context) return
     const cacheKey = `${context}\u0000scroll:${key}`
     const epoch = generation
     const saved = views.get(cacheKey) as { y: number; vehicle?: string } | undefined
+    let recorded = saved ?? { y: window.scrollY, vehicle: undefined as string | undefined }
+    const top = saved?.y ?? initialTop
     const frame = requestAnimationFrame(() => {
-      if (epoch !== generation || !saved) return
-      window.scrollTo({ top: saved.y, behavior: 'instant' })
-      if (saved.vehicle && !document.querySelector('[aria-modal="true"]')) {
+      if (epoch !== generation || top === undefined) return
+      window.scrollTo({ top, behavior: 'instant' })
+      recorded = { y: top, vehicle: saved?.vehicle }
+      if (saved?.vehicle && !document.querySelector('[aria-modal="true"]')) {
         const target = Array.from(document.querySelectorAll<HTMLElement>('[data-inventory-vehicle-trigger]'))
           .find(element => element.dataset.inventoryVehicleTrigger === saved.vehicle && element.getClientRects().length)
         target?.focus({ preventScroll: true })
@@ -29,17 +35,22 @@ export function useWorkspaceScroll(context: string | undefined, key: string): vo
       if (epoch !== generation) return
       const active = document.activeElement as HTMLElement | null
       const previous = views.get(cacheKey) as { vehicle?: string } | undefined
-      views.set(cacheKey, { y: window.scrollY, vehicle: active?.dataset.inventoryVehicleTrigger ?? previous?.vehicle })
+      recorded = { y: window.scrollY, vehicle: active?.dataset.inventoryVehicleTrigger ?? previous?.vehicle }
+      views.set(cacheKey, recorded)
     }
     window.addEventListener('scroll', remember, { passive: true })
     document.addEventListener('focusin', remember)
     return () => {
       cancelAnimationFrame(frame)
-      remember()
+      if (preserveRecordedPositionOnExit) {
+        // The replacement DOM may already have clamped scrollY. Keep the last
+        // observed position of this workspace, not that shorter next screen.
+        if (epoch === generation) views.set(cacheKey, recorded)
+      } else remember()
       window.removeEventListener('scroll', remember)
       document.removeEventListener('focusin', remember)
     }
-  }, [context, key])
+  }, [context, key, initialTop, preserveRecordedPositionOnExit])
 }
 
 export function useWorkspaceState<T>(context: string | undefined, key: string, initial: T | (() => T)) {

@@ -8,16 +8,16 @@
   font: 400 15px/1.5 var(--font-app);
   font-synthesis: none;
 }
-#root .simple-transfer-tracker :is(h2,h3,p,dl,dd) { margin: 0; }
+.simple-transfer-tracker :is(h2,h3,p:not(.move-vehicle-value):not(.move-vehicle-specs),dl,dd) { margin: 0; }
 #root .simple-transfer-tracker > .inventory-service-link { margin: 0; }
 #root .simple-transfer-tracker :is(button,summary) { font: 600 14px/1.4 var(--font-app); }
 #root .simple-transfer-tracker :is(button,summary):focus-visible { outline: 3px solid var(--ifx-info); outline-offset: 3px; }
-#root .simple-move-heading { display: flex; align-items: center; gap: 14px; min-width: 0; }
-#root .simple-move-heading img, #root .simple-move-photo-placeholder { width: 96px; height: 72px; flex: 0 0 96px; border-radius: 5px; object-fit: cover; }
+.simple-transfer-tracker .simple-move-heading { display: flex; align-items: center; gap: var(--ifx-transfer-heading-gap); min-width: 0; }
+.mif-transfer-feature.simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__title img, .mif-transfer-feature.simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__title .simple-move-photo-placeholder { width: var(--ifx-transfer-list-thumbnail-width); height: var(--ifx-transfer-list-thumbnail-height); flex: 0 0 var(--ifx-transfer-list-thumbnail-width); border-radius: var(--ifx-radius-xs); object-fit: cover; }
 #root .simple-move-photo-placeholder { display: grid; place-items: center; background: var(--ifx-neutral-100); color: var(--ifx-neutral-600); }
-#root .simple-move-heading .simple-move-photo-placeholder { display: grid; place-items: center; }
+.simple-transfer-tracker .simple-move-heading .simple-move-photo-placeholder { display: grid; place-items: center; }
 #root .simple-move-heading > .simple-move-identity { flex: 1; min-width: 0; }
-#root .simple-move-heading h2 { display:flex; align-items:flex-start; gap:var(--ifx-space-3); color:var(--ifx-neutral-900); font-size:var(--ifx-text-lg); font-weight:var(--ifx-weight-bold); line-height:var(--ifx-leading-heading); }
+.simple-transfer-tracker .simple-move-heading h2 { display:flex; align-items:flex-start; gap:var(--ifx-space-3); color:var(--ifx-neutral-900); font-size:var(--ifx-text-lg); font-weight:var(--ifx-weight-bold); line-height:var(--ifx-leading-heading); }
 #root .simple-move-heading > .move-vehicle-context { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 12px; padding-top:4px; border-top:1px solid var(--ifx-neutral-200); }
 #root .simple-move-identifiers { display:flex; flex-wrap:wrap; gap:4px 18px; }
 #root .simple-move-identifiers > div { display:flex; align-items:center; gap:6px; min-width:0; }
@@ -46,11 +46,11 @@
 #root .simple-move-next h3 { color:var(--navy-900); font-size: 17px; line-height: 1.45; font-weight: 700; }
 #root .simple-move-next p { margin-top: 4px; color: var(--ifx-neutral-700); font-size: 14px; }
 #root .simple-move-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-#root .simple-move-actions .ifx-button { min-height: 44px; white-space: normal; }
+.simple-transfer-tracker .simple-move-actions .ifx-button { min-height: var(--ifx-control-height-md); white-space: normal; }
 #root .simple-move-more { position: relative; }
-#root .simple-move-more > summary.ifx-button { list-style: none; cursor: pointer; }
+.simple-transfer-tracker .simple-move-more > summary.ifx-button { list-style: none; cursor: pointer; }
 #root .simple-move-more > div { display: grid; position: absolute; z-index: 8; top: calc(100% + 5px); right: 0; min-width: 190px; padding: 4px; background: var(--ifx-neutral-0); border: 1px solid var(--ifx-neutral-300); border-radius: 6px; box-shadow: var(--ifx-elevation-2); }
-#root .simple-move-more button.ifx-button { justify-content: flex-start; min-height: 44px; text-align: left; white-space: normal; }
+.simple-transfer-tracker .simple-move-more button.ifx-button { justify-content: flex-start; min-height: var(--ifx-control-height-md); text-align: left; white-space: normal; }
 #root .simple-move-details { min-width: 0; }
 #root .simple-move-details h3 { margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border-strong); color:var(--navy-900); font-size:16px; font-weight:700; }
 #root .simple-transfer-tracker dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px 24px; }
@@ -110,7 +110,7 @@
 @media (max-width: 700px) {
   #root .simple-transfer-tracker { gap: 16px; padding: 16px; }
   #root .simple-move-heading h2 { font-size: 20px; }
-  #root .simple-move-heading img { width: 96px; height: 72px; }
+  .mif-transfer-feature.simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__title img { width: var(--ifx-transfer-list-thumbnail-width); height: var(--ifx-transfer-list-thumbnail-height); }
   #root .simple-move-location { grid-template-columns: repeat(2,minmax(0,1fr)); padding: 0 0 14px; }
   #root .simple-move-actions .mif-button { flex: 1 1 auto; min-height: 44px; }
   #root .simple-transfer-tracker dl { gap: 12px; }

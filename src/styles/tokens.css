@@ -124,6 +124,27 @@
   --ifx-space-12: 3rem;
   --ifx-space-16: 4rem;
 
+  /* Transfer queue geometry retains the compact vehicle thumbnail and row proportions. */
+  --ifx-transfer-list-thumbnail-width: 96px;
+  --ifx-transfer-list-thumbnail-height: 72px;
+  --ifx-transfer-list-thumbnail-compact-width: 66px;
+  --ifx-transfer-list-thumbnail-compact-height: 50px;
+  --ifx-transfer-list-row-min-height: 126px;
+  --ifx-transfer-list-chevron-size: 14px;
+  --ifx-transfer-list-search-gap: 9px;
+  --ifx-transfer-list-search-inline-padding: 11px;
+  --ifx-transfer-list-copy-gap: 5px;
+  --ifx-transfer-list-field-gap: 10px;
+  --ifx-transfer-heading-gap: 14px;
+  --ifx-transfer-list-mobile-row-padding: 14px;
+  --ifx-transfer-list-count-size: 22px;
+  --ifx-transfer-list-count-inline-padding: 5px;
+  --ifx-transfer-list-count-compact-width: 19px;
+  --ifx-transfer-list-count-compact-inline-padding: 3px;
+  --ifx-transfer-filter-select-end-padding: 18px;
+  --ifx-transfer-detail-leading: 1.45;
+  --ifx-transfer-row-leading: 1.35;
+
   --ifx-radius-xs: 5px;
   --ifx-radius-sm: 8px;
   --ifx-radius-md: 12px;

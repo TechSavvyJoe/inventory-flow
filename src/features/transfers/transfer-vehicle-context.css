@@ -1,10 +1,10 @@
-#root .mif-transfer-feature .move-vehicle-value { margin: 4px 0 0; color: inherit; font: 600 14px/1.45 var(--font-app); font-variant-numeric: tabular-nums; }
-#root .mif-transfer-feature .move-vehicle-specs { margin: 4px 0 0; color: inherit; font: 400 14px/1.45 var(--font-app); overflow-wrap: anywhere; }
+.mif-transfer-feature .move-vehicle-value { margin: var(--ifx-space-1) 0 0; color: inherit; font: var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-transfer-detail-leading) var(--font-app); font-variant-numeric: tabular-nums; }
+.mif-transfer-feature .move-vehicle-specs { margin: var(--ifx-space-1) 0 0; color: inherit; font: var(--ifx-weight-regular) var(--ifx-text-md)/var(--ifx-transfer-detail-leading) var(--font-app); overflow-wrap: anywhere; }
 #root .mif-transfer-feature :is(.move-vehicle-value,.move-vehicle-specs):empty { display: none; }
 #root .mif-transfer-feature .inventory-service-link { margin: 0; font-size: 14px; }
 #root .mif-transfer-feature .move-request-current-location { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 20px; border-bottom: 1px solid var(--ifx-neutral-300); color: var(--ifx-neutral-700); font: 400 14px/1.45 var(--font-app); }
 #root .mif-transfer-feature .move-request-current-location strong { color: var(--ifx-neutral-900); font-weight: 600; }
-#root .simple-transfer-tracker .simple-move-heading { display: block; min-width: 0; margin: 0; padding: 0 0 var(--ifx-space-2); border: 0; border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-neutral-300); background: var(--ifx-neutral-100); }
+.simple-transfer-tracker .simple-move-heading { display: block; min-width: 0; margin: 0; padding: 0 0 var(--ifx-space-2); border: 0; border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-neutral-300); background: var(--ifx-neutral-100); }
 .simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; overflow: visible; }
 .simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__label { padding: 0; background: transparent; }
 .simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__label::after { display: none; }
@@ -35,7 +35,7 @@
 .mif-request-header.ifx-page-header .ifx-page-header__actions .mif-icon-button { min-width: var(--ifx-control-height-md); min-height: var(--ifx-control-height-md); }
 .mif-request-header.ifx-page-header .move-vehicle-context { border-color: var(--ifx-workspace-header-border); color: var(--ifx-workspace-header-ink); }
 .mif-request-header.ifx-page-header .move-vehicle-context :is(.move-vehicle-value,.move-vehicle-specs,.inventory-service-link) { color: var(--ifx-workspace-header-ink); }
-#root .mif-transfer-feature .move-vehicle-context p { margin: 0; }
+.mif-transfer-feature .move-vehicle-context p:not(.move-vehicle-value):not(.move-vehicle-specs) { margin: 0; }
 #root .mif-transfer-feature .move-vehicle-context .inventory-service-link span { color: inherit; font-size: 14px; }
 #root .mif-transfer-feature .move-vehicle-links { display:flex; gap:8px; flex-wrap:wrap; margin:0; }
 #root .mif-transfer-feature .move-vehicle-links a { display:inline-flex; justify-content:center; align-items:center; flex:1; min-height:44px; padding:8px 12px; border:1px solid var(--ifx-neutral-300); border-radius:6px; color:var(--ifx-info); background:var(--ifx-neutral-0); text-decoration:none; font:600 14px/1.4 var(--font-app); }
