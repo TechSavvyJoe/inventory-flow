@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizedPageSize } from './InventoryExperience';
 import { InventoryExperienceHarness } from '../../../tests/unit/inventory-experience-harness';
@@ -528,6 +529,45 @@ describe('vehicle workspace background isolation', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close vehicle details' }));
 
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it.each([
+    ['keyboard', 'Escape'],
+    ['keyboard', 'Close'],
+    ['pointer without native focus', 'Escape'],
+    ['pointer without native focus', 'Close'],
+  ] as const)('returns focus to the exact photo opener after %s activation and %s dismissal', async (activation, dismissal) => {
+    const user = userEvent.setup();
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[vehicle(5)]} />);
+    const photo = screen.getByRole('button', { name: /^View photos and details for 2024 Ford F-150/i });
+    const title = screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i });
+    const visibleRects = { length: 1 } as DOMRectList;
+    const photoRects = vi.spyOn(photo, 'getClientRects').mockReturnValue(visibleRects);
+    const titleRects = vi.spyOn(title, 'getClientRects').mockReturnValue(visibleRects);
+
+    try {
+      if (activation === 'keyboard') {
+        photo.focus();
+        await user.keyboard('{Enter}');
+      } else {
+        screen.getByRole('combobox', { name: 'Search inventory' }).focus();
+        expect(photo).not.toHaveFocus();
+        // fireEvent preserves Safari's pointer behavior: the browser has not
+        // focused this button before its click handler opens the workspace.
+        fireEvent.click(photo);
+      }
+      const workspace = screen.getByRole('dialog', { name: /vehicle workspace/i });
+      expect(within(workspace).getByRole('heading', { name: '2024 Ford F-150 XLT 5' })).toBeVisible();
+      if (dismissal === 'Escape') await user.keyboard('{Escape}');
+      else await user.click(within(workspace).getByRole('button', { name: 'Close vehicle details' }));
+
+      await waitFor(() => expect(photo).toHaveFocus());
+      expect(screen.queryByRole('dialog', { name: /vehicle workspace/i })).not.toBeInTheDocument();
+      expect(title).not.toHaveFocus();
+    } finally {
+      photoRects.mockRestore();
+      titleRects.mockRestore();
+    }
   });
 
   it('uses the primary View action as the fallback when a pointer click does not focus it', async () => {

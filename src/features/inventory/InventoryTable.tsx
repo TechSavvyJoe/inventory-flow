@@ -245,7 +245,7 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
   const series = [...new Set([vehicle.trim, vehicle.bodyType || vehicle.bodyStyle].filter((value): value is string => Boolean(value?.trim())))].join(" · ");
   return (
     <div className="inv-desk-vehicle">
-      <button type="button" className="inv-desk-vehicle__photo" aria-label={`View photos and details for ${name}`} onClick={event => { stopRowSelection(event); onSelectVehicle(vehicle); }}>
+      <button type="button" className="inv-desk-vehicle__photo" data-inventory-vehicle-trigger={vehicle.id} aria-label={`View photos and details for ${name}`} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle); }}>
         <VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" priority={priority} />
         <PhotoCount vehicle={vehicle} />
       </button>

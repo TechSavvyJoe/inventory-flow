@@ -99,7 +99,7 @@
 .if-srp :is(.inv-btn.is-active,.inventory-shortlist-filter[aria-pressed="true"]) { color:var(--blue-700); border-color:var(--blue-600); background:var(--blue-050); }
 .if-srp :is(.inv-btn,.inventory-shortlist-filter) > svg { flex:none; width:var(--ifx-space-4); height:var(--ifx-space-4); }
 .if-srp .inv-btn__count { font:inherit; }
-.if-srp .inventory-scan-entry { display:inline-flex; flex:none; margin:0; }
+.if-srp .inventory-scan-entry { display:none; flex:none; margin:0; }
 .if-srp .if-srp-controls { display:flex; align-items:center; flex-wrap:wrap; gap:0 var(--ifx-space-4); margin:0; padding:var(--ifx-space-1) var(--ifx-space-2); border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); border-radius:0 0 var(--ifx-radius-sm) var(--ifx-radius-sm); background:var(--ifx-panel-header); }
 .if-srp :is(.if-srp-control-heading,.if-srp-service-heading) { flex:none; margin:0 var(--ifx-space-1) 0 0; color:var(--ink-600); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); }
 .if-srp .if-srp-service-filters { padding-left:var(--ifx-space-3); border-left:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }

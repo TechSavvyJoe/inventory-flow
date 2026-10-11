@@ -107,7 +107,7 @@
 .vehicle-moves-page .transfer-list { min-width: 0; display: block; height: auto; padding: 0; overflow: visible; background: var(--ifx-neutral-0); border: 0; border-radius: 0; }
 .vehicle-moves-page .transfer-list .transfer-list-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--ifx-space-2); position:static; padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-neutral-300); background:var(--ifx-panel-surface); }
 .vehicle-moves-page .transfer-list-toolbar > .transfer-list-search { flex:1 1 100%; min-width:0; }
-.vehicle-moves-page .transfer-list-toolbar > .transfer-list-views { flex:1 1 calc(var(--ifx-space-16) * 4); min-width:0; }
+.vehicle-moves-page .transfer-list-toolbar > .transfer-list-views { flex:1 0 100%; min-width:0; }
 .vehicle-moves-page .transfer-list-toolbar > .transfer-list-tools { flex:1 1 calc(var(--ifx-space-16) * 5); }
 .vehicle-moves-page .transfers-page-header .ifx-page-header__controls { justify-content:flex-end; }
 .vehicle-moves-page .transfers-page-header .ifx-page-header__row { flex-wrap:wrap; }
@@ -116,7 +116,7 @@
 #root .vehicle-moves-page .transfer-list-search input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px 10px 39px; border: 0; background: transparent; color: var(--ifx-neutral-900); font-size: 14px; }
 #root .vehicle-moves-page .transfer-list-search button { display:grid; flex:0 0 44px; width:44px; height:44px; place-items:center; border:0; background:transparent; color:var(--ifx-neutral-700); }
 #root .vehicle-moves-page .transfer-list-search button svg { position:static; width:18px; height:18px; }
-.vehicle-moves-page .transfer-list-views { display:flex; flex-wrap:wrap; gap:var(--ifx-space-1-5); }
+.vehicle-moves-page .transfer-list-views { display:flex; flex-wrap:nowrap; gap:var(--ifx-space-1-5); }
 .vehicle-moves-page .transfer-list-views .ifx-button { flex:1 1 auto; min-width:max-content; width:auto; justify-content:center; gap:var(--ifx-space-1-5); border:0; border-bottom:var(--ifx-stroke-emphasis) solid transparent; border-radius:0; background:var(--ifx-panel-surface); color:var(--ink-600); box-shadow:none; padding-inline:var(--ifx-space-1); }
 .vehicle-moves-page .transfer-list-views .ifx-button__label { display: inline-flex; align-items: center; justify-content: center; gap: var(--ifx-space-1-5); }
 .vehicle-moves-page .transfer-list-views .ifx-button.is-active { border-bottom-color:var(--ifx-brand-blue); color:var(--ifx-brand-blue); box-shadow:none; }
