@@ -604,7 +604,7 @@
   .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights > ul { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width:680px) {
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--ifx-space-3); padding-inline:var(--ifx-space-2); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference { grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr); gap:0 var(--ifx-space-3); padding-inline:var(--ifx-space-2); }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-stock { grid-column:1; grid-row:2; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-vin { grid-column:2; grid-row:2; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-service { grid-column:2; grid-row:1; }
@@ -638,6 +638,15 @@
   .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights > ul { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-keyfacts > dl { grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-2); }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-keyfacts > .vdp-focus-ledger-heading { display:block; }
+}
+
+/* Compact phones give each identifier its own row, keeping the complete value
+   separate from the same 44px copy target used at wider sizes. */
+@media (max-width:360px) {
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-identifiers { grid-template-columns:minmax(0,1fr); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-identifiers .inventory-workspace-fact + .inventory-workspace-fact { --vdp-fact-left-border:0; --vdp-fact-padding:var(--ifx-space-1) var(--ifx-control-height-md) var(--ifx-space-1) 0; border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-stock { grid-column:1 / -1; grid-row:2; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-vin { grid-column:1 / -1; grid-row:3; }
 }
 
 /* Utilities share the defined treatment of the workspace's FlowButtons. */

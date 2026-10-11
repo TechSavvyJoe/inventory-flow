@@ -878,7 +878,7 @@ test('phone cards show exact equipment and document facts with direct detail act
   const operationalSignals = card.getByLabel('Operational vehicle signals')
   const workflowActions = card.getByRole('group', { name: 'Actions for 2024 Ford F-150 Lariat' })
   const registrationFacts = card.getByLabel('Registration calculator values')
-  const reportShortcuts = card.getByLabel('Source evidence for 2024 Ford F-150 Lariat')
+  const reportShortcuts = card.getByLabel('Source evidence for 2024 Ford F-150 Lariat', { exact: true })
   const expandedRecords = page.getByRole('dialog', {name:'2024 Ford F-150 Lariat records',exact:true})
   const history = expandedRecords.locator('[data-resource-kind="autocheck"]')
   const sticker = expandedRecords.locator('[data-resource-kind="window-sticker"]')
