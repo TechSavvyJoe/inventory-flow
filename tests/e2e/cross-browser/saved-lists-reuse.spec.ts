@@ -1,5 +1,5 @@
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
-import { createHash } from 'node:crypto'
+import { expect, test as base, type Locator, type Page, type TestInfo } from '@playwright/test'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { PDFDocument } from 'pdf-lib'
 import type { BootstrapData } from '../../../src/types'
@@ -9,6 +9,40 @@ import type { BootstrapData } from '../../../src/types'
 // Native sharing is intercepted locally and never contacts a recipient.
 type SharedPdf = { name: string; type: string; header: string; sha256: string }
 type ShareWindow = Window & { savedListShares: SharedPdf[] }
+type SavedListReceipt = { id: string; label: string; revision: number; items: Array<{ vin: string }> }
+type OwnedListCleanup = { created: { id: string; label: string; headers: Record<string, string> } | null }
+
+const test = base.extend<{ ownedList: OwnedListCleanup }>({
+  ownedList: async ({ request, baseURL }, use, testInfo) => {
+    expect(baseURL).toBe('http://127.0.0.1:4273')
+    const ownedList: OwnedListCleanup = { created: null }
+    await use(ownedList)
+    if (!ownedList.created) return
+    // This fixture removes only the exact list returned by our UI create request,
+    // including after a failed assertion. Existing lists are never test cleanup.
+    const { id, label, headers } = ownedList.created
+    const before = await request.get('/api/saved-lists', { headers })
+    expect(before.ok(), 'Read the test-owned list for cleanup').toBe(true)
+    const { lists } = await before.json() as { lists: SavedListReceipt[] }
+    const created = lists.find(list => list.id === id)
+    expect(created?.label).toBe(label)
+    expect(created!.items.every(item => item.vin.startsWith('TESTDATA'))).toBe(true)
+    const removed = await request.post('/api/saved-lists', {
+      headers: { ...headers, origin: baseURL!, 'idempotency-key': randomUUID() },
+      data: { action: 'delete', listId: id, expectedRevision: created!.revision },
+    })
+    expect(removed.ok(), 'Delete only the test-owned list').toBe(true)
+    expect(await removed.json()).toMatchObject({ id, deleted: true })
+    const after = await request.get('/api/saved-lists', { headers })
+    expect(after.ok()).toBe(true)
+    const remaining = await after.json() as { lists: SavedListReceipt[] }
+    expect(remaining.lists).toEqual(lists.filter(list => list.id !== id))
+    await testInfo.attach('test-owned-list-cleanup', {
+      contentType: 'application/json',
+      body: JSON.stringify({ id, label, deleted: true, retainedListIds: remaining.lists.map(list => list.id) }),
+    })
+  },
+})
 
 async function expectUsableControls(page: Page, surface: Locator) {
   const viewport = page.viewportSize()!
@@ -100,7 +134,7 @@ async function saveComparison(page: Page, sheet: Locator, testInfo: TestInfo, st
   return createHash('sha256').update(bytes).digest('hex')
 }
 
-test('a saved customer list reopens, persists edits, refreshes comparison facts and reshares only on request', async ({ page }, testInfo) => {
+test('a saved customer list reopens, persists edits, refreshes comparison facts and reshares only on request', async ({ page, ownedList }, testInfo) => {
   test.setTimeout(120_000)
   const label = `QA ${testInfo.project.name.split('-').map(part => part[0].toUpperCase()).join('')} ${testInfo.workerIndex}`
   let revision: 'initial' | 'updated' | 'retry' = 'initial'
@@ -162,11 +196,24 @@ test('a saved customer list reopens, persists edits, refreshes comparison facts 
   const panel = page.getByRole('region', { name: /^Saved vehicles \d+$/ })
   await panel.getByRole('button', { name: 'New list', exact: true }).click()
   await panel.getByRole('textbox', { name: 'New customer list', exact: true }).fill(label)
+  const creation = page.waitForResponse(response => {
+    if (new URL(response.url()).pathname !== '/api/saved-lists' || response.request().method() !== 'POST') return false
+    const body = response.request().postDataJSON() as { action?: string; label?: string }
+    return body.action === 'create' && body.label === label
+  })
   await panel.getByRole('button', { name: 'Create', exact: true }).click()
+  const createdResponse = await creation
+  expect(createdResponse.ok()).toBe(true)
+  const createdList = await createdResponse.json() as SavedListReceipt
+  ownedList.created = {
+    id: createdList.id, label,
+    headers: Object.fromEntries(Object.entries(createdResponse.request().headers()).filter(([name]) => name.startsWith('x-inventory-'))),
+  }
   const select = panel.getByRole('combobox', { name: 'Customer list', exact: true })
   await expect(select).toHaveValue(/.+/)
   await expect(select.getByRole('option', { name: `${label} (0)`, exact: true })).toHaveJSProperty('selected', true)
   const listId = await select.inputValue()
+  expect(listId).toBe(createdList.id)
   await addFromReopenedList(panel, 'DEMO-H02', label)
   await addFromReopenedList(panel, 'DEMO-F02', label)
   await page.keyboard.press('Escape')

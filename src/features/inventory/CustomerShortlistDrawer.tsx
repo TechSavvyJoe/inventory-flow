@@ -194,7 +194,7 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
           <button type="button" aria-expanded={addingVehicles} aria-controls={`${managementPanelId}-vehicles`} disabled={writesBlocked} onClick={() => setAddingVehicles(value => !value)}><Plus size={16} aria-hidden="true" />Add vehicles</button>
           {addingVehicles ? <div id={`${managementPanelId}-vehicles`} className="shortlist-manager__vehicle-search">
             <label>Find vehicles to add<input ref={vehicleSearchRef} type="search" value={vehicleQuery} onChange={event => setVehicleQuery(event.target.value)} placeholder="Stock, VIN, year, make or model" /></label>
-            <p>{candidates.length ? `${candidates.length} matching vehicles${candidates.length > 6 ? ' · first 6 shown; refine your search' : ''}` : 'No matching vehicles outside this list.'}</p>
+            <p>{candidates.length ? `${candidates.length} matching ${candidates.length === 1 ? 'vehicle' : 'vehicles'}${candidates.length > 6 ? ' · first 6 shown; refine your search' : ''}` : 'No matching vehicles outside this list.'}</p>
             <ul aria-label="Vehicles to add">{candidates.slice(0, 6).map(vehicle => <li key={vehicle.vin}>
               <div><strong>{[vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ')}</strong><span>{vehicle.stockNumber} · {formatMoney(vehicle.price ?? null)}</span></div>
               <button type="button" aria-label={`Add ${vehicle.stockNumber} to ${management.activeLabel}`} disabled={writesBlocked} onClick={async () => {
