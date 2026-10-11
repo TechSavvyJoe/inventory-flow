@@ -173,20 +173,24 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
         await tab.scrollIntoViewIfNeeded()
         await expect(tab).toBeInViewport()
       }
-      // Phone identity keeps stock under price and the full copyable VIN near
-      // the photo; the desktop identifier rail is intentionally hidden.
-      await expect(workspace.locator('.vdp-focus-mobile-stock')).toHaveText('Stock DEMO-H02')
-      await expect(workspace.locator('.vdp-focus-mobile-stock')).toBeVisible()
-      const identifiers = workspace.locator('.vdp-focus-mobile-vin .copyable-value__content')
+      // The bounded photo/reference panel exposes both complete identifiers.
+      const reference = workspace.getByRole('region', { name: 'Vehicle photo and reference values' })
+      const stockCopy = reference.getByRole('button', { name: 'Copy stock number: DEMO-H02', exact: true })
+      await expect(stockCopy).toBeVisible()
+      await expect(stockCopy.locator('..').getByText('DEMO-H02', { exact: true })).toBeVisible()
+      const vinCopy = reference.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0002', exact: true })
+      const identifiers = vinCopy.locator('..').getByText('TESTDATAHWELL0002', { exact: true })
       await expect(identifiers).toHaveText('TESTDATAHWELL0002')
-      const vinCopy = workspace.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0002', exact: true })
       await vinCopy.scrollIntoViewIfNeeded()
       const vinCopyBounds = (await vinCopy.boundingBox())!
       expect(vinCopyBounds.x + vinCopyBounds.width, 'full VIN copy stays inside the phone').toBeLessThanOrEqual(viewport.width)
+      expect(vinCopyBounds.width).toBeGreaterThanOrEqual(44)
+      expect(vinCopyBounds.height).toBeGreaterThanOrEqual(44)
       for (const value of await identifiers.all()) {
         await value.scrollIntoViewIfNeeded()
         const content = (await value.boundingBox())!
         expect(content.x + content.width).toBeLessThanOrEqual(viewport.width)
+        expect(content.x + content.width, 'VIN text stays separate from its copy target').toBeLessThanOrEqual(vinCopyBounds.x)
         await expect(value).toHaveCSS('white-space', 'nowrap')
         const readable = await value.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
         expect(readable.scroll, 'full VIN is readable without clipping').toBeLessThanOrEqual(readable.client + 1)

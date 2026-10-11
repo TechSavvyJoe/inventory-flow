@@ -141,7 +141,7 @@ describe('focused vehicle workspace', () => {
     expect(specifications.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(history.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(equipment.compareDocumentPosition(reference) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(shortcuts.compareDocumentPosition(reference) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reference.compareDocumentPosition(shortcuts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(reference).getByText('In-service').closest('dt')).toHaveTextContent('In-serviceOASIS');
     expect(within(reference).getByText('Coverage').closest('dt')).toHaveTextContent('CoverageOASIS');
     expect(within(shortcuts).queryByLabelText('AutoCheck captured summary')).not.toBeInTheDocument();
@@ -151,7 +151,7 @@ describe('focused vehicle workspace', () => {
     expect(within(pricing).getByText('$42,500')).toBeVisible();
     expect(within(pricing).getByText('$50,560')).toBeVisible();
     expect(reference).toHaveTextContent('Powertrain · 35 months remaining · 21,500 miles remaining');
-    expect(within(pricing).getByText('Window sticker · Before options & destination')).toBeVisible();
+    expect(within(pricing).getByText('Window sticker · Base MSRP before options & destination')).toBeVisible();
     expect(within(pricing).getByRole('button', {name:'Copy base MSRP: 42500'})).toBeVisible();
     expect(within(reference).queryByText('Public listing')).not.toBeInTheDocument();
     expect(within(reference).queryByText('08/29/2026')).not.toBeInTheDocument();
@@ -185,7 +185,7 @@ describe('focused vehicle workspace', () => {
     const facts=screen.getByLabelText('Original vehicle pricing');
     const lookup=within(facts).getByText('Original MSRP',{selector:'dt'}).parentElement!;
     expect(lookup).toHaveTextContent('$50,560');
-    expect(lookup).toHaveTextContent('Window sticker');
+    expect(within(facts).getByText('Window sticker')).toBeVisible();
     expect(within(facts).queryByText('Base MSRP',{selector:'dt'})).not.toBeInTheDocument();
     expect(lookup).not.toHaveTextContent('123.45');
     expect(within(facts).queryByText('Weight fee',{selector:'dt'})).not.toBeInTheDocument();
@@ -279,21 +279,20 @@ describe('focused vehicle workspace', () => {
     }
   });
 
-  it('keeps one vehicle identity, responsive copy controls and persistent close controls', () => {
+  it('keeps one vehicle identity, responsive copy controls and persistent close controls', async () => {
     render(<main><VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={vi.fn()} /></main>);
     expect(document.querySelectorAll('main')).toHaveLength(1);
     expect(screen.getAllByRole('heading', { name: '2017 Ford F-150 Lariat' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeVisible();
-    const desktopIdentifiers = document.querySelector('.vdp-focus-identifiers') as HTMLElement;
-    const mobileVin = document.querySelector('.vdp-focus-mobile-vin') as HTMLElement;
-    expect(within(desktopIdentifiers).getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeInTheDocument();
-    expect(within(mobileVin).getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeInTheDocument();
-    expect(document.querySelector('.vdp-focus-mobile-stock')).toHaveTextContent('Stock W5863Q');
+    const reference = screen.getByRole('region', { name: 'Vehicle photo and reference values' });
+    expect(within(reference).getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeVisible();
+    expect(within(reference).getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeVisible();
+    expect(screen.getAllByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Back to inventory' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close vehicle details' })).toBeVisible();
-    const quickStatus = screen.getByRole('group', { name: 'Quick vehicle status' });
+    const quickStatus = screen.getByRole('region', { name: 'Vehicle operational summary' });
     expect(quickStatus).toHaveTextContent('Fowlerville');
-    expect(quickStatus).toHaveTextContent('On hold');
+    expect(quickStatus).toHaveTextContent('Held · Reported');
     expect(within(quickStatus).getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
     expect(quickStatus).not.toHaveTextContent('123,328 mi');
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
@@ -301,6 +300,14 @@ describe('focused vehicle workspace', () => {
     expect(scroll.contains(screen.getByRole('tablist'))).toBe(false);
     expect(scroll.contains(screen.getByRole('heading', { name: '2017 Ford F-150 Lariat' }))).toBe(false);
     expect(scroll.contains(screen.getByRole('toolbar', { name: 'Vehicle actions' }))).toBe(false);
+    for (const name of ['Equipment', 'Records', 'Holds & moves', 'Activity']) {
+      await userEvent.click(screen.getByRole('tab', { name }));
+      const persistentReference = screen.getByRole('group', { name: 'Vehicle reference' });
+      expect(within(persistentReference).getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeVisible();
+      expect(within(persistentReference).getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeVisible();
+      expect(persistentReference).toHaveTextContent('$20,988');
+      expect(scroll.contains(persistentReference)).toBe(false);
+    }
   });
 
   it('exposes exact source links in recognizable cards and keeps utility actions separate', () => {
@@ -618,7 +625,7 @@ describe('focused vehicle workspace', () => {
     const operationalDetails = screen.getByRole('region', { name: 'Operational details' });
     expect(within(operationalDetails).getByText('Salesperson').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
     expect(within(operationalDetails).getByText('Backup holds').closest('.inventory-workspace-fact')).toHaveTextContent('2');
-    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('ServiceWaiting for service');
+    expect(within(operations).getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
   });
 
   it('renders only the selected pane and resets scroll without moving the header or navigation', async () => {
@@ -753,7 +760,7 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('link', { name: 'Mark Ready' })).toHaveAttribute('href', '/service?vin=TESTDATASYN000002&action=serviced');
     rerender(<VehicleWorkspace vehicle={{ ...unit, serviceReadiness: undefined }} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     expect(screen.getByRole('link', { name: 'Mark Ready' })).toBeVisible();
-    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('ServiceWaiting for service');
+    expect(screen.getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
   });
 
   it('keeps every equipment item reachable without repeated source labels or tooltips', async () => {
@@ -948,7 +955,7 @@ describe('focused vehicle workspace', () => {
     expect(equipment.compareDocumentPosition(operationalDetails) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(operationalDetails.compareDocumentPosition(records) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(records.compareDocumentPosition(customer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(operations).getByRole('link', { name: /^Waiting for service\. Open service status for VIN TESTDATASYN000002$/ }))
+    expect(within(operations).getByRole('link', { name: 'Service: Waiting for service' }))
       .toHaveAttribute('href', '/service?vin=TESTDATASYN000002');
   });
 

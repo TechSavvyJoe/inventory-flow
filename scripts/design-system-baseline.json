@@ -291,7 +291,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 31
+      "idSelectors": 3
     },
     "src/features/inventory/inventory-modern.css": {
       "smallText": 50,
@@ -333,7 +333,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 345
+      "idSelectors": 309
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,

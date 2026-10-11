@@ -152,10 +152,10 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    // Each vehicle owns four data cells and a separate one-cell action footer.
-    // Paging counts the vehicle rows, not their companion action rows.
+    // Each vehicle has one details trigger plus joined evidence and action rows.
+    // Paging counts vehicles, not the companion rows or the number of columns.
     const vehicleRows = () => within(screen.getByRole('table')).getAllByRole('row')
-      .filter(row => within(row).queryAllByRole('cell').length === 4)
+      .filter(row => within(row).queryByRole('button', { name: /^Open vehicle details for / }))
     expect(vehicleRows()).toHaveLength(10)
 
     fireEvent.change(rowsSelect, { target: { value: '20' } })

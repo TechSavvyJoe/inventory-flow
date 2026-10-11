@@ -74,7 +74,8 @@ param(
   [Parameter(Mandatory)][string]$MonitorPath,
   [Parameter(Mandatory)][string]$WorkspaceRoot,
   [Parameter(Mandatory)][string]$ScenarioPath,
-  [Parameter(Mandatory)][string]$ResultPath
+  [Parameter(Mandatory)][string]$ResultPath,
+  [Parameter(Mandatory)][string]$ScenarioNow
 )
 $ErrorActionPreference = 'Stop'
 $scenario = Get-Content -LiteralPath $ScenarioPath -Raw | ConvertFrom-Json
@@ -110,13 +111,16 @@ function global:Write-EventLog {
   $global:mockEvents += 1
 }
 
-& $MonitorPath -WorkspaceRoot $WorkspaceRoot -Now ([DateTimeOffset]::Parse([string]$scenario.now)) -RecheckDelaySeconds 0
+# ConvertFrom-Json turns ISO timestamps into host-local DateTime values. Keep
+# the original offset for the monitor's operating clock, just as its Now
+# parameter receives DateTimeOffset.Now on the scheduled host.
+& $MonitorPath -WorkspaceRoot $WorkspaceRoot -Now ([DateTimeOffset]::Parse($ScenarioNow)) -RecheckDelaySeconds 0
 @{ started = $global:mockStarted; events = $global:mockEvents } |
   ConvertTo-Json -Compress |
   Set-Content -LiteralPath $ResultPath -Encoding utf8
 `
 
-function run(root: string, scenario: Record<string, unknown>) {
+function run(root: string, scenario: Record<string, unknown>, hostTimeZone?: string) {
   const harnessPath = path.join(root, 'monitor-harness.ps1')
   const scenarioPath = path.join(root, 'scenario.json')
   const resultPath = path.join(root, 'result.json')
@@ -128,7 +132,8 @@ function run(root: string, scenario: Record<string, unknown>) {
     '-WorkspaceRoot', root,
     '-ScenarioPath', scenarioPath,
     '-ResultPath', resultPath,
-  ], { encoding: 'utf8' })
+    '-ScenarioNow', String(scenario.now),
+  ], { encoding: 'utf8', env: { ...process.env, ...(hostTimeZone ? { TZ: hostTimeZone } : {}) } })
   expect(execution.error, 'PowerShell (pwsh) is required to exercise the real monitor').toBeUndefined()
   expect(execution.status, `${execution.stdout}\n${execution.stderr}`).toBe(0)
   expect(execution.stdout).toBe('')
@@ -140,7 +145,7 @@ const ready = (lastResult = 0, lastRunTime = '2026-09-25T11:55:00-04:00') => ({
 })
 
 describe('intraday hold task monitor', () => {
-  it('preserves the active alert and recovery history before the first operating slot', () => {
+  it.each(['UTC', 'America/Detroit'])('preserves the active alert and recovery history before the first operating slot on a %s host', (hostTimeZone) => {
     const root = workspace()
     writeReceipts(root, { checkedAt: '2026-09-25T12:01:00Z', verifiedAt: '2026-09-25T12:00:00Z' })
     const directory = path.join(root, 'work/hold-refresh-monitor')
@@ -154,7 +159,7 @@ describe('intraday hold task monitor', () => {
     }))
     expect(run(root, {
       now: '2026-09-25T08:30:00-04:00', initial: ready(0, '2026-09-25T08:05:00-04:00'),
-    })).toEqual({ started: 0, events: 0 })
+    }, hostTimeZone)).toEqual({ started: 0, events: 0 })
     expect(readFileSync(alertPath, 'utf8')).toBe(retainedAlert)
     expect(JSON.parse(readFileSync(path.join(directory, 'state.json'), 'utf8'))).toMatchObject({
       lastAlertFingerprint: 'retained-alert', lastRecoveryTaskFailureFingerprint: 'retained-failure',

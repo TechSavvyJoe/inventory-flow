@@ -115,6 +115,14 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     serviceFilters.getByRole('button', { name: /^In service: \d+ vehicles$/ }),
     serviceFilters.getByRole('button', { name: /^Ready: \d+ vehicles$/ }),
   ]
+  const serviceSelect = serviceFilters.getByRole('combobox', { name: 'Inventory service status' })
+  const serviceControls = width <= 1100 ? [serviceSelect] : serviceButtons
+  if (width <= 1100) {
+    await expect(serviceSelect).toBeVisible()
+    await expect(serviceSelect.getByRole('option')).toHaveText([
+      /^All service: \d+ vehicles?$/, /^Waiting for service: \d+ vehicles?$/, /^In service: \d+ vehicles?$/, /^Ready: \d+ vehicles?$/,
+    ])
+  }
   const sections = [
     page.getByRole('combobox', { name: 'Search inventory' }),
     scope.getByRole('button', { name: /^Howell inventory, \d+ of \d+ group vehicles$/ }),
@@ -123,7 +131,7 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     quickFilters.getByRole('button', { name: /^All: \d+ vehicles$/ }),
     quickFilters.getByRole('button', { name: /^Held: \d+ vehicles$/ }),
     quickFilters.getByRole('button', { name: /^(?:Offsite|Away from home): \d+ vehicles$/ }),
-    ...serviceButtons,
+    ...serviceControls,
     page.getByRole('button', { name: /^Filters/ }),
     page.getByRole('button', { name: /^Sort inventory\./ }),
   ]
@@ -146,10 +154,10 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
   if (width <= 760) {
     const quickFiltersBox = (await quickFilters.boundingBox())!
     const serviceFiltersBox = (await serviceFilters.boundingBox())!
-    expect(serviceFiltersBox.y, `${width}px service filters follow the quick filters`).toBeGreaterThanOrEqual(quickFiltersBox.y + quickFiltersBox.height)
+    expect(serviceFiltersBox.y, `${width}px compact service filter stays with or after the quick filters`).toBeGreaterThanOrEqual(quickFiltersBox.y)
   }
-  for (const button of serviceButtons) {
-    const target = (await button.boundingBox())!
+  for (const control of serviceControls) {
+    const target = (await control.boundingBox())!
     expect(target.height).toBeGreaterThanOrEqual(44)
     expect(target.width).toBeGreaterThanOrEqual(44)
   }
@@ -485,7 +493,7 @@ test('inventory scope, literal search, multilevel sort, and row controls operate
   await capture(page, testInfo, 'inventory')
 })
 
-test('ordinary four-column inventory keeps its measured whole-vehicle density', async ({ page, isMobile }) => {
+test('ordinary joined records keep readable facts and two useful vehicles in the first canonical viewport', async ({ page, isMobile }, testInfo) => {
   test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
   await loadInventory(page)
   await page.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }).click()
@@ -504,17 +512,37 @@ test('ordinary four-column inventory keeps its measured whole-vehicle density', 
     })
     return { text, rowHeight: row.getBoundingClientRect().height, vehicleGroupHeight: row.closest('tbody')!.getBoundingClientRect().height }
   })
-  for (const { width, budget } of [{ width: 1024, budget: 340 }, { width: 1320, budget: 310 }, { width: 1440, budget: 300 }]) {
-    await page.setViewportSize({ width, height: 900 })
-    await page.getByRole('heading', { name: 'All locations inventory' }).scrollIntoViewIfNeeded()
-    await page.evaluate(async () => { await document.fonts.ready })
+  for (const { width, height } of [{ width: 1024, height: 768 }, { width: 1320, height: 820 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize({ width, height })
+    await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     const dimensions = await measure()
-    expect(dimensions.rowHeight, `${width}px ordinary row stays within its measured budget`).toBeLessThanOrEqual(budget)
-    expect(dimensions.vehicleGroupHeight, `${width}px ordinary vehicle group stays within its measured budget`).toBeLessThanOrEqual(budget)
+    await testInfo.attach(`ordinary-record-${width}`, { body: JSON.stringify({ width, height, ...dimensions }, null, 2), contentType: 'application/json' })
     for (const element of dimensions.text) {
-      expect(element.size, `${width}px ordinary Maverick ${element.selector} remains readable`).toBeGreaterThanOrEqual(11.5)
+      expect(element.size, `${width}px ordinary Maverick ${element.selector} remains readable`).toBeGreaterThanOrEqual(15)
       expect(element.scrollWidth, `${width}px ordinary Maverick ${element.selector} is not horizontally clipped`).toBeLessThanOrEqual(element.clientWidth + 1)
       expect(element.scrollHeight, `${width}px ordinary Maverick ${element.selector} is not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
+    }
+    const groups = page.locator('.inv-desk-table > tbody')
+    await expect(groups).toHaveCount(8)
+    const second = groups.nth(1)
+    if (width === 1440) {
+      for (const group of [groups.nth(0), second]) {
+        const box = (await group.boundingBox())!
+        expect(box.y, 'Complete records start inside the viewport').toBeGreaterThanOrEqual(0)
+        expect(box.y + box.height, 'Two complete ordinary vehicle records fit the first 1440px viewport').toBeLessThanOrEqual(height + 1)
+      }
+    } else {
+      for (const fact of [
+        second.getByRole('button', { name: /^Open vehicle details for/ }),
+        second.locator('.inv-desk-price strong'),
+        second.locator('[data-fact="location"]'),
+        second.locator('[data-fact="hold"]'),
+        second.locator('[data-fact="service"]'),
+      ]) {
+        await expect(fact).toBeVisible()
+        const box = (await fact.boundingBox())!
+        expect(box.y + box.height, `${width}px second vehicle identity, price, location, hold and service are in the first viewport`).toBeLessThanOrEqual(height + 1)
+      }
     }
     const actions = row.locator('xpath=..').getByRole('group', { name: /^Actions for 2022 Ford Maverick/ })
     await expect(actions).toBeVisible()
@@ -535,7 +563,7 @@ test('ordinary four-column inventory keeps its measured whole-vehicle density', 
   }
 })
 
-test('four-column comparison uses each row for a clear photo and high-value scan facts', async ({ page, isMobile }, testInfo) => {
+test('two primary columns keep complete vehicle evidence and direct actions in one joined record', async ({ page, isMobile }, testInfo) => {
   test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
   let includePriceChange = false
   await page.route('**/api/bootstrap?**', async route => {
@@ -565,39 +593,35 @@ test('four-column comparison uses each row for a clear photo and high-value scan
   // Assert against the rich-record fixture, independent of default price sorting.
   const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
   const richMaverick = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-F02"]')
-  // Each vehicle is one native four-cell row followed by a full-width action row.
+  // Each vehicle has two native decision cells, joined source evidence, then direct actions.
   const headers = page.locator('.inv-desk-table thead th')
-  await expect(headers).toHaveCount(4)
+  await expect(headers).toHaveCount(2)
   const headerContracts = [
-    { name: 'Vehicle & pricing', column: 'vehicle' },
-    { name: 'Configuration', column: 'configuration' },
-    { name: 'History', column: 'history' },
-    { name: 'Operations', column: 'status' },
+    'Vehicle', 'Operations',
   ]
-  for (const { name, column } of headerContracts) {
+  for (const name of headerContracts) {
     const header = page.getByRole('columnheader', { name, exact: true })
-    await expect(header).toBeVisible()
+    await expect(header).toBeAttached()
     await expect(header).toHaveAttribute('scope', 'col')
-    await expect(header).toHaveAttribute('data-column', column)
   }
-  // Earlier height checks used one universal 280/300px cap, conflating the
-  // ordinary inventory baseline with deliberately long-form source evidence
-  // and the new 44px copy/action layout. The ordinary unmodified fixture has
-  // its own measured contract; this rich case protects complete evidence.
-  await expect(main.locator(':scope > td')).toHaveCount(4)
+  await expect(headers.locator('button, a, select, input, [tabindex="0"]')).toHaveCount(0)
+  // Ordinary density has a separate canonical viewport contract. This rich
+  // fixture must retain complete source evidence and 44px controls as it grows.
+  await expect(main.locator(':scope > td')).toHaveCount(2)
   await expect(main.locator(':scope > td').nth(0)).toHaveAttribute('data-column', 'vehicle')
-  await expect(main.locator(':scope > td').nth(1)).toHaveAttribute('data-column', 'configuration')
-  await expect(main.locator(':scope > td').nth(2)).toHaveAttribute('data-column', 'history')
-  await expect(main.locator(':scope > td').nth(3)).toHaveAttribute('data-column', 'status')
+  await expect(main.locator(':scope > td').nth(1)).toHaveAttribute('data-column', 'status')
   const vehicleRows = main.locator('xpath=..')
+  const evidence = vehicleRows.locator(':scope > tr.inv-desk-evidence')
   const footer = vehicleRows.locator(':scope > tr.inv-desk-footer')
-  await expect(vehicleRows.locator(':scope > tr')).toHaveCount(2)
+  await expect(vehicleRows.locator(':scope > tr')).toHaveCount(3)
+  await expect(evidence.locator(':scope > td')).toHaveCount(1)
+  await expect(evidence.locator(':scope > td')).toHaveAttribute('colspan', '2')
   await expect(footer.locator(':scope > td')).toHaveCount(1)
-  await expect(footer.locator(':scope > td')).toHaveAttribute('colspan', '4')
+  await expect(footer.locator(':scope > td')).toHaveAttribute('colspan', '2')
   await expect(main.locator('[data-column="vehicle"]')).toBeVisible()
-  const historySource = main.locator('[data-column="history"] .inv-desk-source[aria-label^="History source evidence"]')
-  const equipmentSource = main.locator('[data-column="configuration"] .inv-desk-source[aria-label^="Factory equipment source evidence"]')
-  const oasisSource = main.locator('[data-column="status"] .inv-desk-source[aria-label^="OASIS source evidence"]')
+  const historySource = evidence.getByRole('region', { name: /^History source evidence/ })
+  const equipmentSource = evidence.getByRole('region', { name: /^Factory equipment source evidence/ })
+  const oasisSource = evidence.getByRole('region', { name: /^OASIS source evidence/ })
   await expect(historySource).toBeVisible()
   await expect(equipmentSource).toBeVisible()
   await expect(oasisSource).toBeVisible()
@@ -607,7 +631,7 @@ test('four-column comparison uses each row for a clear photo and high-value scan
   await expect(actions.locator(':scope > .inv-desk-action').nth(1)).toHaveAccessibleName(/Save DEMO-H01 to shortlist/)
   const footerActionOrder = await actions.locator(':scope > .inv-desk-action').evaluateAll(elements => elements.map(element => element.getAttribute('data-row-action')))
   expect(footerActionOrder.slice(0, 3), 'Records, Save, and Listing precede operational controls').toEqual(['records', 'shortlist', 'listing'])
-  await expect(main.locator('[data-column="configuration"] .inv-desk-configuration__fact > span').first()).toBeVisible()
+  await expect(main.locator('[data-column="vehicle"] .inv-desk-configuration__fact > span').first()).toBeVisible()
   await expect(equipmentSource).toContainText('CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER')
   await expect(historySource).toContainText('95')
   const vehicleCell = main.locator('[data-column="vehicle"]')
@@ -623,7 +647,7 @@ test('four-column comparison uses each row for a clear photo and high-value scan
   await expect(vehicleRows.getByText(/^Interior\s*Black$/)).toBeVisible()
   await expect(main).toContainText('43 days listed')
   await expect(main.getByLabel('18 vehicle photos')).toBeAttached()
-  // The four-column table also remains active at 1024px; these checkpoints
+  // The joined native table also remains active at 1024px; these checkpoints
   // exercise its wider desktop layouts after the responsive transition.
   const showAllLocationsAndVehicles = async () => {
     await page.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }).click()
@@ -667,13 +691,11 @@ test('four-column comparison uses each row for a clear photo and high-value scan
       }
     })
     const heldBaselineDimensions = await measure(main)
-    const richMaverickDimensions = await measure(richMaverick)
-    const richBudget = width === 1800 ? 300 : 320
-    expect(richMaverickDimensions.vehicleGroupHeight, `${width}px rich unheld Maverick stays within the measured evidence budget`).toBeLessThanOrEqual(richBudget)
-    const maverickEquipment = richMaverick.locator('[data-column="configuration"] .inv-desk-equipment')
+    const maverickEquipment = richMaverick.locator('[data-column="vehicle"] .inv-desk-equipment')
     await expect(maverickEquipment).toHaveAttribute('title', expect.stringContaining('CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER'))
-    await expect(richMaverick.locator('[data-column="history"] a[href="https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=synthetic&ac=synthetic"]')).toHaveAttribute('target', '_blank')
-    await expect(richMaverick.locator('[data-column="configuration"] a[href="https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U"]')).toHaveAttribute('target', '_blank')
+    const maverickEvidence = richMaverick.locator('xpath=..').locator(':scope > tr.inv-desk-evidence')
+    await expect(maverickEvidence.getByRole('region', { name: /^History source evidence/ }).locator('a[href="https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=synthetic&ac=synthetic"]')).toHaveAttribute('target', '_blank')
+    await expect(maverickEvidence.getByRole('region', { name: /^Factory equipment source evidence/ }).locator('a[href="https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U"]')).toHaveAttribute('target', '_blank')
 
     // A price-change signal adds exactly one 44px history control band.
     includePriceChange = true
@@ -683,6 +705,33 @@ test('four-column comparison uses each row for a clear photo and high-value scan
     await page.getByRole('heading', { name: 'All locations inventory' }).scrollIntoViewIfNeeded()
     await page.evaluate(async () => { await document.fonts.ready })
     const dimensions = await measure()
+    for (const group of [vehicleRows, richMaverick.locator('xpath=..')]) {
+      const sourceFacts = await group.locator('.inventory-source-band .vehicle-resource-scan__fields dt, .inventory-source-band .vehicle-resource-scan__fields dd').evaluateAll(elements => elements.map(element => {
+        const source = element.closest<HTMLElement>('.inventory-source-band__source')!.getBoundingClientRect()
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        const css = getComputedStyle(element)
+        return {
+          text: element.textContent?.trim() ?? '', label: element.tagName === 'DT', size: parseFloat(css.fontSize),
+          source: { left: source.left, right: source.right, top: source.top, bottom: source.bottom },
+          fragments: [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
+        }
+      }))
+      expect(sourceFacts.length).toBeGreaterThan(0)
+      for (const fact of sourceFacts) {
+        const date = /^\d{2}\/\d{2}\/\d{4}$/.test(fact.text)
+        expect(fact.size, `${width}px source ${fact.label ? 'label' : 'value'} remains readable: ${fact.text}`).toBeGreaterThanOrEqual(fact.label || date ? 12 : 15)
+        for (const fragment of fact.fragments) {
+          expect(fragment.left, `${width}px source text stays within its provider: ${fact.text}`).toBeGreaterThanOrEqual(fact.source.left - 1)
+          expect(fragment.right).toBeLessThanOrEqual(fact.source.right + 1)
+          expect(fragment.top).toBeGreaterThanOrEqual(fact.source.top - 1)
+          expect(fragment.bottom, `${width}px complete source text remains visible: ${fact.text}`).toBeLessThanOrEqual(fact.source.bottom + 1)
+        }
+        if (!fact.label && date && fact.fragments.length) {
+          expect(Math.max(...fact.fragments.map(rect => rect.bottom)) - Math.min(...fact.fragments.map(rect => rect.top)), 'A complete source date stays on one line').toBeLessThanOrEqual(fact.size * 1.5)
+        }
+      }
+    }
     const changeHistory = vehicleRows.getByRole('button', { name: 'View change history for 2024 Ford F-150 Lariat: Price changed', exact: true })
     await expect(changeHistory).toBeVisible()
     await expect(changeHistory).toHaveText('Price changed')
@@ -694,16 +743,15 @@ test('four-column comparison uses each row for a clear photo and high-value scan
     expect(groupGrowth, `${width}px price-change does not shrink the held vehicle group`).toBeGreaterThanOrEqual(0)
     expect(groupGrowth, `${width}px price-change adds at most one band and its gap`).toBeLessThanOrEqual(46)
     for (const element of dimensions.text) {
-      expect(element.size, `${width}px ${element.selector} readable type`).toBeGreaterThanOrEqual(11.5)
+      expect(element.size, `${width}px ${element.selector} readable type`).toBeGreaterThanOrEqual(15)
       // The scan intentionally wraps useful facts instead of hiding them
       // behind ellipses; neither axis may be clipped.
       expect(element.scrollWidth, `${width}px ${element.selector} not horizontally clipped`).toBeLessThanOrEqual(element.clientWidth + 1)
       expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
     expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
-    // This intentionally adversarial record carries an 87-character option
-    // and full report destinations; its measured rich-data budget is separate
-    // from the unmodified Maverick baseline and allows one 44px history band.
+    // The adversarial 87-character option can grow naturally. Adding its
+    // price-change control still costs at most one 44px band and a separator.
     expect(dimensions.vehicleGroupHeight, `${width}px changed held group stays within one 44px band of its baseline`).toBeLessThanOrEqual(heldBaselineDimensions.vehicleGroupHeight + 46)
     for (const name of ['Copy stock number: DEMO-H01', 'Copy mileage: 12450', 'Copy VIN: TESTDATAHWELL0001']) {
       await expect(main.locator('[data-column="vehicle"]').getByRole('button', { name, exact: true })).toBeVisible()
@@ -728,7 +776,7 @@ test('four-column comparison uses each row for a clear photo and high-value scan
     expect(dimensions.photo.width / dimensions.photo.height).toBeCloseTo(3 / 2, 1)
     expect(dimensions.image.naturalWidth).toBeGreaterThan(dimensions.photo.width * 2)
     expect(dimensions.image.naturalHeight).toBeGreaterThan(dimensions.photo.height * 2)
-    const equipment = main.locator('td[data-column="configuration"] .inv-desk-equipment')
+    const equipment = main.locator('td[data-column="vehicle"] .inv-desk-equipment')
     await expect(equipment).toBeVisible()
     await expect(equipment).toContainText('302A')
     await expect(equipment).toContainText(/\+\d+ more/)
@@ -830,7 +878,7 @@ test('phone cards show exact equipment and document facts with direct detail act
   const operationalSignals = card.getByLabel('Operational vehicle signals')
   const workflowActions = card.getByRole('group', { name: 'Actions for 2024 Ford F-150 Lariat' })
   const registrationFacts = card.getByLabel('Registration calculator values')
-  const reportShortcuts = card.getByLabel('Vehicle report shortcuts')
+  const reportShortcuts = card.getByLabel('Source evidence for 2024 Ford F-150 Lariat')
   const expandedRecords = page.getByRole('dialog', {name:'2024 Ford F-150 Lariat records',exact:true})
   const history = expandedRecords.locator('[data-resource-kind="autocheck"]')
   const sticker = expandedRecords.locator('[data-resource-kind="window-sticker"]')
@@ -839,9 +887,10 @@ test('phone cards show exact equipment and document facts with direct detail act
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     await expect(card).toBeVisible()
-    // Full record ledgers stay in Records while visible identity and source
-    // shortcuts remain adjacent to the status and workflow controls.
-    await expect(card.locator('.vehicle-resources--scan')).toHaveCount(0)
+    // Complete record ledgers stay in Records; the joined source summaries
+    // remain after status and workflow controls in the same vehicle record.
+    await expect(reportShortcuts.getByRole('region')).toHaveCount(3)
+    await expect(card.locator('.vehicle-resource-summary')).toHaveCount(0)
     await expect(originalMsrp).toBeVisible()
     for (const [first, next] of [
       [detailsTrigger, originalMsrp],
@@ -1029,11 +1078,12 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await expect(dialog.getByRole('toolbar', { name: 'Vehicle actions' })).toBeVisible()
   const status = dialog.getByRole('region', { name: 'Vehicle operational summary' })
   await expect(status).toContainText('Location')
-  // Desktop presents service in the operational summary; the duplicate header
-  // signal is reserved for the compact phone masthead.
+  // Overview presents one detailed service link in its operational summary;
+  // other tabs retain that link beside the persistent identifier controls.
   const serviceLink = dialog.getByRole('link', {
-    name: /^(?:Ready|Waiting for service)\. Open service status for VIN TESTDATAHWELL0001$/,
+    name: /^Service: (?:Ready|Waiting for service)$/,
   })
+  await expect(serviceLink).toHaveCount(1)
   await expect(serviceLink).toBeVisible()
   await expect(serviceLink).toHaveAttribute('href', /\/service\?vin=TESTDATAHWELL0001(?:&|$)/)
   const statusOverflow = await status.evaluate(element => [...element.querySelectorAll<HTMLElement>('button,a')].map(control => ({
@@ -1051,6 +1101,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await dialog.getByRole('tab', { name: 'Holds & moves' }).click()
   const holdPanel = dialog.getByRole('tabpanel', { name: 'Holds & moves' })
   await expect(holdPanel).toBeVisible()
+  await expect(serviceLink).toBeVisible()
   await expect(dialog.locator('.inventory-workspace-gallery')).toBeHidden()
   await expect(holdPanel).toContainText('Demo Salesperson')
   await expect(holdPanel).toContainText('Backup Demo Salesperson')
@@ -1113,6 +1164,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await dialog.getByRole('tab', { name: 'Equipment' }).click()
   const equipment = dialog.getByRole('tabpanel', { name: 'Equipment' })
   await expect(equipment).toBeVisible()
+  await expect(serviceLink).toBeVisible()
   await expect(dialog.locator('.inventory-workspace-gallery')).toBeHidden()
   const equipmentBox = await equipment.boundingBox()
   const currentNavigationBox = await navigation.boundingBox()
@@ -1145,6 +1197,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await dialog.getByRole('tab', { name: 'Records' }).click()
   const records = dialog.getByRole('tabpanel', { name: 'Records' })
   await expect(records).toBeVisible()
+  await expect(serviceLink).toBeVisible()
   const sourceDetails = records.locator('.vdp-record-source-details').filter({ has: page.locator('summary', { hasText: /^Source details$/ }) }).first()
   await expect(sourceDetails).not.toHaveAttribute('open')
   await expect(records.getByRole('region', { name: 'Vehicle documents', exact: true })).toBeVisible()
@@ -1180,9 +1233,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     await page.setViewportSize({ width, height: 900 })
     await dialog.getByRole('tab', { name: 'Equipment' }).click()
     const frame = await dialog.boundingBox()
-    // At phone widths the semantic tablist deliberately uses display:contents
-    // so its five controls can form a compact grid. Measure its visible
-    // navigation frame instead of treating that semantic wrapper as a box.
+    // Measure the visible navigation frame independently of its scrollable tab rail.
     const navigationFrame = await dialog.locator('.vdp-focus-navigation').boundingBox()
     const panel = await equipment.boundingBox()
     expect(frame!.y + frame!.height).toBeLessThanOrEqual(901)

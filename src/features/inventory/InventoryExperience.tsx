@@ -714,6 +714,7 @@ export function InventoryExperience({
     <ShortlistContext.Provider value={shortlist}>
     <section id="inventory-results-workspace" ref={captureModalBackground} data-filters-open={filtersOpen} className={`inventory-experience if-srp${selectedVehicle ? " has-workspace" : ""}`} aria-label="Inventory">
       <div className="inventory-experience__content" ref={backgroundRef}>
+        <div className="if-srp-workbench">
         <div className="if-srp-heading-grid">
         <FlowPageHeader className="if-srp-header" title={<><span>Inventory</span><span className="inventory-results-count" aria-live="polite">{scopedVehicles.length} shown <span className="inventory-results-count__scope" aria-hidden="true">· {scope === "home" ? `${homeVehicleCount} of ` : ""}{groupVehicleCount} group</span></span></>} titleLabel={scope === "group" ? "All locations inventory" : title} actions={<ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />} />
 
@@ -733,10 +734,10 @@ export function InventoryExperience({
           {shortlist.count > 0 || onlyShortlisted ? <button type="button" className="inventory-shortlist-filter" aria-label={`Shortlist (${shortlist.count})`} title="Show saved vehicles only" aria-pressed={onlyShortlisted} onClick={() => setOnlyShortlisted(!onlyShortlisted)}>
             <Heart aria-hidden="true" /><span className="inventory-tool-label">Shortlist</span><span aria-hidden="true">{shortlist.count}</span>
           </button> : null}
-          <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan vehicle</span></button></span>
+          <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" title="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan</span></button></span>
           <div className="if-srp-tools">
             <div className="inventory-toolbar__left">
-              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
+              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} title="Filters" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
                 <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
               </button>
             </div>
@@ -777,10 +778,13 @@ export function InventoryExperience({
               one wrapper so tablet widths can flow them as one chip row. */}
           <div id={`${filterPanelId}-service`} className="if-srp-chip-rows" onKeyDown={event => { if (filtersOpen && event.key === "Escape") { event.preventDefault(); closeFilters(); } }}>
             <div className="if-srp-service-filters" role="group" aria-label="Inventory service status">
-              <strong className="if-srp-service-heading">Service</strong>
-              {SERVICE_FILTERS.map(([value, label]) => <button key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
+              <strong className="if-srp-service-heading" aria-hidden="true">Service</strong>
+              {SERVICE_FILTERS.map(([value, label]) => <button className="if-srp-service-choice" key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
                 <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
               </button>)}
+              <select className="if-srp-service-select" aria-label="Inventory service status" value={filters.serviceReadiness ?? "all"} onChange={event => setFilters(current => ({ ...current, serviceReadiness: event.target.value as ServiceFilter }))}>
+                {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value}>{label}: {serviceCounts[value]} {serviceCounts[value] === 1 ? "vehicle" : "vehicles"}</option>)}
+              </select>
             </div>
             {filtersOpen ? <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
               {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[Extract<QuickView, 'moving' | 'new' | 'price'>, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={value === 'moving' ? filters.movement === 'active' : quickView === value} onClick={() => toggleSecondaryView(value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
@@ -788,10 +792,11 @@ export function InventoryExperience({
           </div>
 
         </div>
+        </div>
 
         {quickView === "no-hold" ? <p className="inventory-view-context" role="status">{locationScope === "home" ? `Reported at ${scopedStore.name}` : "Reported at a dealership"} · No hold in the published snapshot. Confirm availability.</p> : quickView === "offsite" ? <p className="inventory-view-context" role="status">{locationScope === "home" ? `${scopedStore.name} inventory reported elsewhere` : "Vehicles reported away from their home store"}. Unknown or conflicting locations remain in All.</p> : null}
 
-        {!filtersOpen && (activeFilterCount(filters) > 0 || secondaryViewLabel) ? <div className="if-srp-active-filters" role="group" aria-label="Active inventory filters">
+        {!filtersOpen && filterCount > 0 && (activeFilterCount(filters) > 0 || secondaryViewLabel) ? <div className="if-srp-active-filters" role="group" aria-label="Active inventory filters">
           {selectedServiceLabel ? <button type="button" aria-label={`Clear service filter: ${selectedServiceLabel}`} onClick={() => { setFilters(current => ({ ...current, serviceReadiness: "all" })); returnToFilterTrigger(); }}>Service: {selectedServiceLabel}<X size={14} aria-hidden="true" /></button> : null}
           {overviewViewLabel ? <button type="button" aria-label={`Clear Overview view: ${overviewViewLabel}`} onClick={() => { setFilters(current => ({ ...current, overviewView: undefined })); returnToFilterTrigger(); }}>View: {overviewViewLabel}<X size={14} aria-hidden="true" /></button> : null}
           {filters.vins ? <button type="button" aria-label={`Clear selected vehicles: ${filters.vins.length}`} onClick={() => { setFilters(current => ({ ...current, vins: undefined })); returnToFilterTrigger(); }}>Vehicles: {filters.vins.length} selected<X size={14} aria-hidden="true" /></button> : null}

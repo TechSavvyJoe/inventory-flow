@@ -4,24 +4,29 @@ import type { BootstrapData } from '../../src/types'
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 // The real Node HTTP routes persist app-owned controls, never source writes.
 for (const [width, height] of [[1024, 768], [1320, 820], [1440, 900]]) {
-  test(`vehicle header identifiers keep copy targets separate at ${width}x${height}`, async ({ page }) => {
+  test(`vehicle reference identifiers keep copy targets separate across tabs at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
     await page.goto('/inventory?vin=TESTDATAHWELL0001')
     const workspace = page.getByRole('dialog', { name: '2024 Ford F-150 Lariat vehicle workspace' })
     await expect(workspace).toBeVisible()
-    const header = workspace.locator('.vdp-focus-header')
-    for (const [label, value] of [['stock number', 'DEMO-H01'], ['VIN', 'TESTDATAHWELL0001']]) {
-      const copy = header.getByRole('button', { name: `Copy ${label}: ${value}`, exact: true })
-      await expect(copy).toBeVisible()
-      const text = copy.locator('..').getByText(value, { exact: true })
-      const textBounds = await text.boundingBox()
-      const copyBounds = await copy.boundingBox()
-      expect(textBounds).not.toBeNull()
-      expect(copyBounds).not.toBeNull()
-      expect(textBounds!.x + textBounds!.width).toBeLessThanOrEqual(copyBounds!.x)
-      expect(copyBounds!.width).toBeGreaterThanOrEqual(44)
-      expect(copyBounds!.height).toBeGreaterThanOrEqual(44)
-      expect(await text.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    for (const tab of ['Overview', 'Equipment', 'Records']) {
+      await workspace.getByRole('tab', { name: tab, exact: true }).click()
+      const reference = tab === 'Overview'
+        ? workspace.getByRole('region', { name: 'Vehicle photo and reference values' })
+        : workspace.getByRole('group', { name: 'Vehicle reference', exact: true })
+      for (const [label, value] of [['stock number', 'DEMO-H01'], ['VIN', 'TESTDATAHWELL0001']]) {
+        const copy = reference.getByRole('button', { name: `Copy ${label}: ${value}`, exact: true })
+        await expect(copy).toBeVisible()
+        const text = copy.locator('..').getByText(value, { exact: true })
+        const textBounds = await text.boundingBox()
+        const copyBounds = await copy.boundingBox()
+        expect(textBounds).not.toBeNull()
+        expect(copyBounds).not.toBeNull()
+        expect(textBounds!.x + textBounds!.width).toBeLessThanOrEqual(copyBounds!.x)
+        expect(copyBounds!.width).toBeGreaterThanOrEqual(44)
+        expect(copyBounds!.height).toBeGreaterThanOrEqual(44)
+        expect(await text.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+      }
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
   })

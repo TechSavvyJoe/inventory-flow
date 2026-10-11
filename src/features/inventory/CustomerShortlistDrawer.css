@@ -9,9 +9,9 @@
 .shortlist-drawer button, .shortlist-drawer__dialog button { min-height:var(--ifx-control-height-md); border:1px solid transparent; border-radius:var(--radius-control); background:transparent; color:var(--blue-700); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
 .shortlist-drawer button:disabled, .shortlist-drawer__dialog button:disabled { cursor:not-allowed; color:var(--ink-500); }
 .shortlist-drawer__toggle, .shortlist-drawer__clear, .shortlist-drawer__close, .shortlist-drawer__remove, .shortlist-manager button, .shortlist-drawer__intro button { display:inline-flex; align-items:center; justify-content:center; gap:var(--ifx-space-1-5); padding:var(--ifx-space-1) var(--ifx-space-2); }
-.shortlist-drawer .shortlist-drawer__toggle { min-width:var(--ifx-control-height-md); justify-content:flex-start; border-color:var(--border-strong); background:var(--surface); box-shadow:var(--ifx-elevation-1); }
+.shortlist-drawer .shortlist-drawer__toggle { min-width:var(--ifx-control-height-md); justify-content:flex-start; border-color:var(--ifx-panel-border); background:var(--surface); box-shadow:none; font:var(--ifx-weight-medium) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); }
 .shortlist-drawer__toggle > span { max-width:calc(var(--ifx-space-16) * 2.5); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.shortlist-drawer__toggle strong { display:inline-flex; align-items:center; justify-content:center; min-width:var(--ifx-space-6); color:var(--surface); background:var(--blue-700); border-radius:var(--ifx-radius-full); }
+.shortlist-drawer__toggle strong { display:inline-flex; align-items:center; justify-content:center; min-width:0; color:var(--ink-600); background:transparent; font:inherit; }
 .shortlist-drawer__toggle > svg:last-child { transition:transform var(--ifx-motion-fast) var(--ifx-ease-standard); }
 .shortlist-drawer__toggle[aria-expanded="true"] > svg:last-child { transform:rotate(180deg); }
 .shortlist-drawer__clear { color:var(--ink-600); }

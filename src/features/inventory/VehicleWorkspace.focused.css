@@ -42,40 +42,28 @@
   .vdp-focus-backdrop,#inventory-vehicle-workspace { animation:none; }
 }
 
-#inventory-vehicle-workspace .vdp-focus-header { --vdp-control-focus:var(--ifx-neutral-0); flex:none; display:grid; grid-template-columns:auto minmax(0,1fr) auto var(--ifx-control-height-md); gap:var(--ifx-space-3); align-items:center; min-height:calc(var(--ifx-space-16) + var(--ifx-space-2)); padding:var(--ifx-space-2) var(--ifx-space-3); border-top:0; border-bottom:var(--ifx-stroke-hairline) solid var(--v10-border); background:var(--blue-600); color:var(--ifx-neutral-0); }
-#inventory-vehicle-workspace .vdp-focus-back,
-#inventory-vehicle-workspace .vdp-focus-close { min-width:var(--ifx-control-height-md); white-space:nowrap; color:var(--ifx-neutral-0); --ifx-icon-accent:var(--ifx-neutral-0); }
-.inventory-workspace--focused .vdp-focus-primary { display:grid; align-content:center; min-width:0; }
-#inventory-vehicle-workspace .vdp-focus-identity { display:flex; align-items:center; min-width:0; }
-#inventory-vehicle-workspace .vdp-focus-identity h2 { display:flex; align-items:center; gap:var(--ifx-space-2); min-width:0; margin:0; overflow:hidden; color:var(--ifx-neutral-0); font:var(--ifx-weight-bold) var(--ifx-text-lg)/var(--ifx-leading-heading) var(--ifx-font-display); letter-spacing:-.01em; text-overflow:ellipsis; white-space:nowrap; }
-.inventory-workspace--focused .vdp-focus-price { display:grid; justify-items:end; align-content:center; min-width:calc(var(--ifx-space-16) * 2); padding:var(--ifx-space-1) var(--ifx-space-4); border-left:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); background:transparent; }
-.inventory-workspace--focused .vdp-focus-price span { color:var(--ifx-neutral-0); font:var(--ifx-weight-medium) var(--ifx-text-xs)/1.2 var(--font-app); }
-.inventory-workspace--focused .vdp-focus-price strong { color:var(--ifx-neutral-0); font:var(--ifx-weight-bold) var(--ifx-text-h3)/1.15 var(--ifx-font-display); font-variant-numeric:tabular-nums; white-space:nowrap; }
-.inventory-workspace--focused :is(.vdp-focus-mobile-stock,.vdp-focus-mobile-vin) { display:none; }
-.inventory-workspace--focused .vdp-focus-subline { display:flex; align-items:center; min-width:0; min-height:var(--ifx-space-5); color:var(--ifx-neutral-0); }
-.inventory-workspace--focused .vdp-focus-glance { display:flex; align-items:center; min-width:0; min-height:var(--ifx-space-5); margin-left:var(--ifx-space-1); border-left:var(--ifx-stroke-hairline) solid var(--blue-100); color:inherit; font:var(--ifx-weight-medium) var(--ifx-text-xs)/1.3 var(--font-app); }
-.inventory-workspace--focused .vdp-focus-glance > :is(span,a) { display:inline-flex; align-items:center; gap:var(--ifx-space-1); min-width:0; min-height:var(--ifx-space-5); padding:0 var(--ifx-space-2); border-left:var(--ifx-stroke-hairline) solid var(--blue-100); color:inherit; white-space:nowrap; }
-.inventory-workspace--focused .vdp-focus-glance > :first-child { padding-left:0; border-left:0; }
-.inventory-workspace--focused .vdp-focus-glance > :is(span,a) > svg { flex:none; }
-.inventory-workspace--focused .vdp-focus-glance strong { overflow:hidden; color:var(--ifx-neutral-0); font:var(--ifx-weight-semibold) var(--ifx-text-xs)/1.3 var(--font-app); text-overflow:ellipsis; }
-.inventory-workspace--focused .vdp-focus-glance .inventory-service-link { width:auto; max-width:none; min-height:var(--ifx-control-height-md); margin-block:calc(var(--ifx-space-3) * -1); background:transparent; box-shadow:none; color:var(--ifx-neutral-0); font-size:var(--ifx-text-xs); }
-.inventory-workspace--focused .vdp-focus-glance .inventory-service-link__content { display:flex; align-items:baseline; gap:4px; }
-.inventory-workspace--focused .vdp-focus-glance .inventory-service-link__detail { display:none; }
-#inventory-vehicle-workspace .vdp-focus-identifiers { display:flex; align-items:center; gap:4px 12px; min-width:0; min-height:20px; margin:0; }
-#inventory-vehicle-workspace .vdp-focus-identifiers > div { display:flex; align-items:center; min-width:0; gap:4px; }
-#inventory-vehicle-workspace .vdp-focus-identifiers dt { color:var(--ifx-neutral-0); font:var(--ifx-weight-medium) var(--ifx-text-xs)/1.2 var(--font-app); letter-spacing:var(--ifx-tracking-label); }
-#inventory-vehicle-workspace .vdp-focus-identifiers dd { margin:0; }
-#inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value { position:relative; min-height:var(--ifx-space-5); padding-right:calc(var(--ifx-control-height-md) + var(--ifx-space-1)); color:var(--ifx-neutral-0); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.2 var(--font-app); font-variant-numeric:tabular-nums; }
-#inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value__content { display:block; overflow:hidden; font:inherit; text-overflow:ellipsis; white-space:nowrap; }
-#inventory-vehicle-workspace .copyable-value__button { min-width:44px; min-height:44px; }
-#inventory-vehicle-workspace .vdp-focus-header .copyable-value__button { position:absolute; top:50%; right:0; width:var(--ifx-control-height-md); min-width:var(--ifx-control-height-md); height:var(--ifx-control-height-md); min-height:var(--ifx-control-height-md); justify-content:center; padding:0; transform:translateY(-50%); color:var(--ifx-neutral-0); background:transparent; }
-#inventory-vehicle-workspace .vdp-focus-header .copyable-value__button:hover { transform:translateY(-50%); color:var(--ifx-neutral-0); background:var(--blue-700); }
-#inventory-vehicle-workspace .vdp-focus-header .copyable-value__button:active { transform:translateY(-50%) scale(.96); }
-#inventory-vehicle-workspace .vdp-focus-navigation { flex:none; display:flex; align-items:center; min-height:46px; padding:0 10px; border-bottom:1px solid var(--border-strong); background:var(--surface); }
-#inventory-vehicle-workspace .vdp-focus-tabs { display:flex; min-width:0; height:45px; gap:0; overflow-x:auto; scrollbar-width:none; }
-#inventory-vehicle-workspace .vdp-focus-tabs button { flex:0 0 auto; min-height:44px; padding:0 12px; border:var(--ifx-stroke-hairline) solid var(--v10-border); border-left:0; border-radius:0; background:var(--ifx-neutral-0); color:var(--navy-900); box-shadow:none; font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); white-space:nowrap; }
-#inventory-vehicle-workspace .vdp-focus-tabs button:hover { background:var(--blue-050); color:var(--blue-700); }
-#inventory-vehicle-workspace .vdp-focus-tabs button[aria-selected="true"] { background:var(--blue-600); color:var(--ifx-neutral-0); box-shadow:inset 0 calc(var(--ifx-stroke-emphasis) * -1) 0 var(--blue-600); }
+/* The command bar identifies the vehicle; its complete working reference lives below. */
+.inventory-workspace.inventory-workspace--focused .vdp-focus-header { --vdp-control-focus:var(--ifx-neutral-0); flex:none; display:grid; grid-template-columns:auto minmax(0,1fr) var(--ifx-control-height-md); gap:var(--ifx-space-3); align-items:center; min-height:var(--ifx-space-16); padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:var(--ifx-stroke-hairline) solid var(--v10-border); background:var(--blue-600); color:var(--ifx-neutral-0); }
+.inventory-workspace.inventory-workspace--focused :is(.vdp-focus-back,.vdp-focus-close) { min-width:var(--ifx-control-height-md); color:var(--ifx-neutral-0); --ifx-icon-accent:var(--ifx-neutral-0); white-space:nowrap; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-primary { display:grid; align-content:center; gap:var(--ifx-space-0-5); min-width:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-identity h2 { display:flex; align-items:center; gap:var(--ifx-space-2); min-width:0; margin:0; color:var(--ifx-neutral-0); font:var(--ifx-weight-bold) var(--ifx-text-lg)/var(--ifx-leading-heading) var(--ifx-font-display); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-identity h2 > svg { flex:none; width:var(--ifx-icon-heading-size); height:var(--ifx-icon-heading-size); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-identity h2 > span { min-width:0; overflow-wrap:anywhere; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-header-reference { margin:0; color:var(--ifx-neutral-0); font-size:var(--ifx-text-xs); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-service-fact .inventory-service-link__prefix { display:none; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tab-service > dt { display:none; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tab-service .inventory-service-link { min-height:var(--ifx-control-height-md); font-size:var(--ifx-text-sm); }
+/* Other panes keep the same raw-copy identifiers and price in a fixed reference strip. */
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference { flex:none; display:grid; grid-template-columns:minmax(0,.6fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,1fr); gap:var(--ifx-space-3); margin:0; padding:var(--ifx-space-1) var(--ifx-space-3); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); background:var(--ifx-evidence-surface); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference .inventory-workspace-fact { position:relative; min-height:var(--ifx-control-height-md); --vdp-fact-value-weight:var(--ifx-weight-semibold); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference .inventory-workspace-fact:has(.copyable-value) { --vdp-fact-padding:0 var(--ifx-control-height-md) 0 0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference .copyable-value__button { position:absolute; inset:0 0 auto auto; width:var(--ifx-control-height-md); height:var(--ifx-control-height-md); justify-content:center; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference .copyable-value__content { font-size:var(--ifx-text-sm); white-space:nowrap; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-navigation { flex:none; display:flex; align-items:center; min-height:var(--ifx-control-height-md); padding:0 var(--ifx-space-3); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--ifx-panel-surface); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tabs { display:flex; min-width:0; gap:0; overflow-x:auto; scrollbar-width:none; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tabs button { flex:0 0 auto; min-height:var(--ifx-control-height-md); padding:0 var(--ifx-space-3); border:0; border-bottom:var(--ifx-stroke-emphasis) solid transparent; border-radius:0; background:transparent; color:var(--navy-900); box-shadow:none; font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); white-space:nowrap; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tabs button:hover { background:var(--blue-050); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-tabs button[aria-selected="true"] { border-bottom-color:var(--blue-600); background:var(--blue-050); color:var(--blue-600); }
 #inventory-vehicle-workspace .vdp-focus-scroll { flex:1; min-height:0; overflow:auto; padding:var(--ifx-space-3); overscroll-behavior:contain; scrollbar-gutter:stable; background:var(--ifx-canvas); }
 #inventory-vehicle-workspace .inventory-workspace-panel { margin:0; padding:0; border:0; border-radius:0; background:none; box-shadow:none; }
 #inventory-vehicle-workspace .inventory-workspace-panel__body { padding:0; }
@@ -84,7 +72,7 @@
 .inventory-workspace--focused .vdp-focus-source-hold-fact { --vdp-operation-fact-display:grid; }
 #inventory-vehicle-workspace .inventory-workspace-fact { margin:0; padding:var(--vdp-fact-padding,var(--ifx-space-0)); min-width:0; border:0; border-left:var(--vdp-fact-left-border,0); border-bottom:var(--vdp-fact-bottom-border,0); border-radius:0; background:none; box-shadow:none; }
 #inventory-vehicle-workspace .inventory-workspace-fact dt { color: var(--v10-support); font: 400 13px/1.4 var(--font-app); text-transform: none; letter-spacing: 0; }
-#inventory-vehicle-workspace .inventory-workspace-fact dd { margin:var(--ifx-space-0-5) 0 0; color:var(--vdp-fact-value-ink,var(--v10-ink)); font:var(--vdp-fact-value-weight,var(--ifx-weight-medium)) var(--vdp-fact-value-size,var(--ifx-text-body))/var(--ifx-leading-compact) var(--font-app); overflow-wrap:anywhere; }
+#inventory-vehicle-workspace .inventory-workspace-fact dd { margin:var(--ifx-space-0-5) 0 0; color:var(--vdp-fact-value-ink,var(--v10-ink)); font:var(--vdp-fact-value-weight,var(--ifx-weight-medium)) var(--vdp-fact-value-size,var(--ifx-text-body))/var(--vdp-fact-leading,var(--ifx-leading-compact)) var(--font-app); overflow-wrap:anywhere; }
 
 .inventory-workspace.inventory-workspace--focused .vdp-focus-overview .inventory-workspace-fact dd { margin:0; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-overview .inventory-workspace-fact small { display:block; font-size:12px; color:var(--v10-support); }
@@ -341,7 +329,6 @@
 
 #inventory-vehicle-workspace .inventory-workspace-mobile-section-title { display: none; }
 
-
 #inventory-vehicle-workspace .vdp-focus-description,
 #inventory-vehicle-workspace .vdp-focus-technical { margin-top:20px; padding-top:16px; border-top:1px solid var(--v10-border); }
 #inventory-vehicle-workspace .vdp-focus-description p { font-size:14px; line-height:1.5; }
@@ -380,66 +367,27 @@
   #inventory-vehicle-workspace { inset-inline:max(12px,calc((100vw - 1540px)/2)); }
 }
 @media (max-width:1200px) {
-  #inventory-vehicle-workspace .vdp-focus-header { grid-template-columns:var(--ifx-control-height-md) minmax(0,1fr) auto var(--ifx-control-height-md); grid-template-rows:auto var(--ifx-space-6); gap:0 var(--ifx-space-2); min-height:calc(var(--ifx-space-16) + var(--ifx-space-4)); }
   #inventory-vehicle-workspace .vdp-focus-back span { display:none; }
-  .inventory-workspace--focused .vdp-focus-primary { display:contents; }
-  .inventory-workspace--focused .vdp-focus-back { grid-column:1; grid-row:1; }
-  .inventory-workspace--focused .vdp-focus-identity { grid-column:2; grid-row:1; }
-  .inventory-workspace--focused .vdp-focus-price { grid-column:3; grid-row:1; }
-  .inventory-workspace--focused .vdp-focus-close { grid-column:4; grid-row:1; }
-  .inventory-workspace--focused .vdp-focus-subline { grid-column:2 / 4; grid-row:2; }
-  .inventory-workspace--focused .vdp-focus-glance > :is(span,a) { padding-inline:7px; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:minmax(0,1fr); gap:var(--ifx-space-3); }
   .inventory-workspace--focused .vdp-focus-hold-records { grid-template-columns:minmax(0,1fr); gap:var(--ifx-space-2); }
   .inventory-workspace--focused .vdp-focus-hold-record--primary .inventory-hold-evidence__facts { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .inventory-workspace--focused .vdp-focus-hold-record--backup .inventory-hold-evidence__facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  #inventory-vehicle-workspace .vdp-focus-tabs { grid-template-columns:repeat(5,minmax(86px,1fr)); }
-  #inventory-vehicle-workspace .vdp-focus-tabs button { padding-inline:14px; }
 }
 
-
 @media (max-width:850px) {
-  #inventory-vehicle-workspace .vdp-focus-header { gap:6px; padding-inline:8px; }
-  #inventory-vehicle-workspace .vdp-focus-identity h2 { font-size:18px; }
-  .inventory-workspace--focused .vdp-focus-price strong { font-size:var(--ifx-text-lg); }
-  .inventory-workspace--focused .vdp-focus-glance { font-size:var(--ifx-text-xs); }
-  .inventory-workspace--focused .vdp-focus-glance > :is(span,a) { gap:4px; padding-inline:5px; }
-  .inventory-workspace--focused .vdp-focus-glance :is(strong,.inventory-service-link) { font-size:var(--ifx-text-xs); }
-  #inventory-vehicle-workspace .vdp-focus-navigation { gap:8px; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:minmax(0,1fr); }
   #inventory-vehicle-workspace .vdp-records-intro { grid-template-columns:1fr; }
 }
 @media (max-width:680px) {
   #inventory-vehicle-workspace { --vdp-section-action-ink:var(--blue-700); inset:0; height:100dvh; width:100%; border:0; border-radius:0; padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); }
-  #inventory-vehicle-workspace .vdp-focus-header { grid-template-columns:var(--ifx-control-height-md) minmax(0,1fr) auto var(--ifx-control-height-md); grid-template-rows:minmax(var(--ifx-space-16),auto); gap:0 var(--ifx-space-1); min-height:0; padding:0 var(--ifx-space-2); }
-  .inventory-workspace--focused .vdp-focus-back { grid-column:1; grid-row:1; }
-  .inventory-workspace--focused .vdp-focus-close { grid-column:4; grid-row:1; }
-  .inventory-workspace--focused .vdp-focus-primary { display:contents; }
-  .inventory-workspace--focused .vdp-focus-identity { grid-column:2; grid-row:1; }
-  #inventory-vehicle-workspace .vdp-focus-identity { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto; gap:0; }
-  #inventory-vehicle-workspace .vdp-focus-identity h2 { grid-column:1; grid-row:1; align-self:end; display:flex; overflow:hidden; font-size:var(--ifx-text-md); line-height:1.2; white-space:normal; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-  .inventory-workspace--focused .vdp-focus-mobile-stock { display:block; grid-column:1; grid-row:2; align-self:start; color:var(--ifx-neutral-0); font:var(--ifx-weight-medium) var(--ifx-text-xs)/1.2 var(--font-app); white-space:nowrap; }
-  .inventory-workspace--focused .vdp-focus-price { grid-column:3; grid-row:1; min-width:0; padding-left:var(--ifx-space-2); }
-  .inventory-workspace--focused .vdp-focus-price span { display:none; }
-  .inventory-workspace--focused .vdp-focus-price strong { font-size:var(--ifx-text-md); }
-  .inventory-workspace--focused .vdp-focus-subline { display:none; }
-  #inventory-vehicle-workspace .vdp-focus-navigation { display:flex; min-height:var(--ifx-control-height-md); padding:0 var(--ifx-space-1-5); }
-  #inventory-vehicle-workspace .vdp-focus-tabs { display:flex; width:100%; height:var(--ifx-control-height-md); gap:0; overflow-x:auto; }
-  #inventory-vehicle-workspace .vdp-focus-tabs button { min-width:0; margin:0; padding:0 11px; font-size:var(--ifx-text-sm); white-space:nowrap; }
-  #inventory-vehicle-workspace .vdp-focus-scroll { padding:10px; scrollbar-gutter:auto; background:var(--ifx-neutral-0); }
-  #inventory-vehicle-workspace .vdp-focus-scroll:has(.vdp-focus-overview) { padding-inline:0; }
+  #inventory-vehicle-workspace .vdp-focus-scroll { padding:var(--ifx-space-2); scrollbar-gutter:auto; background:var(--ifx-canvas); }
   #inventory-vehicle-workspace .vdp-focus-scroll .vdp-focus-resources { border-inline:var(--ifx-stroke-hairline) solid var(--v10-border); border-radius:0; }
   #inventory-vehicle-workspace .vdp-focus-scroll:has(.vdp-focus-overview) > .inventory-workspace-panel > .inventory-workspace-panel__body > :is(.vdp-focus-warning,.vdp-focus-note) { margin-inline:10px; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:minmax(0,1fr); gap:var(--ifx-space-2); padding:0 10px; border:0; background:transparent; }
   .inventory-workspace--focused .inventory-workspace-gallery__stage { aspect-ratio:3 / 2; }
-  .inventory-workspace--focused .vdp-focus-mobile-vin { order:3; }
   #inventory-vehicle-workspace .inventory-workspace-gallery__placeholder { padding:8px; }
   #inventory-vehicle-workspace .inventory-workspace-gallery__placeholder strong { font-size:12px; }
   #inventory-vehicle-workspace .inventory-workspace-gallery__placeholder > span { display:none; }
-  .inventory-workspace--focused .vdp-focus-mobile-vin { display:flex; grid-column:1 / -1; align-items:center; gap:var(--ifx-space-1); min-width:0; min-height:var(--ifx-control-height-md); border-top:1px solid var(--v10-border-soft); color:var(--v10-support); font-size:var(--ifx-text-xs); }
-  .inventory-workspace--focused .vdp-focus-mobile-vin > .copyable-value { display:flex; flex:1; align-items:center; justify-content:space-between; min-width:0; color:var(--navy-900); }
-  .inventory-workspace--focused .vdp-focus-mobile-vin .copyable-value__content { overflow:visible; font:var(--ifx-weight-semibold) var(--ifx-text-xs)/1.2 var(--ifx-font-mono); letter-spacing:-.025em; white-space:nowrap; }
-  .inventory-workspace--focused .vdp-focus-mobile-vin .copyable-value__button { flex:none; width:var(--ifx-control-height-md); height:var(--ifx-control-height-md); padding:0; font-size:0; }
   /* The workflow strip is first in reading order and stays short enough that
      the vehicle image begins near the first phone viewport's midpoint. */
   #inventory-vehicle-workspace .vdp-records-intro { padding:10px; }
@@ -492,8 +440,6 @@
 
 @media (max-height: 500px) and (max-width: 1000px) {
   #inventory-vehicle-workspace { inset: 0; height: 100dvh; padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); border-radius: 0; }
-  #inventory-vehicle-workspace .vdp-focus-header { padding-block: 0; }
-  #inventory-vehicle-workspace .vdp-focus-navigation { padding-block: 0; }
   #inventory-vehicle-workspace .vdp-focus-scroll { scroll-padding-block: 12px; }
 }
 
@@ -501,7 +447,7 @@
 .inventory-workspace--focused .vdp-focus-utilities { flex:none; display:flex; align-items:center; }
 .inventory-workspace--focused .vdp-focus-utilities > button { display:inline-flex; align-items:center; justify-content:center; gap:calc(var(--ifx-space-2) - var(--ifx-space-0-5) / 2); min-height:var(--ifx-control-height-md); padding:calc(var(--ifx-space-2) - var(--ifx-space-0-5) / 2) calc(var(--ifx-space-3) - var(--ifx-space-0-5)); border:var(--ifx-stroke-hairline) solid var(--v10-border); border-radius:var(--ifx-radius-xs); background:var(--v10-surface); color:var(--ink-900); font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); }
 .inventory-workspace--focused .vdp-focus-utilities > button[aria-pressed="true"] { background:var(--blue-050); border-color:var(--v10-blue); }
-#inventory-vehicle-workspace .vdp-focus-next-action { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:2px 8px; margin:0; padding:var(--ifx-space-2) 0 0; border-top:1px solid var(--v10-border); font-size:13px; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-next-action { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:2px 8px; margin:0; padding:var(--ifx-space-2) 0 0; border-top:1px solid var(--v10-border); font-size:13px; }
 #inventory-vehicle-workspace .vdp-focus-next-action p { margin:0; }
 .inventory-workspace--focused .vdp-focus-next-action__overdue { color:var(--ifx-danger); }
 @media (max-width:680px) {
@@ -551,42 +497,11 @@
 /* Identity and price share one masthead; attached section bands separate
    the white data ledgers from the quiet workspace canvas. */
 
-@media (max-width:680px) {
-  .inventory-workspace--focused .vdp-focus-price { padding:var(--ifx-space-1) var(--ifx-space-2); }
-}
-
-@media (min-width:681px) {
-  .inventory-workspace--focused .vdp-focus-glance > span:nth-child(2),
-  .inventory-workspace--focused .vdp-focus-glance .inventory-service-link { display:none; }
-}
-
-
-
-.inventory-workspace--focused .vdp-focus-identity h2 > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.inventory-workspace--focused .vdp-focus-identity h2 > svg { flex:none; width:var(--ifx-icon-heading-size); height:var(--ifx-icon-heading-size); color:var(--ifx-neutral-0); stroke-width:2; }
-@media (max-width:680px) { .inventory-workspace--focused .vdp-focus-identity h2 > svg { width:var(--ifx-icon-action-size); height:var(--ifx-icon-action-size); } .inventory-workspace--focused .vdp-focus-identity h2 > span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; white-space:normal; } }
-
 /* A vehicle command workspace: selling facts and equipment share the first
    work area; original pricing uses the space beneath the supporting photo. */
 
-
-
-
-@media (max-width:680px) {
-  .inventory-workspace--focused .vdp-focus-mobile-vin { order:8; }
-}
-
-
-
-
-
-
-
-
-
 /* Branded identity stays separate from the white working surfaces. */
 .inventory-workspace--focused .vdp-focus-header :is(.vdp-focus-back,.vdp-focus-close):hover { color:var(--ifx-neutral-0); background:var(--blue-700); border-color:var(--blue-100); }
-.inventory-workspace--focused .vdp-focus-tabs { border-left:var(--ifx-stroke-hairline) solid var(--v10-border); }
 .inventory-workspace--focused .vdp-focus-hold-grid { align-content:start; grid-auto-rows:min-content; }
 .inventory-workspace--focused .vdp-focus-hold-evidence:empty { display:none; }
 .inventory-workspace--focused .inventory-workspace-no-hold__header { --vdp-heading-gap:var(--ifx-space-0); display:flex; align-items:flex-start; gap:var(--ifx-space-2); margin:calc(var(--ifx-space-3) * -1) calc(var(--ifx-space-3) * -1) var(--ifx-space-3); padding:var(--ifx-space-2) var(--ifx-space-3); background:var(--ifx-panel-header); border-bottom:var(--ifx-stroke-hairline) solid var(--v10-border); }
@@ -606,30 +521,51 @@
 .inventory-workspace--focused .vdp-focus-movement .inventory-workspace-empty--compact > :is(h3,p) { grid-column:2; margin:0; }
 .inventory-workspace--focused .vdp-focus-movement .inventory-workspace-empty--compact > p { max-width:none; color:var(--v10-support); font-size:var(--ifx-text-sm); }
 
-/* A contiguous vehicle reference sits beside specifications and evidence.
-   Independent column flow avoids empty shelves beneath the photograph. */
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations { display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"facts" "actions"; align-items:start; gap:var(--ifx-space-1) var(--ifx-space-3); min-width:0; padding:var(--ifx-space-2) var(--ifx-space-3); border:var(--ifx-stroke-hairline) solid var(--v10-border); border-top:var(--ifx-stroke-emphasis) solid var(--blue-600); border-radius:var(--ifx-radius-xs); background:var(--ifx-panel-surface); box-shadow:var(--ifx-panel-shadow); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations > dl { background:var(--ifx-panel-surface); border:0; grid-area:facts; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; margin:0; min-width:0; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact { display:grid; align-content:start; min-width:0; min-height:var(--ifx-control-height-md); --vdp-fact-padding:0 var(--ifx-space-2); --vdp-fact-left-border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact:first-child { --vdp-fact-left-border:0; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact dt { line-height:var(--ifx-leading-heading); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact dd { --vdp-fact-value-size:var(--ifx-text-sm); --vdp-fact-value-weight:var(--ifx-weight-semibold); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact small { display:block; color:var(--v10-support); font-size:var(--ifx-text-xs); overflow-wrap:anywhere; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations > .vdp-focus-actions { grid-area:actions; display:flex; flex-wrap:wrap; max-width:none; padding-top:var(--ifx-space-2); border-top:var(--ifx-stroke-hairline) solid var(--v10-border); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .vdp-focus-next-action { grid-column:1 / -1; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:minmax(calc(var(--ifx-space-16) * 5),.34fr) minmax(0,1fr); grid-template-areas:"operations operations" "photo context" "pricing context" "documents context"; grid-template-rows:auto min-content min-content minmax(0,1fr); gap:0 var(--ifx-space-3); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-overview > :not(.vdp-focus-reference-column,.vdp-focus-operations,.vdp-focus-vehicle-context,.vdp-focus-document-shortcuts) { grid-column:1 / -1; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-operations { grid-area:operations; margin-bottom:var(--ifx-space-2); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column { display:contents; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-context { grid-area:context; display:grid; grid-template-areas:"intelligence" "equipment" "reference" "vin"; align-content:start; gap:var(--ifx-space-2); min-width:0; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-gallery-column { grid-area:photo; min-width:0; padding:var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-bottom:0; background:var(--ifx-panel-surface); }
+/* Two independently flowing work columns share one record anatomy. */
+.inventory-workspace.inventory-workspace--focused .vdp-focus-overview { display:grid; grid-template-columns:minmax(calc(var(--ifx-space-16) * 5),.36fr) minmax(0,1fr); grid-template-rows:min-content minmax(0,1fr); grid-template-areas:"intro command" "shortcuts command"; gap:var(--ifx-space-2) var(--ifx-space-3); align-items:start; padding:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-overview > :not(.vdp-focus-reference-column,.vdp-focus-command-column,.vdp-focus-document-shortcuts) { grid-column:1 / -1; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-command-column { grid-area:command; display:grid; align-content:start; gap:var(--ifx-space-2); min-width:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column { grid-area:intro; min-width:0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:var(--ifx-radius-xs); background:var(--ifx-panel-surface); box-shadow:var(--ifx-panel-shadow); overflow:hidden; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-gallery-column { display:grid; gap:var(--ifx-space-2); min-width:0; padding:var(--ifx-space-2); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-photo { min-width:0; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-valuation { display:none; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-intelligence { grid-area:intelligence; display:grid; grid-template-columns:minmax(0,1fr) minmax(calc(var(--ifx-space-16) * 3),.46fr); gap:var(--ifx-space-3); min-width:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-valuation { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-1) var(--ifx-space-2); align-items:center; margin:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-published-price { grid-column:1 / -1; --vdp-fact-leading:var(--ifx-leading-display); --vdp-fact-value-size:var(--ifx-text-h3); --vdp-fact-value-weight:var(--ifx-weight-bold); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-valuation .inventory-workspace-fact:not(.vdp-focus-published-price) { --vdp-fact-value-weight:var(--ifx-weight-semibold); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column :is(.copyable-value) { display:flex; justify-content:space-between; width:100%; gap:var(--ifx-space-1); min-width:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column .copyable-value__button { position:absolute; inset:0 0 auto auto; justify-content:center; width:var(--ifx-control-height-md); height:var(--ifx-control-height-md); padding:0; margin:0; transform:none; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column .inventory-workspace-fact:has(.copyable-value) { position:relative; min-height:var(--ifx-control-height-md); --vdp-fact-padding:0 var(--ifx-control-height-md) 0 0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column .copyable-value__button:hover { background:var(--blue-050); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-identifiers { display:grid; grid-template-columns:minmax(0,.8fr) minmax(0,1.4fr); gap:0; margin:0; padding:0 var(--ifx-space-2); border-block:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); background:var(--ifx-evidence-surface); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-identifiers .inventory-workspace-fact { min-height:var(--ifx-control-height-md); --vdp-fact-padding:var(--ifx-space-1) var(--ifx-control-height-md) var(--ifx-space-1) 0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-identifiers .inventory-workspace-fact + .inventory-workspace-fact { --vdp-fact-padding:var(--ifx-space-1) var(--ifx-control-height-md) var(--ifx-space-1) var(--ifx-space-2); --vdp-fact-left-border:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-identifiers .copyable-value__content { color:var(--navy-900); font-size:var(--ifx-text-xs); font-weight:var(--ifx-weight-semibold); white-space:nowrap; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing { padding:var(--ifx-space-2); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-2); margin:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-source { margin:0; color:var(--v10-support); font-size:var(--ifx-text-xs); line-height:var(--ifx-leading-compact); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .inventory-workspace-fact { --vdp-fact-value-weight:var(--ifx-weight-semibold); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .vdp-focus-reference-value { display:block; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts small { font-weight:var(--ifx-weight-regular); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts { grid-area:shortcuts; min-width:0; padding:var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:var(--ifx-radius-xs); background:var(--ifx-action-well); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts:empty { display:none; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts .vehicle-resource-shortcuts { display:flex; flex-wrap:wrap; align-items:center; gap:var(--ifx-space-1); margin:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts .vehicle-resource-shortcut { flex:1 1 calc(var(--ifx-space-16) + var(--ifx-space-6)); min-width:0; min-height:var(--ifx-control-height-md); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts .vehicle-resource-shortcuts__facts { flex-basis:100%; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-operations { display:grid; min-width:0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:var(--ifx-radius-xs); background:var(--ifx-panel-surface); box-shadow:var(--ifx-panel-shadow); overflow:hidden; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-operations > dl { display:grid; gap:0; margin:0; padding:var(--ifx-space-2) var(--ifx-space-3); min-width:0; border:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact { min-width:0; --vdp-fact-value-size:var(--ifx-text-sm); --vdp-fact-value-weight:var(--ifx-weight-semibold); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-hold-ledger { background:var(--ifx-evidence-surface); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-hold-ledger .inventory-workspace-fact { display:grid; grid-template-columns:var(--ifx-space-12) minmax(0,1fr); gap:var(--ifx-space-2); align-items:baseline; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-hold-ledger .inventory-workspace-fact small { font-weight:var(--ifx-weight-regular); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-status-ledger { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-status-ledger .inventory-workspace-fact + .inventory-workspace-fact { --vdp-fact-left-border:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); --vdp-fact-padding:0 var(--ifx-space-2); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-operations > .vdp-focus-actions { display:flex; flex-wrap:wrap; gap:var(--ifx-space-1); margin:0; padding:var(--ifx-space-2) var(--ifx-space-3); border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); background:var(--ifx-action-well); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-operations .vdp-focus-next-action { padding:var(--ifx-space-2) var(--ifx-space-3); }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-context { display:grid; grid-template-areas:"intelligence" "equipment" "reference"; align-content:start; gap:var(--ifx-space-2); min-width:0; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-intelligence { grid-area:intelligence; display:grid; grid-template-columns:minmax(0,1fr) minmax(calc(var(--ifx-space-16) * 3),.46fr); gap:var(--ifx-space-2); min-width:0; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-specs { min-width:0; padding:0 var(--ifx-space-3) var(--ifx-space-1); border:var(--ifx-stroke-hairline) solid var(--v10-border); background:var(--ifx-panel-surface); border-radius:var(--ifx-radius-xs); box-shadow:var(--ifx-panel-shadow); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-desktop-specs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--ifx-space-3); margin:0; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-desktop-specs .inventory-workspace-fact { display:grid; grid-template-columns:calc(var(--ifx-space-16) + var(--ifx-space-4)) minmax(0,1fr); align-items:baseline; gap:var(--ifx-space-1); --vdp-fact-padding:var(--ifx-space-1) 0; --vdp-fact-bottom-border:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-desktop-specs .vdp-focus-selling-fact { min-height:var(--ifx-control-height-md); align-items:center; --vdp-fact-value-size:var(--ifx-text-lg); --vdp-fact-value-weight:var(--ifx-weight-semibold); font-variant-numeric:tabular-nums; }
+.inventory-workspace.inventory-workspace--focused .vdp-focus-desktop-specs .vdp-focus-selling-fact { min-height:var(--ifx-control-height-md); align-items:center; --vdp-fact-value-size:var(--ifx-text-body); --vdp-fact-value-weight:var(--ifx-weight-medium); font-variant-numeric:tabular-nums; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-desktop-specs .vdp-focus-copy-fact { --vdp-fact-padding:0; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-history-facts { min-width:0; padding:0 var(--ifx-space-3) var(--ifx-space-1); border:var(--ifx-stroke-hairline) solid var(--v10-border); background:var(--ifx-panel-surface); border-radius:var(--ifx-radius-xs); box-shadow:var(--ifx-panel-shadow); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-history-facts > dl { display:grid; margin:0; }
@@ -642,17 +578,6 @@
 .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights li { display:flex; align-items:flex-start; gap:var(--ifx-space-1); min-width:0; padding:var(--ifx-space-1) 0; border-bottom:var(--ifx-stroke-hairline) solid var(--v10-border-soft); color:var(--v10-ink); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights li svg { flex:none; width:var(--ifx-space-4); height:var(--ifx-space-4); margin-top:var(--ifx-space-0-5); color:var(--blue-700); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights > p { margin:var(--ifx-space-2) var(--ifx-space-3); font-size:var(--ifx-text-sm); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts { grid-area:pricing; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:var(--ifx-space-2); min-width:0; margin:0; padding:var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-bottom:0; background:var(--ifx-panel-surface); box-shadow:none; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .inventory-workspace-fact { min-width:0; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .inventory-workspace-fact dd { --vdp-fact-value-weight:var(--ifx-weight-semibold); font-variant-numeric:tabular-nums; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .copyable-value { display:flex; justify-content:space-between; min-width:0; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .copyable-value__button { margin-block:calc(var(--ifx-space-3) * -1); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts small { font-weight:var(--ifx-weight-regular); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts { grid-area:documents; align-self:start; min-width:0; padding:var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--ifx-panel-surface); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts:empty { display:none; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts .vehicle-resource-shortcuts { display:flex; flex-wrap:wrap; align-items:center; gap:var(--ifx-space-1); margin:0; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts .vehicle-resource-shortcut { flex:1 1 calc(var(--ifx-space-16) + var(--ifx-space-6)); min-width:0; min-height:var(--ifx-control-height-md); }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts .vehicle-resource-shortcuts__facts { flex-basis:100%; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-keyfacts { grid-area:reference; display:block; min-width:0; margin:0; padding:0; border:var(--ifx-stroke-hairline) solid var(--v10-border); background:var(--ifx-panel-surface); border-radius:var(--ifx-radius-xs); box-shadow:var(--ifx-panel-shadow); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-keyfacts > dl { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--ifx-space-3); margin:0; padding:var(--ifx-space-1) var(--ifx-space-3); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-keyfacts .inventory-workspace-fact { min-width:0; }
@@ -662,7 +587,6 @@
 .inventory-workspace.inventory-workspace--focused .vdp-focus-keyfacts .vdp-focus-reference-date { white-space:nowrap; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-reference-action { display:inline-flex; align-items:center; min-height:var(--ifx-control-height-md); margin-top:calc(var(--ifx-space-2) * -1); padding:0; border:0; background:transparent; color:var(--blue-700); font:inherit; text-align:left; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-reference-action:hover { text-decoration:underline; }
-.inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-vin { grid-area:vin; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-resources { margin-top:0; padding:0 var(--ifx-space-3) var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--v10-border); background:var(--ifx-panel-surface); border-radius:var(--ifx-radius-xs); box-shadow:var(--ifx-panel-shadow); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-ledger-heading { --vdp-heading-gap:var(--ifx-space-0); --vdp-heading-ink:var(--navy-900); background:var(--ifx-panel-header); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-ledger-heading .ifx-ledger-heading__label { min-height:var(--ifx-space-8); padding-block:var(--ifx-space-1); }
@@ -672,38 +596,42 @@
 .inventory-workspace.inventory-workspace--focused .vdp-focus-operational-details > .vdp-focus-ledger-heading { grid-column:1 / -1; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-keyfacts > .vdp-focus-ledger-heading { display:none; }
 .inventory-workspace.inventory-workspace--focused .vdp-focus-ledger-heading .ifx-ledger-heading__actions > button { display:inline-flex; align-items:center; gap:var(--ifx-space-1); min-height:var(--ifx-control-height-md); padding:var(--ifx-space-1) 0; border:0; background:transparent; color:var(--blue-700); font-weight:var(--ifx-weight-semibold); }
+
 @media (min-width:681px) and (max-width:1200px) {
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations { grid-template-columns:minmax(0,1fr); grid-template-areas:"facts" "actions"; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations > .vdp-focus-actions { max-width:none; padding:var(--ifx-space-1) 0 0; border-left:0; border-top:var(--ifx-stroke-hairline) solid var(--v10-border-soft); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:calc(var(--ifx-space-16) * 4 + var(--ifx-space-8)) minmax(0,1fr); grid-template-areas:"operations operations" "photo context" "pricing context" "documents context"; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:calc(var(--ifx-space-16) * 5) minmax(0,1fr); }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-intelligence { grid-template-columns:minmax(0,1fr); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-pricing-facts .copyable-value__content { white-space:nowrap; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-history-facts > dl { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--ifx-space-3); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights > ul { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-highlights > ul { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width:680px) {
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations { grid-template-columns:minmax(0,1fr); grid-template-areas:"facts" "actions"; padding:var(--ifx-space-2); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations > dl { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact { min-height:var(--ifx-control-height-md); --vdp-fact-padding:var(--ifx-space-1) var(--ifx-space-2); --vdp-fact-left-border:0; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact:nth-child(even) { --vdp-fact-left-border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations .inventory-workspace-fact:nth-child(-n + 2) { --vdp-fact-bottom-border:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations > .vdp-focus-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); max-width:none; padding:var(--ifx-space-2) 0 0; border-left:0; border-top:var(--ifx-stroke-hairline) solid var(--v10-border-soft); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations .vdp-focus-actions > :is(a,button) { min-height:var(--ifx-control-height-md); padding-inline:var(--ifx-space-1); font-size:var(--ifx-text-sm); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:minmax(0,1fr); grid-template-areas:none; grid-template-rows:none; gap:var(--ifx-space-2); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column, .inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-context { display:contents; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column > .vdp-focus-pricing-facts { order:1; padding:var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-overview > :not(.vdp-focus-reference-column,.vdp-focus-operations,.vdp-focus-vehicle-context,.vdp-focus-document-shortcuts) { order:6; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-overview > .vdp-focus-document-shortcuts { order:5; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations { grid-area:auto; order:2; margin-bottom:0; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-gallery-column { --vdp-photo-height:calc(var(--ifx-space-16) + var(--ifx-space-8)); --vdp-photo-aspect:auto; grid-area:auto; padding:0; border:0; background:transparent; display:grid; grid-template-columns:calc(var(--ifx-space-16) * 2) minmax(0,1fr); align-items:center; gap:var(--ifx-space-3); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-valuation { display:grid; align-content:center; gap:0; margin:0; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-valuation .inventory-workspace-fact { --vdp-fact-value-size:var(--ifx-text-body); --vdp-fact-value-weight:var(--ifx-weight-semibold); }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-photo .inventory-workspace-gallery__stage { border-radius:var(--ifx-radius-xs); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-reference { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--ifx-space-3); padding-inline:var(--ifx-space-2); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-stock { grid-column:1; grid-row:2; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-vin { grid-column:2; grid-row:2; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tab-service { grid-column:2; grid-row:1; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-header { grid-template-columns:var(--ifx-control-height-md) minmax(0,1fr) var(--ifx-control-height-md); gap:var(--ifx-space-1); padding:var(--ifx-space-1) var(--ifx-space-2); min-height:var(--ifx-space-16); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-identity h2 { font-size:var(--ifx-text-md); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-identity h2 > svg { display:none; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-navigation { padding:0 var(--ifx-space-2); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-tabs button { padding-inline:var(--ifx-space-3); font-size:var(--ifx-text-sm); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-overview { grid-template-columns:minmax(0,1fr); grid-template-rows:none; grid-template-areas:none; gap:var(--ifx-space-2); padding:0; }
+  .inventory-workspace.inventory-workspace--focused :is(.vdp-focus-command-column,.vdp-focus-vehicle-context,.vdp-focus-vehicle-intelligence) { display:contents; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-reference-column { grid-area:auto; order:0; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-gallery-column { --vdp-photo-height:calc(var(--ifx-space-16) + var(--ifx-space-10)); --vdp-photo-aspect:auto; grid-template-columns:calc(var(--ifx-space-16) * 2 + var(--ifx-space-2)) minmax(0,1fr); align-items:center; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-valuation { grid-template-columns:minmax(0,1fr); gap:0; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-published-price { --vdp-fact-value-size:var(--ifx-text-h4); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-mobile-valuation .vdp-focus-listing-age { display:flex; align-items:baseline; gap:var(--ifx-space-2); }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-photo .inventory-workspace-gallery__thumbnails { display:none; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-photo .inventory-workspace-gallery__stage > :is(.inventory-workspace-gallery__previous,.inventory-workspace-gallery__next) { display:none; }
-  .inventory-workspace.inventory-workspace--focused .vdp-focus-vehicle-intelligence { display:contents; }
-  .inventory-workspace.inventory-workspace--focused :is(.vdp-focus-specs,.vdp-focus-history-facts,.vdp-focus-highlights,.vdp-focus-pricing-facts,.vdp-focus-document-shortcuts,.vdp-focus-keyfacts,.vdp-focus-mobile-vin) { grid-area:auto; grid-column:1; order:4; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations { order:1; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations > dl { padding:var(--ifx-space-2); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-status-ledger { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-status-ledger .vdp-focus-disposition-fact { grid-column:1 / -1; display:grid; grid-template-columns:calc(var(--ifx-space-16) + var(--ifx-space-4)) minmax(0,1fr); gap:var(--ifx-space-2); align-items:baseline; --vdp-fact-left-border:0; --vdp-fact-padding:var(--ifx-space-1) 0 0; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations > .vdp-focus-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:var(--ifx-space-2); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations .vdp-focus-actions > :is(a,button) { min-height:var(--ifx-control-height-md); padding-inline:var(--ifx-space-1); font-size:var(--ifx-text-sm); }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-operations .vdp-focus-next-action { padding:var(--ifx-space-2); }
+  .inventory-workspace.inventory-workspace--focused :is(.vdp-focus-specs,.vdp-focus-history-facts,.vdp-focus-highlights,.vdp-focus-keyfacts) { grid-area:auto; grid-column:1; order:2; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-document-shortcuts { grid-area:auto; order:3; }
+  .inventory-workspace.inventory-workspace--focused .vdp-focus-overview > :not(.vdp-focus-reference-column,.vdp-focus-command-column,.vdp-focus-document-shortcuts) { order:4; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-desktop-specs { grid-template-columns:minmax(0,1fr); }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-desktop-specs .vdp-focus-selling-fact { display:none; }
   .inventory-workspace.inventory-workspace--focused .vdp-focus-history-facts > dl { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--ifx-space-3); }

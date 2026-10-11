@@ -52,14 +52,15 @@ components, source rules and genuine provider assets with recorded provenance.
 
 ## Decisions applied to this candidate
 
-1. Preserve a real comparison table rather than converting operations into
-   consumer listing cards. Four stable columns separate Vehicle & pricing,
-   Configuration, History and Operations for comparison between vehicles.
-2. Combine the larger photo, identity, price and registration copy fields in
-   one vehicle reference area. Stock, full VIN, base MSRP and mileage belong
-   where staff identify the vehicle, including on phones. Source summaries
-   follow their related configuration, history or operational facts without a
-   manufactured shared evidence band.
+1. Compare complete vehicle records in a continuous ledger. The initial four-column
+   implementation was rejected after actual desktop/tablet review: narrow report
+   columns forced small values and awkward wrapping. Use a wide vehicle reference
+   area beside an independent operations rail, followed by a joined source band.
+2. Combine the larger unobscured photo, identity, pricing and configuration in
+   one vehicle reference area. Stock, full VIN, base MSRP and mileage occupy a
+   stable copy ledger. Certification belongs with identity metadata rather than
+   covering the vehicle. Factory, history and OEM source marks sit beside their
+   respective facts in the joined band; phone records preserve the same order.
 3. Keep one compact action footer. Records, Save and Listing form a reference
    group beside permitted Request/Track/Move controls. Full labels and 44px
    targets remain consistent. Additional genuine actions stay direct; no

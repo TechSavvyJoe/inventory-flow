@@ -213,7 +213,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             to={to}
             className={`nav-link${active ? ' is-active' : ''}`}
             aria-current={active ? 'page' : undefined}
-            title={navExpanded ? undefined : label}
+            title={label}
           >
             <span className="nav-icon-frame" aria-hidden="true"><Icon /></span>
             <span className="nav-label">{label}</span>
