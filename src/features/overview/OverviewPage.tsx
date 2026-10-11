@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { CarFront, ChartColumnIncreasing, ChevronDown, ChevronRight, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
+import { toInventoryVehicle } from '../../app/adapters'
+import { transferByVin } from '../inventory/inventory-utils'
+import type { InventoryVehicle } from '../inventory/types'
 import { SourceWarning } from '../../components/SourceWarning'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
 import { FlowIconButton, FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
@@ -859,8 +862,15 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
 }
 
 export function OverviewPage() {
-  const { data, homeStore, role, currentUser, currentUserId, refresh } = useAppData()
+  const { data, homeStore, role, currentUser, currentUserId, refresh, refreshSnapshot } = useAppData()
   const accessContext = JSON.stringify([currentUserId, currentUser, role, homeStore])
+  const refreshSavedListVehicles = useCallback(async (): Promise<InventoryVehicle[] | null> => {
+    const next = await refreshSnapshot()
+    if (!next || !currentUserId || next.savedListsEnabled !== true || next.access?.userId !== currentUserId
+      || next.access.role !== role || next.access.store !== homeStore) return null
+    const transfers = transferByVin(next.transfers)
+    return next.vehicles.map(vehicle => toInventoryVehicle(vehicle, next, transfers.get(vehicle.vin)))
+  }, [currentUserId, homeStore, refreshSnapshot, role])
   const [presentationChoice, setPresentationChoice] = useState<{ context: string; value: 'sales' | 'operations' } | null>(null)
   // An employee or role change gets its own default before the first render;
   // a previous employee's presentation choice never carries across identities.
@@ -878,7 +888,9 @@ export function OverviewPage() {
   const phone = useSyncExternalStore(PHONE.subscribe, PHONE.matches, () => false)
   // Printing from the browser menu gets the same full snapshot as the button.
   useEffect(() => {
-    const before = () => flushSync(() => setPrinting(true))
+    // A customer sheet owns its own print layout, including refresh-failure
+    // recovery. Do not unmount it by switching the underlying Overview.
+    const before = () => { if (!document.querySelector('.takehome-portal')) flushSync(() => setPrinting(true)) }
     const after = () => setPrinting(false)
     window.addEventListener('beforeprint', before)
     window.addEventListener('afterprint', after)
@@ -947,7 +959,7 @@ export function OverviewPage() {
         <button type="button" aria-pressed={presentation === 'operations'} onClick={() => setPresentationChoice({ context: accessContext, value: 'operations' })}><Wrench aria-hidden="true" />Store operations</button>
       </div>
 
-      {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} /> : <>
+      {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} refreshVehicles={refreshSavedListVehicles} /> : <>
       <OverviewWorkQueue data={data} overview={overview} rows={rows} stores={stores} scope={scope} role={role} homeStore={homeStore}
         holdsVerified={holdsVerified} dispositionsEnabled={dispositionsEnabled}
         onDispositionOpen={(vin, opener) => { dispositionOpener.current = opener; setDispositionStatus(''); setDispositionVin(vin) }} />

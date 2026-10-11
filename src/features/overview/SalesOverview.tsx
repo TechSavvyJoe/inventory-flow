@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { AlertCircle, ArrowLeftRight, ArrowRight, CarFront, FileText, Heart, MapPin, PauseCircle, RotateCw, Tag, UsersRound, Wrench } from 'lucide-react'
 import { toInventoryVehicle } from '../../app/adapters'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
@@ -25,6 +25,7 @@ export interface SalesOverviewProps {
   role: UserRole
   currentUserId: string | null
   printing?: boolean
+  refreshVehicles?: () => Promise<InventoryVehicle[] | null>
 }
 
 const TERMINAL_MOVE_STATES = new Set(['closed', 'declined', 'canceled', 'expired'])
@@ -125,7 +126,8 @@ function SalesVehicleRow({ vehicle, normalized, reasons = [] }: {
   </li>
 }
 
-export function SalesOverview({ data, stores, homeStore, role, currentUserId, printing = false }: SalesOverviewProps) {
+export function SalesOverview({ data, stores, homeStore, role, currentUserId, printing = false, refreshVehicles }: SalesOverviewProps) {
+  const navigate = useNavigate()
   const authorizedVehicles = useMemo(() => data.vehicles.map(vehicle => toInventoryVehicle(vehicle, data)), [data])
   const accessContext = useMemo(() => JSON.stringify([currentUserId, role, homeStore, 'overview']), [currentUserId, role, homeStore])
   const savedLists = useSyncedCustomerLists({
@@ -135,10 +137,13 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
     store: homeStore,
     context: accessContext,
     authorizedVehicles,
+    refreshVehicles,
   })
   const management = savedLists.management
   const sheetButtonRef = useRef<HTMLButtonElement>(null)
-  const [sheetSnapshot, setSheetSnapshot] = useState<{ context: string; listId: string; label: string; vehicles: InventoryVehicle[] } | null>(null)
+  const sheetRequest = useRef(0)
+  const [sheetError, setSheetError] = useState<string | null>(null)
+  const [sheetSnapshot, setSheetSnapshot] = useState<{ context: string; listId: string; label: string; vehicles: InventoryVehicle[]; refreshedAt?: number; unavailableCount?: number } | null>(null)
   const storeSet = useMemo(() => new Set(stores), [stores])
   const sourceByVin = useMemo(() => new Map(data.vehicles.map(vehicle => [vehicle.vin, vehicle])), [data.vehicles])
   const inventoryByVin = useMemo(() => new Map(authorizedVehicles.map(vehicle => [vehicle.vin, vehicle])), [authorizedVehicles])
@@ -151,6 +156,29 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
   const canOpenSheet = Boolean(currentUserId && data.savedListsEnabled === true && !management?.accessRevoked && management?.activeListId && visibleSavedVehicles.length)
   const sheetCurrent = canOpenSheet && !printing && sheetSnapshot?.context === accessContext && sheetSnapshot.listId === management?.activeListId && sheetSnapshot.vehicles.every(vehicle => inventoryByVin.has(vehicle.vin))
   useEffect(() => { if (sheetSnapshot && !sheetCurrent) setSheetSnapshot(null) }, [sheetSnapshot, sheetCurrent])
+  useEffect(() => {
+    sheetRequest.current += 1
+    setSheetError(null)
+    return () => { sheetRequest.current += 1 }
+  }, [accessContext, management?.accessRevoked, management?.activeListId, data.savedListsEnabled, printing])
+  const loadCustomerSheet = async (listId = management?.activeListId) => {
+    if (!listId || !canOpenSheet || printing) return false
+    const request = ++sheetRequest.current
+    setSheetError(null)
+    if (management?.prepareCustomerSheet) {
+      const snapshot = await management.prepareCustomerSheet(listId)
+      if (request !== sheetRequest.current) return false
+      if (!snapshot) {
+        setSheetError('Could not refresh this list. Any open preview still shows its last-loaded data. Retry to prepare an updated sheet.')
+        return false
+      }
+      setSheetSnapshot({ ...snapshot, context: accessContext })
+    } else if (management) {
+      setSheetSnapshot({ context: accessContext, listId, label: management.activeLabel, vehicles: visibleSavedVehicles.map(vehicle => inventoryByVin.get(vehicle.vin)!) })
+    }
+    return true
+  }
+  const closeSheet = () => { sheetRequest.current += 1; setSheetSnapshot(null); setSheetError(null) }
   const savedVins = new Set(visibleSavedVehicles.map(vehicle => vehicle.vin))
   const activeMoves = data.transfers.filter(record => isActiveMove(record) && moveInScope(record, storeSet))
   const activeMoveVins = new Set(activeMoves.map(record => record.vin))
@@ -202,13 +230,12 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
             : <>
               {management?.lists.length ? <div className="sales-overview__list-toolbar">
                 <div className="sales-overview__list-tabs" aria-label="Choose a customer saved list">
-                  {management.lists.map(list => <button key={list.id} type="button" aria-pressed={management.activeListId === list.id} onClick={() => management.selectList(list.id)}>{list.label}<span>{list.count}</span></button>)}
+                  {management.lists.map(list => <button key={list.id} type="button" aria-pressed={management.activeListId === list.id} disabled={management.preparingSheet} onClick={() => management.selectList(list.id)}>{list.label}<span>{list.count}</span></button>)}
                 </div>
-                {canOpenSheet && !printing ? <FlowButton ref={sheetButtonRef} className="sales-overview__sheet" variant="secondary" iconBefore={<FileText aria-hidden="true" />} onClick={() => {
-                  if (management.activeListId) setSheetSnapshot({ context: accessContext, listId: management.activeListId, label: management.activeLabel, vehicles: visibleSavedVehicles.map(vehicle => inventoryByVin.get(vehicle.vin)!) })
-                }}>Customer sheet</FlowButton> : null}
+                {canOpenSheet && !printing ? <FlowButton ref={sheetButtonRef} className="sales-overview__sheet" variant="secondary" iconBefore={<FileText aria-hidden="true" />} disabled={management.loading || management.saving || management.pendingAction || management.preparingSheet} onClick={() => { void loadCustomerSheet() }}>{management.preparingSheet ? 'Refreshing list and vehicles…' : 'Customer sheet'}</FlowButton> : null}
               </div> : !management?.loading && !management?.error ? <p className="sales-overview__state">No customer saved lists yet. Save vehicles from Inventory when you are working with a customer.</p> : null}
               {management?.error ? <div className="sales-overview__error" role="alert"><span>{management.error}</span><FlowButton variant="secondary" onClick={management.retry}><RotateCw aria-hidden="true" />Retry</FlowButton></div> : null}
+              {sheetError && !sheetCurrent ? <p className="sales-overview__state sales-overview__state--alert" role="alert">{sheetError}</p> : null}
               {unavailableSavedCount > 0 ? <p className="sales-overview__saved-note">{unavailableSavedCount} saved {unavailableSavedCount === 1 ? 'vehicle has' : 'vehicles have'} no current authorized details. {unavailableSavedCount === 1 ? 'It stays' : 'They stay'} in your list and {unavailableSavedCount === 1 ? 'is' : 'are'} excluded from customer sheets.</p> : null}
               {visibleSavedVehicles.length ? <ul className="sales-overview__vehicle-list">
                 {visibleSavedVehicles.map(vehicle => <SalesVehicleRow key={vehicle.vin} vehicle={vehicle} normalized={inventoryByVin.get(vehicle.vin)!} />)}
@@ -245,6 +272,9 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
       </aside>
     </div>
     <p className="sales-overview__boundary"><AlertCircle aria-hidden="true" />Listing, hold, service, movement, issue, and location facts remain independent. This overview does not confirm availability.</p>
-    {sheetCurrent && sheetSnapshot ? <TakeHomeSheet vehicles={sheetSnapshot.vehicles} listLabel={sheetSnapshot.label} onClose={() => setSheetSnapshot(null)} returnFocusRef={sheetButtonRef} /> : null}
+    {sheetCurrent && sheetSnapshot ? <TakeHomeSheet vehicles={sheetSnapshot.vehicles} listLabel={sheetSnapshot.label} onClose={closeSheet} returnFocusRef={sheetButtonRef}
+      onRefresh={management?.prepareCustomerSheet ? () => loadCustomerSheet(sheetSnapshot.listId) : undefined}
+      refreshing={management?.preparingSheet} refreshError={sheetError} refreshedAt={sheetSnapshot.refreshedAt} unavailableCount={sheetSnapshot.unavailableCount}
+      onEditList={() => { closeSheet(); navigate('/inventory?scope=group', { state: { openSavedLists: true } }) }} /> : null}
   </div>
 }

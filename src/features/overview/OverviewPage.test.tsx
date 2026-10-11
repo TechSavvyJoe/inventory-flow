@@ -20,6 +20,9 @@ const { useAppDataMock } = vi.hoisted(() => ({ useAppDataMock: vi.fn() }))
 vi.mock('../../app/AppDataContext', () => ({ useAppData: () => useAppDataMock() }))
 const api = vi.hoisted(() => ({ getDisposition: vi.fn(), updateDisposition: vi.fn() }))
 vi.mock('../../lib/api', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../lib/api')>()), ...api }))
+const savedListsApi = vi.hoisted(() => ({ getSavedVehicleLists: vi.fn() }))
+vi.mock('../../lib/saved-lists-api', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../lib/saved-lists-api')>()), ...savedListsApi }))
+vi.mock('../../../extension/sidepanel/lib/takehome-pdf.mjs', () => ({ createTakeHomePdf: vi.fn(async () => new Blob(['%PDF-1.7 synthetic print fixture'], { type: 'application/pdf' })) }))
 
 const STORES: StoreName[] = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 
@@ -133,7 +136,7 @@ function renderAs(role: UserRole, data = bootstrap(role)) {
 }
 
 describe('OverviewPage (server projection)', () => {
-  beforeEach(() => window.localStorage.clear())
+  beforeEach(() => { window.localStorage.clear(); savedListsApi.getSavedVehicleLists.mockReset() })
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
@@ -299,6 +302,50 @@ describe('OverviewPage (server projection)', () => {
     expect(print).toHaveBeenCalledOnce()
     expect(screen.getByText(/Inventory Flow · Daily snapshot · All stores · As of 09\/25\/2026/)).toBeInTheDocument()
     expect(screen.getByText(/Nothing here asserts availability/)).toBeInTheDocument()
+  })
+
+  it('keeps a customer sheet in charge of native printing, including failed refreshes, then restores Overview printing after close', async () => {
+    const data = bootstrap('sales')
+    data.savedListsEnabled = true
+    data.access = { user: 'Synthetic Sales', userId: 'synthetic-print-owner', role: 'sales', store: 'Howell', canViewPrivateEvidence: true, canCreateTransfer: true }
+    for (let index = 0; index < 4; index += 1) data.vehicles.push(vehicle(`TESTDATAHWELL001${index}`, 'Howell'))
+    savedListsApi.getSavedVehicleLists.mockResolvedValue({ lists: [{
+      id: 'synthetic-print-list', label: 'AB', revision: 1,
+      createdAt: '2026-09-25T12:00:00Z', updatedAt: '2026-09-25T12:00:00Z',
+      items: [{ vin: data.vehicles[0].vin, addedAt: '2026-09-25T12:00:00Z', available: true }],
+    }] })
+    const refreshSnapshot = vi.fn().mockResolvedValueOnce(data).mockResolvedValueOnce(null)
+    useAppDataMock.mockReturnValue({ data, homeStore: 'Howell', role: 'sales', currentUser: data.access.user, currentUserId: data.access.userId, refresh: vi.fn(), refreshSnapshot })
+    render(<MemoryRouter><OverviewPage /></MemoryRouter>)
+    const otherVehicles = screen.getByRole('region', { name: 'Other vehicles in scope' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Customer sheet' })).toBeEnabled())
+    expect(within(otherVehicles).getAllByRole('listitem')).toHaveLength(4)
+    fireEvent.click(screen.getByRole('button', { name: 'Customer sheet' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Take-home page · AB' })
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Save PDF' })).toBeEnabled())
+    expect(refreshSnapshot).toHaveBeenCalledOnce()
+
+    fireEvent(window, new Event('beforeprint'))
+    expect(screen.getByRole('dialog', { name: 'Take-home page · AB' })).toBe(sheet)
+    expect(within(sheet).getByRole('button', { name: 'Print / Save as PDF' })).toBeEnabled()
+    fireEvent(window, new Event('afterprint'))
+    expect(screen.getByRole('dialog', { name: 'Take-home page · AB' })).toBe(sheet)
+
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Refresh comparison' }))
+    await waitFor(() => expect(within(sheet).getByRole('alert')).toHaveTextContent('Could not refresh this list'))
+    fireEvent(window, new Event('beforeprint'))
+    expect(screen.getByRole('dialog', { name: 'Take-home page · AB' })).toBe(sheet)
+    expect(within(sheet).getByText('Customer sheet refresh required. Return to Inventory Flow and refresh this comparison successfully before printing or sharing.')).toBeInTheDocument()
+    expect(within(sheet).getByRole('button', { name: 'Print / Save as PDF' })).toBeDisabled()
+    fireEvent(window, new Event('afterprint'))
+
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Take-home page · AB' })).not.toBeInTheDocument()
+    expect(within(otherVehicles).getAllByRole('listitem')).toHaveLength(4)
+    fireEvent(window, new Event('beforeprint'))
+    expect(within(otherVehicles).getAllByRole('listitem')).toHaveLength(6)
+    fireEvent(window, new Event('afterprint'))
+    expect(within(otherVehicles).getAllByRole('listitem')).toHaveLength(4)
   })
 
   it('prints the first 15 away rows and says how many more were left off', () => {

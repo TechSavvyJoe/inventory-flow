@@ -46,6 +46,46 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('take-home sheet', () => {
+  it('keeps a failed-refresh preview visible but prevents stale export until refresh succeeds', async () => {
+    const props = { vehicles:[vehicle()], listLabel:'AB', onClose:vi.fn(), onRefresh:vi.fn(async () => false), refreshedAt:Date.now() };
+    const rendered = render(<TakeHomeSheet {...props} />);
+    await waitFor(() => expect(screen.getByRole('button', { name:'Share' })).toBeEnabled());
+    rendered.rerender(<TakeHomeSheet {...props} refreshError="Could not refresh. Last-loaded data remains." />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Last-loaded data remains');
+    expect(screen.getByRole('status')).toHaveTextContent('Last-loaded preview');
+    expect(screen.queryByText(/Inventory checked/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Ready/)).not.toBeInTheDocument();
+    for (const name of ['Share', 'Save PDF', 'Print / Save as PDF']) expect(screen.getByRole('button', { name })).toBeDisabled();
+    expect(screen.getByRole('button', { name:'Refresh comparison' })).toBeEnabled();
+    rendered.rerender(<TakeHomeSheet {...props} refreshing />);
+    expect(screen.getByRole('button', { name:'Share' })).toBeDisabled();
+    rendered.rerender(<TakeHomeSheet {...props} />);
+    expect(screen.getByRole('button', { name:'Share' })).toBeEnabled();
+  });
+
+  it('rebuilds the PDF after refreshed list facts arrive and shares only the newly prepared result', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, share, canShare:() => true });
+    const first = vehicle();
+    const onRefresh = vi.fn(async () => true);
+    const rendered = render(<TakeHomeSheet vehicles={[first]} listLabel="AB" onClose={vi.fn()} onRefresh={onRefresh} />);
+    await waitFor(() => expect(screen.getByRole('button', { name:'Share' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name:'Refresh comparison' }));
+    expect(onRefresh).toHaveBeenCalledOnce();
+    let finish!: (pdf:Blob) => void;
+    vi.mocked(createTakeHomePdf).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const updated = { ...first, price:39900, mileage:3100 };
+    rendered.rerender(<TakeHomeSheet vehicles={[updated]} listLabel="AB revised" onClose={vi.fn()} onRefresh={onRefresh} />);
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(screen.getByRole('button', { name:'Share' })).toBeDisabled();
+    expect(vi.mocked(createTakeHomePdf).mock.calls.at(-1)?.[0]).toEqual([takeHomeModel(updated)]);
+    finish(new Blob(['%PDF-1.7 refreshed price fixture'], { type:'application/pdf' }));
+    await waitFor(() => expect(screen.getByRole('button', { name:'Share' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name:'Share' }));
+    await waitFor(() => expect(share).toHaveBeenCalledOnce());
+    expect(share.mock.calls[0][0].files[0].name).toBe('ab-revised.pdf');
+  });
+
   it('offers a separate multi-vehicle comparison format and shares the matching PDF', async () => {
     const share = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { ...navigator, share, canShare:() => true });

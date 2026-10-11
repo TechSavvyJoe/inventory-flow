@@ -1,20 +1,20 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BootstrapData, VehicleRecord } from '../../types'
-import type { InventoryExperienceProps } from './types'
+import type { BootstrapData, TransferRecord, VehicleRecord } from '../../types'
+import type { InventoryExperienceProps, InventoryVehicle } from './types'
 import { InventoryPage } from './InventoryPage'
 import { clearWorkspaceMemory } from '../../lib/workspace-memory'
 
-const mocked = vi.hoisted(() => ({ context: {} as Record<string, unknown>, get: vi.fn() }))
+const mocked = vi.hoisted(() => ({ context: {} as Record<string, unknown>, get: vi.fn(), adapt: vi.fn(), props: null as InventoryExperienceProps | null }))
 vi.mock('../../app/AppDataContext', () => ({ useAppData: () => mocked.context }))
 vi.mock('../../lib/api', async original => ({ ...await original<typeof import('../../lib/api')>(), getVehicle: mocked.get }))
 vi.mock('../../components/SourceWarning', () => ({ SourceWarning: () => null }))
 vi.mock('../../app/adapters', () => ({
   groupStores: () => [], inventoryStore: () => ({ id: 'howell', name: 'Howell' }),
-  toInventoryVehicle: (vehicle: VehicleRecord) => ({ ...vehicle, id: vehicle.vin }),
+  toInventoryVehicle: mocked.adapt,
 }))
-vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: InventoryExperienceProps) => <>
+vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: InventoryExperienceProps) => { mocked.props = props; return <>
   <output data-testid="vehicles">{props.vehicles.map(vehicle => vehicle.vehicleName).join(',')}</output>
   <output data-testid="detail">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).publicScan?.dealerName ?? '').join(',')}</output>
   <output data-testid="protected">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).privateEvidence?.primary?.customerOrReason ?? '').join(',')}</output>
@@ -36,7 +36,7 @@ vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: Inventory
   <button onClick={() => props.onSelectedVehicleChange?.(null)}>Close vehicle</button>
   <button onClick={() => props.onScopeChange?.('group')}>Group inventory</button>
   <button onClick={() => { props.onScopeChange?.('group'); props.onSelectedVehicleChange?.(props.vehicles[1].id) }}>Open other-location result</button>
-</> }))
+</> } }))
 
 function vehicle(suffix: string, name: string): VehicleRecord { return { vin: `TESTDATAVEHICLE${suffix}`, vehicleName: name } as VehicleRecord }
 const first = vehicle('001', 'First summary')
@@ -79,11 +79,90 @@ beforeEach(() => {
   clearWorkspaceMemory()
   mocked.get.mockReset()
   mocked.get.mockImplementation(() => new Promise(() => {}))
+  mocked.adapt.mockReset().mockImplementation((vehicle: VehicleRecord) => ({ ...vehicle, id: vehicle.vin }))
+  mocked.props = null
   mocked.context = { data: data(), role: 'manager', homeStore: 'Howell', currentUser: 'Synthetic Employee' }
 })
 afterEach(cleanup)
 
 describe('inventory detail and navigation lifecycle', () => {
+  function savedListBootstrap(): BootstrapData {
+    const current = data()
+    return { ...current, savedListsEnabled: true, access: { ...current.access!, userId: 'synthetic-owner-a' } }
+  }
+
+  function enableSavedLists(refreshSnapshot: () => Promise<BootstrapData | null>) {
+    mocked.context = { ...mocked.context, data: savedListBootstrap(), currentUserId: 'synthetic-owner-a', refreshSnapshot }
+  }
+
+  it('refreshes saved-list vehicles from the new authorized projection and its open transfer join', async () => {
+    const freshVehicle = { ...first, vehicleName: 'Fresh authorized vehicle', listedPrice: 31995 }
+    const closed = { id: 'closed-transfer', vin: first.vin, requestStatus: 'closed' } as TransferRecord
+    const open = { id: 'open-transfer', vin: first.vin, requestStatus: 'requested', nextAction: 'Fresh move action' } as TransferRecord
+    const fresh: BootstrapData = { ...savedListBootstrap(), vehicles: [freshVehicle], transfers: [closed, open] }
+    const refreshSnapshot = vi.fn().mockResolvedValue(fresh)
+    enableSavedLists(refreshSnapshot)
+    show()
+    expect(mocked.props!.savedLists).toMatchObject({ enabled: true, ownerId: 'synthetic-owner-a', role: 'manager', store: 'Howell' })
+    const projected = { id: first.vin, vin: first.vin, price: 31995, movement: { requestId: open.id, nextAction: open.nextAction } } as InventoryVehicle
+    mocked.adapt.mockClear().mockReturnValueOnce(projected)
+    let result: InventoryVehicle[] | null = null
+    await act(async () => { result = await mocked.props!.savedLists!.refreshVehicles!() })
+    expect(refreshSnapshot).toHaveBeenCalledOnce()
+    expect(mocked.adapt).toHaveBeenCalledExactlyOnceWith(freshVehicle, fresh, open)
+    expect(result).toEqual([projected])
+    expect(result).not.toContainEqual(expect.objectContaining({ id: second.vin }))
+    expect((mocked.context.data as BootstrapData).vehicles[0].vehicleName).toBe('First summary')
+  })
+
+  it.each(['failed refresh', 'disabled lists', 'missing access', 'wrong owner', 'missing owner', 'wrong role', 'wrong store'] as const)(
+    'does not export the rendered cached inventory after %s', async reason => {
+      let fresh: BootstrapData | null = savedListBootstrap()
+      if (reason === 'failed refresh') fresh = null
+      else if (reason === 'disabled lists') fresh.savedListsEnabled = false
+      else if (reason === 'missing access') delete fresh.access
+      else if (reason === 'wrong owner') fresh.access!.userId = 'synthetic-owner-b'
+      else if (reason === 'missing owner') delete fresh.access!.userId
+      else if (reason === 'wrong role') fresh.access!.role = 'sales'
+      else fresh.access!.store = 'Lincoln'
+      enableSavedLists(vi.fn().mockResolvedValue(fresh))
+      show()
+      mocked.adapt.mockClear()
+      await act(async () => { expect(await mocked.props!.savedLists!.refreshVehicles!()).toBeNull() })
+      expect(mocked.adapt).not.toHaveBeenCalled()
+      expect(screen.getByTestId('vehicles')).toHaveTextContent('First summary,Second summary')
+    },
+  )
+
+  it.each(['owner', 'role', 'store'] as const)('discards a saved-list refresh when the active %s changes before it completes', async changed => {
+    const pending = deferred<BootstrapData | null>()
+    enableSavedLists(() => pending.promise)
+    const page = show()
+    const refreshVehicles = mocked.props!.savedLists!.refreshVehicles!
+    let result!: Promise<InventoryVehicle[] | null>
+    act(() => { result = refreshVehicles() })
+    if (changed === 'owner') mocked.context.currentUserId = 'synthetic-owner-b'
+    else if (changed === 'role') mocked.context.role = 'sales'
+    else mocked.context.homeStore = 'Lincoln'
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    mocked.adapt.mockClear()
+    await act(async () => {
+      pending.resolve(savedListBootstrap())
+      expect(await result).toBeNull()
+    })
+    expect(mocked.adapt).not.toHaveBeenCalled()
+  })
+
+  it('does not export a saved-list snapshot without a current membership owner', async () => {
+    enableSavedLists(vi.fn().mockResolvedValue(savedListBootstrap()))
+    mocked.context.currentUserId = null
+    show()
+    expect(mocked.props!.savedLists!.enabled).toBe(false)
+    mocked.adapt.mockClear()
+    await act(async () => { expect(await mocked.props!.savedLists!.refreshVehicles!()).toBeNull() })
+    expect(mocked.adapt).not.toHaveBeenCalled()
+  })
+
   it('asks for 50 rows per page by default; the rows selector keeps its other choices', () => {
     show()
     expect(screen.getByTestId('page-size')).toHaveTextContent('50')

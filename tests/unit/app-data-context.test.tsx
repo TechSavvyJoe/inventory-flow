@@ -359,6 +359,153 @@ describe('AppDataProvider access-context isolation', () => {
     expect(context.homeStore).toBe('Lincoln')
   })
 
+  it('returns the freshly revalidated snapshot while sharing one read with void refresh callers', async () => {
+    const previous = bootstrap('2026-08-30')
+    const fresh = bootstrap('2026-08-31')
+    apiMocks.getBootstrap.mockResolvedValueOnce(previous)
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).toBe(previous))
+    const read = deferred<BootstrapData>()
+    apiMocks.getBootstrap.mockReturnValueOnce(read.promise)
+    let completion!: Promise<void>
+    let duplicateCompletion!: Promise<void>
+    let snapshot!: Promise<BootstrapData | null>
+    let duplicateSnapshot!: Promise<BootstrapData | null>
+    act(() => {
+      completion = context.refresh()
+      snapshot = context.refreshSnapshot()
+      duplicateCompletion = context.refresh()
+      duplicateSnapshot = context.refreshSnapshot()
+    })
+    expect(completion).toBe(duplicateCompletion)
+    expect(snapshot).toBe(duplicateSnapshot)
+    expect(apiMocks.getBootstrap).toHaveBeenCalledTimes(2)
+    expect(context.data).toBe(previous)
+    await act(async () => {
+      read.resolve(fresh)
+      expect(await snapshot).toBe(fresh)
+      expect(await completion).toBeUndefined()
+    })
+    expect(context.data).toBe(fresh)
+  })
+
+  it('returns no export snapshot after a failed revalidation even while retaining the checked workspace', async () => {
+    const previous = bootstrap('2026-08-30')
+    apiMocks.getBootstrap.mockResolvedValueOnce(previous).mockRejectedValueOnce(new TypeError('Offline'))
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).toBe(previous))
+    await act(async () => { expect(await context.refreshSnapshot()).toBeNull() })
+    expect(context.data).toBe(previous)
+    expect(context.error).toBe('Offline')
+  })
+
+  it.each([401, 403] as const)('returns no snapshot after HTTP %i revokes access and cannot refresh the cached data', async status => {
+    apiMocks.getBootstrap.mockResolvedValueOnce(bootstrap('2026-08-30'))
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).not.toBeNull())
+    apiMocks.getBootstrap.mockRejectedValueOnce(Object.assign(new Error('Access revoked'), { status }))
+    await act(async () => { expect(await context.refreshSnapshot()).toBeNull() })
+    expect(context.data).toBeNull()
+    expect(context.accessErrorStatus).toBe(status)
+    await act(async () => { expect(await context.refreshSnapshot()).toBeNull() })
+    expect(apiMocks.getBootstrap).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns no late snapshot after another request revokes the employee workspace', async () => {
+    apiMocks.getBootstrap.mockResolvedValueOnce(bootstrap('2026-08-30'))
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).not.toBeNull())
+    const read = deferred<BootstrapData>()
+    apiMocks.getBootstrap.mockReturnValueOnce(read.promise)
+    let snapshot!: Promise<BootstrapData | null>
+    act(() => { snapshot = context.refreshSnapshot() })
+    const signal = apiMocks.getBootstrap.mock.calls.at(-1)![2] as AbortSignal
+    act(() => reportAccessFailure({ status: 403, role: 'manager', store: 'Howell', message: 'Membership revoked' }))
+    expect(signal.aborted).toBe(true)
+    await act(async () => {
+      read.resolve(bootstrap('2026-08-31'))
+      expect(await snapshot).toBeNull()
+    })
+    expect(context.data).toBeNull()
+    expect(context.error).toBe('Membership revoked')
+  })
+
+  it.each(['Use Lincoln store', 'Use porter role'])('discards an export snapshot after %s changes its access context', async button => {
+    apiMocks.getBootstrap.mockResolvedValueOnce(bootstrap('2026-08-30'))
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).not.toBeNull())
+    const late = deferred<BootstrapData>()
+    const current = bootstrap('2026-09-01')
+    apiMocks.getBootstrap.mockReturnValueOnce(late.promise).mockResolvedValueOnce(current)
+    let snapshot!: Promise<BootstrapData | null>
+    act(() => { snapshot = context.refreshSnapshot() })
+    const signal = apiMocks.getBootstrap.mock.calls.at(-1)![2] as AbortSignal
+    fireEvent.click(screen.getByRole('button', { name: button }))
+    await waitFor(() => expect(context.data).toBe(current))
+    expect(signal.aborted).toBe(true)
+    await act(async () => {
+      late.resolve(bootstrap('2026-08-31'))
+      expect(await snapshot).toBeNull()
+    })
+    expect(context.data).toBe(current)
+  })
+
+  it.each(['owner', 'role', 'store'] as const)('withholds the export snapshot when the server changes the %s', async changed => {
+    const previous: BootstrapData = {
+      ...bootstrap('2026-08-30'),
+      access: { user: 'Synthetic Same Name', userId: 'synthetic-owner-a', role: 'manager', store: 'Howell', canViewPrivateEvidence: true, canCreateTransfer: true },
+    }
+    const replacement: BootstrapData = { ...bootstrap('2026-08-31'), access: {
+      ...previous.access!,
+      ...(changed === 'owner' ? { userId: 'synthetic-owner-b' } : changed === 'role' ? { role: 'sales' as const } : { store: 'Lincoln' as const }),
+    } }
+    apiMocks.getBootstrap.mockResolvedValueOnce(previous).mockResolvedValue(replacement)
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).toBe(previous))
+    await act(async () => { expect(await context.refreshSnapshot()).toBeNull() })
+    await waitFor(() => expect(context.data).toBe(replacement))
+    expect(context.currentUserId).toBe(replacement.access!.userId)
+    expect(context.role).toBe(replacement.access!.role)
+    expect(context.homeStore).toBe(replacement.access!.store)
+    // Once the new workspace is established, its own fresh action may proceed.
+    await act(async () => { expect(await context.refreshSnapshot()).toBe(replacement) })
+  })
+
+  it('discards the older snapshot when a confirmed mutation starts a newer read', async () => {
+    apiMocks.getBootstrap.mockResolvedValueOnce(bootstrap('2026-08-30'))
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).not.toBeNull())
+    const stale = deferred<BootstrapData>()
+    const fresh = bootstrap('2026-09-01')
+    apiMocks.getBootstrap.mockReturnValueOnce(stale.promise).mockResolvedValueOnce(fresh)
+    let oldSnapshot!: Promise<BootstrapData | null>
+    act(() => { oldSnapshot = context.refreshSnapshot() })
+    recordConfirmedMutation()
+    await act(async () => { expect(await context.refreshSnapshot()).toBe(fresh) })
+    await act(async () => {
+      stale.resolve(bootstrap('2026-08-31'))
+      expect(await oldSnapshot).toBeNull()
+    })
+    expect(context.data).toBe(fresh)
+  })
+
+  it('discards a pending export snapshot after the provider unmounts', async () => {
+    apiMocks.getBootstrap.mockResolvedValueOnce(bootstrap('2026-08-30'))
+    const mounted = render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).not.toBeNull())
+    const read = deferred<BootstrapData>()
+    apiMocks.getBootstrap.mockReturnValueOnce(read.promise)
+    let snapshot!: Promise<BootstrapData | null>
+    act(() => { snapshot = context.refreshSnapshot() })
+    const signal = apiMocks.getBootstrap.mock.calls.at(-1)![2] as AbortSignal
+    mounted.unmount()
+    expect(signal.aborted).toBe(true)
+    await act(async () => {
+      read.resolve(bootstrap('2026-08-31'))
+      expect(await snapshot).toBeNull()
+    })
+  })
+
   it('keeps a confirmed save successful when the follow-up read fails and cancels a pre-save read', async () => {
     apiMocks.getBootstrap.mockResolvedValueOnce(bootstrap('2026-08-30'))
     render(<AppDataProvider><ContextProbe /></AppDataProvider>)

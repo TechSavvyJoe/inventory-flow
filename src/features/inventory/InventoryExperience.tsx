@@ -416,6 +416,7 @@ export function InventoryExperience({
   onOpenListing,
   onOpenSourceRecord,
   savedLists,
+  openSavedListsRequest,
 }: InventoryExperienceProps) {
   const title = `${homeStore.name} inventory`;
   // The customer shortlist is session memory for this signed-in context only;
@@ -429,6 +430,7 @@ export function InventoryExperience({
     store: savedLists?.store ?? "Howell",
     context: shortlistContext,
     authorizedVehicles: allVehicles,
+    refreshVehicles: savedLists?.refreshVehicles,
   });
   const shortlist = savedLists?.enabled === true ? syncedShortlist : localShortlist;
   const [onlyShortlisted, setOnlyShortlisted] = useWorkspaceState(searchPersistenceKey, "inventory.shortlistOnly", false);
@@ -746,7 +748,7 @@ export function InventoryExperience({
               <SortComposer sorts={sorts} onChange={setSorts} />
             </div>
           </div>
-      <CustomerShortlistDrawer entries={shortlist.entries}
+      <CustomerShortlistDrawer openRequest={openSavedListsRequest} entries={shortlist.entries}
         onRemove={shortlist.remove} onClear={shortlist.clear}
         management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
         modalOpen={scannerOpen || Boolean(selectedVehicle) || Boolean(shortlist.management?.pendingSave)}

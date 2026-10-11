@@ -40,6 +40,7 @@ interface AppDataContextValue {
   currentUser: string
   currentUserId: string | null
   refresh: () => Promise<void>
+  refreshSnapshot: () => Promise<BootstrapData | null>
   submitTransfer: (input: TransferRequestInput) => Promise<TransferRecord>
   addTransferEvent: (transferId: string, input: TransferEventInput) => Promise<TransferRecord>
   addAttentionEvent: (attentionId: string, input: AttentionEventInput) => Promise<AttentionItem>
@@ -61,7 +62,7 @@ interface BootstrapRequest {
   accessContext: string
   mutationRevision: number
   controller: AbortController
-  promise: Promise<void>
+  promise: Promise<BootstrapData | null>
 }
 
 const FOREGROUND_REFRESH_MS = 60_000
@@ -132,6 +133,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const latestAccessContextRef = useRef(accessContext)
   const requestSequenceRef = useRef(0)
   const inFlightRef = useRef<BootstrapRequest | null>(null)
+  const refreshCompletionRef = useRef<{ source: Promise<BootstrapData | null>; completion: Promise<void> } | null>(null)
   const lastAttemptRef = useRef(0)
   const accessErrorRef = useRef<401 | 403 | null>(null)
   const knownUserRef = useRef<string | null>(null)
@@ -178,8 +180,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // always shows loading as before. If a foreground ask instead joins an
   // in-flight background read (the dedupe branch below), it still flips
   // loading to true so the button it came from responds.
-  const refreshBootstrap = useCallback((afterMutation = false, background = false): Promise<void> => {
-    if (latestAccessContextRef.current !== accessContext || accessErrorRef.current) return Promise.resolve()
+  const refreshBootstrap = useCallback((afterMutation = false, background = false): Promise<BootstrapData | null> => {
+    if (latestAccessContextRef.current !== accessContext || accessErrorRef.current) return Promise.resolve(null)
     const mutationRevision = confirmedMutationRevision()
     const pending = inFlightRef.current
     if (!afterMutation && pending?.accessContext === accessContext && pending.mutationRevision === mutationRevision) {
@@ -209,14 +211,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const promise = (async () => {
       try {
         const nextData = await getBootstrap(homeStore, role, controller.signal)
-        if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
+        if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return null
         const nextUser = JSON.stringify([nextData.access?.userId ?? null, nextData.access?.user ?? null])
         // Only a change of identity clears the workspace. When the user is first
         // learned there is nothing stale: the mount effect and clearAccess already
         // cleared everything before this request, and clearing again would bump
         // the access generation and discard the bootstrap validator this response
         // just stored, turning every tab's first refresh into a full download.
-        if (knownUserRef.current !== null && knownUserRef.current !== nextUser) clearClientWorkspace()
+        const identityChanged = knownUserRef.current !== null && knownUserRef.current !== nextUser
+        if (identityChanged) clearClientWorkspace()
         knownUserRef.current = nextUser
         const authenticatedRole = nextData.access?.role ?? role
         const authenticatedStore = nextData.access?.store ?? homeStore
@@ -233,13 +236,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           accessContext: authenticatedContext, data: nextData, loading: false, error: null,
           accessErrorStatus: null, lastCheckedAt: new Date().toISOString(), savedChangesPending: false,
         })
+        // A caller may export this snapshot. Never return a new membership to
+        // an action that began in the previous employee workspace.
+        return identityChanged || authenticatedContext !== accessContext ? null : nextData
       } catch (caught) {
-        if (controller.signal.aborted || requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
+        if (controller.signal.aborted || requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return null
         const message = caught instanceof Error ? caught.message : 'Unable to load the current inventory data.'
         const status = accessFailureStatus(caught)
         if (status) {
           clearAccess(accessContext, status, message)
-          return
+          return null
         }
         // Transient failures never turn a known successful save into a failed
         // action or discard the last authenticated in-memory workspace.
@@ -247,6 +253,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           ...(current.accessContext === accessContext ? current : emptyBootstrap(accessContext)),
           loading: false, error: message,
         }))
+        return null
       } finally {
         if (inFlightRef.current?.controller === controller) inFlightRef.current = null
       }
@@ -255,7 +262,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     return promise
   }, [accessContext, cancelRead, clearAccess, homeStore, role])
 
-  const refresh = useCallback(() => refreshBootstrap(), [refreshBootstrap])
+  const refreshSnapshot = useCallback(() => refreshBootstrap(), [refreshBootstrap])
+  const refresh = useCallback((): Promise<void> => {
+    const source = refreshBootstrap()
+    if (refreshCompletionRef.current?.source !== source) {
+      refreshCompletionRef.current = { source, completion: source.then(() => {}) }
+    }
+    return refreshCompletionRef.current.completion
+  }, [refreshBootstrap])
 
   useEffect(() => {
     clearClientWorkspace()
@@ -348,11 +362,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       currentUser: data?.access?.user ?? 'Local prototype user',
       currentUserId: data?.access?.userId ?? null,
       refresh,
+      refreshSnapshot,
       submitTransfer,
       addTransferEvent,
       addAttentionEvent,
     }),
-    [data, loading, error, accessErrorStatus, lastCheckedAt, savedChangesPending, homeStore, setHomeStore, role, setRole, refresh, submitTransfer, addTransferEvent, addAttentionEvent],
+    [data, loading, error, accessErrorStatus, lastCheckedAt, savedChangesPending, homeStore, setHomeStore, role, setRole, refresh, refreshSnapshot, submitTransfer, addTransferEvent, addAttentionEvent],
   )
 
   // Remount every employee workspace, including open dialogs and local drafts,

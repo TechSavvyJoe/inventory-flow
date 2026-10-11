@@ -18,26 +18,33 @@ export interface CustomerShortlistDrawerProps {
   authorizedVehicles?: InventoryVehicle[]
   accessContext?: string
   modalOpen?: boolean
+  openRequest?: string
 }
 
-export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVehicle, management, authorizedVehicles = [], accessContext, modalOpen = false }: CustomerShortlistDrawerProps) {
+export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVehicle, management, authorizedVehicles = [], accessContext, modalOpen = false, openRequest }: CustomerShortlistDrawerProps) {
   const [expanded, setExpanded] = useState(false)
   const [managementMode, setManagementMode] = useState<'create' | 'manage' | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [renameLabel, setRenameLabel] = useState(management?.activeLabel ?? '')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
-  const [sheetSnapshot, setSheetSnapshot] = useState<{ listId: string | null; label: string; vehicles: InventoryVehicle[] } | null>(null)
+  const [addingVehicles, setAddingVehicles] = useState(false)
+  const [vehicleQuery, setVehicleQuery] = useState('')
+  const [sheetError, setSheetError] = useState<string | null>(null)
+  const [restoreSheetFocus, setRestoreSheetFocus] = useState(false)
+  const [sheetSnapshot, setSheetSnapshot] = useState<{ listId: string | null; label: string; vehicles: InventoryVehicle[]; refreshedAt?: number; unavailableCount?: number } | null>(null)
+  const sheetRequest = useRef(0)
   const [anchor, setAnchor] = useState<{ top: number; left: number; availableHeight: number } | null>(null)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const sheetButtonRef = useRef<HTMLButtonElement>(null)
+  const vehicleSearchRef = useRef<HTMLInputElement>(null)
   const newListRef = useRef<HTMLButtonElement>(null)
   const manageRef = useRef<HTMLButtonElement>(null)
   const panelId = useId()
   const managementPanelId = useId()
-  const writesBlocked = Boolean(management && (!management.readyForWrites || management.saving || management.pendingAction || management.accessRevoked))
+  const writesBlocked = Boolean(management && (!management.readyForWrites || management.saving || management.pendingAction || management.accessRevoked || management.preparingSheet))
   const covered = modalOpen || Boolean(sheetSnapshot)
   const vehiclesByVin = useMemo(() => new Map(authorizedVehicles.map(vehicle => [vehicle.vin, vehicle])), [authorizedVehicles])
   const restoreManagementFocus = (mode: 'create' | 'manage') => window.requestAnimationFrame(() => (mode === 'create' ? newListRef : manageRef).current?.focus({ preventScroll: true }))
@@ -49,10 +56,14 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
     restoreManagementFocus(mode)
   }
   const closeShortlist = (restoreFocus = false) => {
+    sheetRequest.current += 1
+    setRestoreSheetFocus(false)
     setExpanded(false)
     setManagementMode(null)
     setConfirmDelete(false)
     setConfirmClear(false)
+    setAddingVehicles(false)
+    setVehicleQuery('')
     if (restoreFocus) window.requestAnimationFrame(() => toggleRef.current?.focus({ preventScroll:true }))
   }
   useLayoutEffect(() => {
@@ -114,20 +125,53 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
       document.removeEventListener('pointerdown', handlePointerDown, true)
     }
   }, [expanded])
-  useEffect(() => { setRenameLabel(management?.activeLabel ?? ''); setConfirmDelete(false); setConfirmClear(false) }, [management?.activeListId, management?.activeLabel])
+  useEffect(() => { setRenameLabel(management?.activeLabel ?? ''); setConfirmDelete(false); setConfirmClear(false); setAddingVehicles(false); setVehicleQuery('') }, [management?.activeListId, management?.activeLabel])
   useEffect(() => {
     if (managementMode) closeManagement(managementMode)
   // Closing on a server-selected list change is deliberate; managementMode
   // would make this effect re-run while the user is typing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [management?.activeListId])
-  useLayoutEffect(() => { setExpanded(false); setManagementMode(null); setConfirmClear(false); setSheetSnapshot(null) }, [accessContext, management?.accessRevoked])
+  useLayoutEffect(() => { sheetRequest.current += 1; setExpanded(false); setManagementMode(null); setConfirmClear(false); setAddingVehicles(false); setVehicleQuery(''); setSheetSnapshot(null); setSheetError(null); setRestoreSheetFocus(false) }, [accessContext, management?.accessRevoked])
+  useEffect(() => { if (openRequest) setExpanded(true) }, [openRequest])
+  useEffect(() => {
+    if (!restoreSheetFocus || covered || !expanded || writesBlocked || management?.loading) return
+    // The sheet's cleanup can run while this parent is still covered or while
+    // a concurrent list read disables its opener. Restore after both release.
+    const frame = window.requestAnimationFrame(() => {
+      sheetButtonRef.current?.focus({ preventScroll: true })
+      setRestoreSheetFocus(false)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [restoreSheetFocus, covered, expanded, writesBlocked, management?.loading])
   if (!entries.length && !management) return null
   const selectedVehicles = entries.flatMap(entry => {
     if (entry.available === false) return []
     const vehicle = vehiclesByVin.get(entry.vin)
     return vehicle ? [vehicle] : []
   })
+  const savedVins = new Set(entries.map(entry => entry.vin))
+  const searchTerms = vehicleQuery.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean)
+  const candidates = authorizedVehicles.filter(vehicle => {
+    if (savedVins.has(vehicle.vin)) return false
+    const identity = [vehicle.stockNumber, vehicle.vin, vehicle.year, vehicle.make, vehicle.model, vehicle.trim].join(' ').toLocaleLowerCase()
+    return searchTerms.every(term => identity.includes(term))
+  })
+  const loadCustomerSheet = async (listId?: string) => {
+    const request = ++sheetRequest.current
+    setSheetError(null)
+    if (management?.prepareCustomerSheet) {
+      const snapshot = await management.prepareCustomerSheet(listId)
+      if (request !== sheetRequest.current) return false
+      if (!snapshot) {
+        setSheetError('Could not refresh this list. Any open preview still shows its last-loaded data. Retry to prepare an updated sheet.')
+        return false
+      }
+      setSheetSnapshot(snapshot)
+    } else if (management) setSheetSnapshot({ listId: management.activeListId, label: management.activeLabel, vehicles: [...selectedVehicles] })
+    return true
+  }
+  const closeSheet = () => { sheetRequest.current += 1; setSheetSnapshot(null); setSheetError(null); setRestoreSheetFocus(true) }
   const clearControls = entries.length ? confirmClear ? <><button type="button" className="shortlist-drawer__clear is-danger" onClick={() => { onClear(); setConfirmClear(false) }} disabled={writesBlocked}>Confirm clear</button><button type="button" className="shortlist-drawer__clear" onClick={() => setConfirmClear(false)}>Cancel clear</button></> : <button type="button" className="shortlist-drawer__clear" onClick={() => setConfirmClear(true)} disabled={writesBlocked}><Trash2 size={16} aria-hidden="true" />Clear list</button> : null
   // Keep opener geometry while covered: the vehicle workspace uses it to
   // restore the exact saved row after the modal releases focus and inertness.
@@ -139,13 +183,26 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
       <div className="shortlist-drawer__content" role="region" aria-label={management ? 'Customer saved lists' : 'Customer shortlist'}>
       {management ? <div className="shortlist-manager">
         <div className="shortlist-manager__toolbar">
-          <label><span className="shortlist-manager__label">Customer</span><select aria-label="Customer list" value={management.activeListId ?? ''} onChange={event => { setConfirmClear(false); management.selectList(event.target.value) }} disabled={management.loading || management.saving || management.pendingAction || management.accessRevoked || !management.lists.length}>
+          <label><span className="shortlist-manager__label">Customer</span><select aria-label="Customer list" value={management.activeListId ?? ''} onChange={event => { setConfirmClear(false); management.selectList(event.target.value) }} disabled={management.loading || management.saving || management.pendingAction || management.accessRevoked || management.preparingSheet || !management.lists.length}>
             {!management.lists.length ? <option value="">No saved lists yet</option> : null}
             {management.lists.map(list => <option key={list.id} value={list.id}>{list.label} ({list.count})</option>)}
           </select></label>
           <button ref={newListRef} type="button" aria-label="New list" aria-expanded={managementMode === 'create'} aria-controls={managementPanelId} disabled={writesBlocked} onClick={() => { if (managementMode === 'create') closeManagement('create', true); else { setManagementMode('create'); setConfirmDelete(false) } }}><Plus size={16} aria-hidden="true" /><span>New list</span></button>
           {management.activeListId ? <button ref={manageRef} type="button" aria-label="Manage" aria-expanded={managementMode === 'manage'} aria-controls={managementPanelId} onClick={() => { if (managementMode === 'manage') closeManagement('manage'); else { setManagementMode('manage'); setConfirmDelete(false) } }}><Pencil size={16} aria-hidden="true" /><span>Manage</span><ChevronDown className="shortlist-manager__chevron" size={15} aria-hidden="true" /></button> : null}
         </div>
+        {management.activeListId && management.addVehicleToActiveList ? <div className="shortlist-manager__add">
+          <button type="button" aria-expanded={addingVehicles} aria-controls={`${managementPanelId}-vehicles`} disabled={writesBlocked} onClick={() => setAddingVehicles(value => !value)}><Plus size={16} aria-hidden="true" />Add vehicles</button>
+          {addingVehicles ? <div id={`${managementPanelId}-vehicles`} className="shortlist-manager__vehicle-search">
+            <label>Find vehicles to add<input ref={vehicleSearchRef} type="search" value={vehicleQuery} onChange={event => setVehicleQuery(event.target.value)} placeholder="Stock, VIN, year, make or model" /></label>
+            <p>{candidates.length ? `${candidates.length} matching vehicles${candidates.length > 6 ? ' · first 6 shown; refine your search' : ''}` : 'No matching vehicles outside this list.'}</p>
+            <ul aria-label="Vehicles to add">{candidates.slice(0, 6).map(vehicle => <li key={vehicle.vin}>
+              <div><strong>{[vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ')}</strong><span>{vehicle.stockNumber} · {formatMoney(vehicle.price ?? null)}</span></div>
+              <button type="button" aria-label={`Add ${vehicle.stockNumber} to ${management.activeLabel}`} disabled={writesBlocked} onClick={async () => {
+                if (await management.addVehicleToActiveList?.(vehicle.vin)) vehicleSearchRef.current?.focus({ preventScroll: true })
+              }}><Plus size={16} aria-hidden="true" />Add</button>
+            </li>)}</ul>
+          </div> : null}
+        </div> : null}
         {managementMode ? <div id={managementPanelId} className="shortlist-manager__panel">
           {managementMode === 'create' ? <form className="shortlist-manager__form" onSubmit={async event => { event.preventDefault(); if (await management.createList(newLabel)) closeManagement('create', true) }}>
             <label><span>New customer list</span><input value={newLabel} onChange={event => setNewLabel(event.target.value)} maxLength={80} placeholder="Initials or nickname" /></label>
@@ -173,7 +230,8 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
       </ul> : <p className="shortlist-drawer__empty">Choose a list or create one, then use Save on a vehicle.</p>}
       </div>
       <footer className="shortlist-drawer__intro">
-        {management && selectedVehicles.length ? <button ref={sheetButtonRef} type="button" onClick={() => setSheetSnapshot({ listId: management.activeListId, label: management.activeLabel, vehicles: [...selectedVehicles] })}><FileText size={16} aria-hidden="true" />Customer sheet ({selectedVehicles.length})</button> : null}
+        {management && entries.length ? <button ref={sheetButtonRef} type="button" disabled={writesBlocked || management.loading} onClick={() => { void loadCustomerSheet() }}><FileText size={16} aria-hidden="true" />{management.preparingSheet ? 'Refreshing list and vehicles…' : `Customer sheet (${selectedVehicles.length})`}</button> : null}
+        {sheetError ? <p role="alert">{sheetError}</p> : null}
         <p>{management ? <><span className="shortlist-manager__status" role="status">{management.saving ? 'Saving…' : management.pendingAction ? 'Needs retry' : management.loading ? 'Syncing…' : management.lastConfirmedAt ? 'Synced' : 'Not synced'}</span><span aria-hidden="true"> · </span></> : null}Confirm availability with the home store.</p>
       </footer>
     </section> : null
@@ -186,6 +244,9 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
   return <>
     {launcher}
     {typeof document !== 'undefined' && dialog ? createPortal(dialog, document.body) : null}
-    {sheetSnapshot && !management?.accessRevoked ? <TakeHomeSheet vehicles={sheetSnapshot.vehicles} listLabel={sheetSnapshot.label} onClose={() => setSheetSnapshot(null)} returnFocusRef={sheetButtonRef} /> : null}
+    {sheetSnapshot && !management?.accessRevoked ? <TakeHomeSheet vehicles={sheetSnapshot.vehicles} listLabel={sheetSnapshot.label} onClose={closeSheet} returnFocusRef={sheetButtonRef}
+      onRefresh={management?.prepareCustomerSheet ? () => loadCustomerSheet(sheetSnapshot.listId ?? undefined) : undefined}
+      refreshing={management?.preparingSheet} refreshError={sheetError} refreshedAt={sheetSnapshot.refreshedAt} unavailableCount={sheetSnapshot.unavailableCount}
+      onEditList={() => { closeSheet(); setExpanded(true); if (sheetSnapshot.listId) management?.selectList(sheetSnapshot.listId) }} /> : null}
   </>
 }

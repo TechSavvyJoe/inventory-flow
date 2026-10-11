@@ -2,17 +2,18 @@
    the preview and the print match; paper colours are independent of the app theme. */
 
 .takehome-portal { position: fixed; inset: 0; z-index: 90; }
+.takehome-print-blocked { display: none; }
 .takehome-backdrop { position: absolute; inset: 0; background: var(--navy-950); opacity: 0.55; }
 .takehome-dialog { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .takehome-toolbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ifx-space-2) var(--ifx-space-3); flex: none;
   padding: 10px 18px; background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .takehome-toolbar__title { font-size: 14px; font-weight: 600; color: var(--ink-700); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.takehome-toolbar__actions { display: flex; gap: 8px; }
+.takehome-toolbar__actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--ifx-space-2); }
 .takehome-format { display:flex; align-items:center; gap:var(--ifx-space-2); color:var(--ink-600); font-size:var(--ifx-text-sm); white-space:nowrap; }
-.takehome-format select { min-height:var(--control-target); padding-inline:var(--ifx-space-2); border:var(--comparison-hairline) solid var(--border-strong); border-radius:var(--radius-control); color:var(--ink-900); background:var(--surface); font:inherit; }
-.takehome-toolbar__status { color:var(--ink-700); font-size:13px; }
+.takehome-format select { height:var(--control-target); min-height:var(--control-target); padding-inline:var(--ifx-space-2); border:var(--comparison-hairline) solid var(--border-strong); border-radius:var(--radius-control); color:var(--ink-900); background:var(--surface); font:inherit; }
+.takehome-toolbar__status { grid-column: 1 / -1; color:var(--ink-700); font-size:13px; }
 .takehome-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-target); padding: 0 14px;
   border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--ink-900);
@@ -119,11 +120,11 @@ body.takehome-open { overflow: hidden; }
   .th-identity dd { font-size: 9pt; }
   .th-equipment { columns: 2; }
   .th-cert-block { padding: 10pt 8pt; gap: 6pt; }
-  .takehome-toolbar { flex-wrap: wrap; }
+  .takehome-toolbar { grid-template-columns: minmax(0, 1fr); }
   .takehome-format { width:100%; }
   .takehome-format select { flex:1; min-width:0; }
   .takehome-toolbar__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
-  .takehome-btn { padding-inline: var(--ifx-space-2); white-space: nowrap; }
+  .takehome-btn { padding: var(--ifx-space-2); white-space: normal; }
   .takehome-toolbar__status { flex-basis:100%; }
 }
 @media print {
@@ -135,6 +136,8 @@ body.takehome-open { overflow: hidden; }
   .takehome-dialog { display:block; }
   .takehome-backdrop, .takehome-toolbar { display: none; }
   .takehome-stage { padding: 0; overflow: visible; display: block; background: var(--surface); }
+  .takehome-portal[data-refresh-blocked] .takehome-stage { display: none; }
+  .takehome-print-blocked { display: block; padding: var(--ifx-space-6); color: var(--ink-900); font: var(--ifx-weight-regular) var(--ifx-text-body)/var(--ifx-leading-body) var(--font-app); }
   .takehome-list-title { display:none; }
   .th { width: 8.5in; max-width: none; min-height: 11in; gap: 6pt; padding: .3in .42in .28in; box-shadow: none; overflow: visible; break-after:page; page-break-after:always; }
   .th:last-child { break-after:auto; page-break-after:auto; }

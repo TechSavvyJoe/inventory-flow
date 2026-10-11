@@ -16,10 +16,115 @@ const vehicle = { id:'vehicle-1', vin:'1FTFW1E84RKF00001', stockNumber:'H00001',
 const list = (revision = 1) => ({ id:'list-1', label:'AB', revision, createdAt:'2026-09-30T12:00:00Z', updatedAt:'2026-09-30T12:00:00Z', items:[{ vin:vehicle.vin, addedAt:'2026-09-30T12:00:00Z', available:true }] })
 const options = { enabled:true, ownerId:'synthetic-owner-a', role:'sales' as const, store:'Howell' as const, context:'sales:Howell:user', authorizedVehicles:[vehicle] }
 
-beforeEach(() => { api.get.mockReset(); api.mutate.mockReset() })
+beforeEach(() => { api.get.mockReset(); api.mutate.mockReset(); window.localStorage.clear() })
 afterEach(cleanup)
 
 describe('useSyncedCustomerLists', () => {
+  it('does not let a late ordinary list read overwrite a freshly prepared comparison', async () => {
+    let finishPoll!: (value: { lists: ReturnType<typeof list>[] }) => void
+    api.get.mockResolvedValueOnce({ lists:[list()] })
+      .mockImplementationOnce(() => new Promise(resolve => { finishPoll = resolve }))
+      .mockResolvedValueOnce({ lists:[{ ...list(3), label:'New membership' }] })
+    const { result } = renderHook(() => useSyncedCustomerLists({ ...options, refreshVehicles:async () => [vehicle] }))
+    await waitFor(() => expect(result.current.count).toBe(1))
+    act(() => window.dispatchEvent(new Event('focus')))
+    await act(async () => { expect(await result.current.management?.prepareCustomerSheet?.()).toMatchObject({ label:'New membership' }) })
+    await act(async () => finishPoll({ lists:[{ ...list(2), label:'Older poll' }] }))
+    expect(result.current.management?.activeLabel).toBe('New membership')
+  })
+
+  it('discards a sheet whose list read was superseded while inventory refreshed', async () => {
+    let finishInventory!: (value: InventoryVehicle[]) => void
+    const refreshVehicles = vi.fn(() => new Promise<InventoryVehicle[]>(resolve => { finishInventory = resolve }))
+    api.get.mockResolvedValueOnce({ lists:[list()] })
+      .mockResolvedValueOnce({ lists:[{ ...list(2), label:'Older sheet list' }] })
+      .mockResolvedValueOnce({ lists:[{ ...list(3), label:'Newer poll list' }] })
+    const { result } = renderHook(() => useSyncedCustomerLists({ ...options, refreshVehicles }))
+    await waitFor(() => expect(result.current.count).toBe(1))
+    let pending!: Promise<unknown>
+    act(() => { pending = result.current.management!.prepareCustomerSheet!() })
+    await waitFor(() => expect(refreshVehicles).toHaveBeenCalledOnce())
+    act(() => window.dispatchEvent(new Event('focus')))
+    await waitFor(() => expect(result.current.management?.activeLabel).toBe('Newer poll list'))
+    await act(async () => { finishInventory([vehicle]); expect(await pending).toBeNull() })
+    expect(result.current.management?.activeLabel).toBe('Newer poll list')
+    expect(result.current.management?.preparingSheet).toBe(false)
+  })
+
+  it('requires naming a legacy list before adding through reopened list management', async () => {
+    api.get.mockResolvedValue({ lists:[{ ...list(), label:'Customer shortlist', items:[] }] })
+    const { result } = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
+    await act(async () => { expect(await result.current.management?.addVehicleToActiveList?.(vehicle.vin)).toBe(false) })
+    expect(result.current.management?.pendingSave).toMatchObject({ vin:vehicle.vin, namingExistingList:true })
+    expect(api.mutate).not.toHaveBeenCalled()
+  })
+
+  it('reopens the selected durable list after remount without storing labels or vehicle facts', async () => {
+    const second = { ...list(), id:'list-2', label:'CD', items:[] }
+    api.get.mockResolvedValue({ lists:[list(), second] })
+    const first = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(first.result.current.management?.readyForWrites).toBe(true))
+    act(() => first.result.current.management?.selectList('list-2'))
+    first.unmount()
+    const reopened = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(reopened.result.current.management?.activeLabel).toBe('CD'))
+    expect(Array.from({ length:window.localStorage.length }, (_, index) => window.localStorage.getItem(window.localStorage.key(index)!))).toEqual(['list-2'])
+    expect(api.mutate).not.toHaveBeenCalled()
+  })
+
+  it('adds a current vehicle to a reopened list using its confirmed revision', async () => {
+    const second = { ...vehicle, id:'vehicle-2', vin:'1FTFW1E84RKF00002' }
+    api.get.mockResolvedValue({ lists:[list(3)] })
+    api.mutate.mockResolvedValue({ ...list(4), items:[...list().items, { vin:second.vin, addedAt:list().createdAt, available:true }] })
+    const { result } = renderHook(() => useSyncedCustomerLists({ ...options, authorizedVehicles:[vehicle, second] }))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
+    await act(async () => { expect(await result.current.management?.addVehicleToActiveList?.(second.vin)).toBe(true) })
+    expect(api.mutate.mock.calls[0][0]).toEqual({ action:'add', listId:'list-1', expectedRevision:3, vin:second.vin })
+    expect(result.current.count).toBe(2)
+    await act(async () => { expect(await result.current.management?.addVehicleToActiveList?.('not-authorized')).toBe(false) })
+    expect(api.mutate).toHaveBeenCalledTimes(1)
+  })
+
+  it('builds each new sheet from freshly read membership, label and authorized inventory', async () => {
+    const fresh = { ...vehicle, price:47000, mileage:22000 }
+    const latest = { ...list(4), label:'AB updated', items:[...list().items, { vin:'WITHHELDVIN000001', addedAt:list().createdAt, available:false }] }
+    api.get.mockResolvedValueOnce({ lists:[list()] }).mockResolvedValue({ lists:[latest] })
+    const refreshVehicles = vi.fn().mockResolvedValue([fresh])
+    const { result } = renderHook(() => useSyncedCustomerLists({ ...options, refreshVehicles }))
+    await waitFor(() => expect(result.current.count).toBe(1))
+    await act(async () => {
+      expect(await result.current.management?.prepareCustomerSheet?.()).toMatchObject({ listId:'list-1', label:'AB updated', vehicles:[fresh], unavailableCount:1 })
+    })
+    expect(refreshVehicles).toHaveBeenCalledOnce()
+    expect(result.current.count).toBe(2)
+    expect(api.mutate).not.toHaveBeenCalled()
+  })
+
+  it('does not label last-loaded vehicle facts as fresh after an inventory refresh failure', async () => {
+    api.get.mockResolvedValue({ lists:[list()] })
+    const { result } = renderHook(() => useSyncedCustomerLists({ ...options, refreshVehicles:async () => null }))
+    await waitFor(() => expect(result.current.count).toBe(1))
+    await act(async () => { expect(await result.current.management?.prepareCustomerSheet?.()).toBeNull() })
+    expect(result.current.management?.error).toMatch(/inventory could not be refreshed/)
+    expect(result.current.entries[0].price).toBe(50000)
+    expect(result.current.management?.preparingSheet).toBe(false)
+  })
+
+  it('discards a prepared sheet if its employee context changed during the refresh', async () => {
+    let finish!: (vehicles: InventoryVehicle[]) => void
+    api.get.mockResolvedValue({ lists:[list()] })
+    const refreshVehicles = vi.fn(() => new Promise<InventoryVehicle[]>(resolve => { finish = resolve }))
+    const { result, rerender } = renderHook(({ ownerId }) => useSyncedCustomerLists({ ...options, ownerId, refreshVehicles }), { initialProps:{ ownerId:'synthetic-owner-a' } })
+    await waitFor(() => expect(result.current.count).toBe(1))
+    let pending!: Promise<unknown>
+    act(() => { pending = result.current.management!.prepareCustomerSheet!() })
+    await waitFor(() => expect(refreshVehicles).toHaveBeenCalledOnce())
+    rerender({ ownerId:'synthetic-owner-b' })
+    await act(async () => { finish([vehicle]); expect(await pending).toBeNull() })
+    expect(result.current.management?.preparingSheet).toBe(false)
+  })
+
   it('clears the previous owner even with unchanged display context when the new owner refresh fails', async () => {
     api.get.mockResolvedValueOnce({ lists:[list()] }).mockRejectedValueOnce(new Error('offline for B'))
     const { result, rerender } = renderHook(({ ownerId }) => useSyncedCustomerLists({ ...options, ownerId }), { initialProps:{ ownerId:'synthetic-owner-a' } })

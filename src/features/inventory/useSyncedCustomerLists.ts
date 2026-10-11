@@ -4,7 +4,7 @@ import { subscribeAccessFailures } from '../../lib/apiSession'
 import { getSavedVehicleLists, mutateSavedVehicleList, savedListLabelError, type SavedVehicleList } from '../../lib/saved-lists-api'
 import type { StoreName, UserRole } from '../../types'
 import type { InventoryVehicle } from './types'
-import type { ShortlistContextValue, ShortlistEntry } from './useCustomerShortlist'
+import type { SavedListSheetSnapshot, ShortlistContextValue, ShortlistEntry } from './useCustomerShortlist'
 
 export interface SyncedCustomerListsOptions {
   enabled: boolean
@@ -13,6 +13,7 @@ export interface SyncedCustomerListsOptions {
   store: StoreName
   context: string
   authorizedVehicles: InventoryVehicle[]
+  refreshVehicles?: () => Promise<InventoryVehicle[] | null>
 }
 
 const DEFAULT_LABEL = 'Customer shortlist'
@@ -55,7 +56,7 @@ function mutationOutcomeUncertain(error: unknown) {
   return !(error instanceof ApiError) || [408, 425, 429].includes(error.status) || error.status >= 500
 }
 
-export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, role, store, context, authorizedVehicles }: SyncedCustomerListsOptions): ShortlistContextValue {
+export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, role, store, context, authorizedVehicles, refreshVehicles }: SyncedCustomerListsOptions): ShortlistContextValue {
   const enabled = requestedEnabled && Boolean(ownerId)
   const accessKey = JSON.stringify([ownerId, role, store, context])
   const boundAccessKey = useRef(accessKey)
@@ -63,6 +64,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [preparingSheet, setPreparingSheet] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastConfirmedAt, setLastConfirmedAt] = useState<number | null>(null)
   const [pendingSave, setPendingSave] = useState<{ vin: string; generation: number; namingListId: string | null } | null>(null)
@@ -71,8 +73,10 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
   const namingBusy = useRef(false)
   const generation = useRef(0)
   const writeVersion = useRef(0)
+  const listReadVersion = useRef(0)
   const revoked = useRef(false)
   const abort = useRef<AbortController | null>(null)
+  const sheetAbort = useRef<AbortController | null>(null)
   const mutationBusy = useRef(false)
   const initialReadConfirmed = useRef(false)
   const mutationToken = useRef<symbol | null>(null)
@@ -83,6 +87,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
   } | null>(null)
   const listsRef = useRef(lists)
   listsRef.current = lists
+  const selectionKey = `inventory.saved-list.selection:${JSON.stringify([ownerId, role, store])}`
 
   const refresh = useCallback(async (preserveError = false) => {
     if (!enabled || !ownerId || boundAccessKey.current !== accessKey || revoked.current) return
@@ -91,17 +96,18 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     abort.current = controller
     const requestGeneration = generation.current
     const requestWriteVersion = writeVersion.current
+    const requestReadVersion = ++listReadVersion.current
     setLoading(true)
     try {
       const response = await getSavedVehicleLists(role, store, ownerId, controller.signal)
-      if (controller.signal.aborted || requestGeneration !== generation.current || requestWriteVersion !== writeVersion.current) return
+      if (controller.signal.aborted || requestGeneration !== generation.current || requestWriteVersion !== writeVersion.current || requestReadVersion !== listReadVersion.current) return
       setLists(response.lists)
       setActiveListId(current => current && response.lists.some(list => list.id === current) ? current : response.lists[0]?.id ?? null)
       initialReadConfirmed.current = true
       if (!preserveError) setError(null)
       setLastConfirmedAt(Date.now())
     } catch (cause) {
-      if (controller.signal.aborted || requestGeneration !== generation.current) return
+      if (controller.signal.aborted || requestGeneration !== generation.current || requestReadVersion !== listReadVersion.current) return
       if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) {
         revoked.current = true
         setLists([])
@@ -126,9 +132,13 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     setPendingSave(null)
     abort.current?.abort()
     setLists([])
-    setActiveListId(null)
+    let rememberedList: string | null = null
+    try { rememberedList = window.localStorage.getItem(selectionKey) } catch { /* UI preferences are optional. */ }
+    setActiveListId(rememberedList)
     setError(null)
     setSaving(false)
+    setPreparingSheet(false)
+    sheetAbort.current?.abort()
     setLastConfirmedAt(null)
     if (!enabled) return
     void refresh()
@@ -139,6 +149,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
       window.clearInterval(interval)
       window.removeEventListener('focus', onFocus)
       abort.current?.abort()
+      sheetAbort.current?.abort()
       // A late create must not issue its follow-up VIN add after unmount or
       // account switch. Aborting GET alone cannot cancel a pending mutation.
       generation.current += 1
@@ -149,7 +160,15 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
       namingBusy.current = false
       mutationBusy.current = false
     }
-  }, [accessKey, enabled, refresh])
+  }, [accessKey, enabled, refresh, selectionKey])
+
+  useEffect(() => {
+    if (!enabled || boundAccessKey.current !== accessKey || !initialReadConfirmed.current || revoked.current) return
+    try {
+      if (activeListId) window.localStorage.setItem(selectionKey, activeListId)
+      else window.localStorage.removeItem(selectionKey)
+    } catch { /* Never block persisted lists on a browser preference failure. */ }
+  }, [accessKey, activeListId, enabled, lists, selectionKey])
 
   useEffect(() => subscribeAccessFailures(() => {
     if (!enabled) return
@@ -162,10 +181,12 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     namingBusy.current = false
     setPendingSave(null)
     abort.current?.abort()
+    sheetAbort.current?.abort()
     setLists([])
     setActiveListId(null)
     setLoading(false)
     setSaving(false)
+    setPreparingSheet(false)
     setError('Your access changed. Reload or sign in again before using saved lists.')
     setLastConfirmedAt(null)
   }), [enabled])
@@ -246,6 +267,55 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     if (list.items.some(item => item.vin === vin)) { setActiveListId(list.id); return true }
     return Boolean(await applyMutation({ action: 'add', listId: list.id, expectedRevision: list.revision, vin }))
   }, [applyMutation])
+
+  const prepareCustomerSheet = useCallback(async (requestedListId?: string): Promise<SavedListSheetSnapshot | null> => {
+    const listId = requestedListId ?? activeListId
+    if (!enabled || !ownerId || !listId || !refreshVehicles || boundAccessKey.current !== accessKey || revoked.current || mutationBusy.current || pendingMutation.current) return null
+    sheetAbort.current?.abort()
+    const controller = new AbortController()
+    sheetAbort.current = controller
+    const requestGeneration = generation.current
+    const requestWriteVersion = writeVersion.current
+    // Polling and sheet preparation share one read order. A late response from
+    // either path must not replace a newer membership or label observation.
+    const requestReadVersion = ++listReadVersion.current
+    const stillCurrent = () => !controller.signal.aborted && requestGeneration === generation.current && requestWriteVersion === writeVersion.current && requestReadVersion === listReadVersion.current && !revoked.current
+    setPreparingSheet(true)
+    setError(null)
+    try {
+      // The app data owner controls authenticated inventory refresh and cache
+      // revalidation. List membership is read independently from its existing
+      // owner-bound endpoint; no saved vehicle snapshot becomes authority.
+      const response = await getSavedVehicleLists(role, store, ownerId, controller.signal)
+      if (!stillCurrent()) return null
+      const currentList = response.lists.find(list => list.id === listId)
+      if (!currentList) throw new Error('This saved list is no longer available. Choose another list.')
+      const currentVehicles = await refreshVehicles()
+      if (!stillCurrent()) return null
+      if (!currentVehicles) throw new Error('Current inventory could not be refreshed. Try again before creating a new customer sheet.')
+      const byVin = new Map(currentVehicles.map(vehicle => [vehicle.vin, vehicle]))
+      const vehicles = currentList.items.flatMap(item => {
+        const vehicle = byVin.get(item.vin)
+        return item.available && vehicle ? [vehicle] : []
+      })
+      setLists(response.lists)
+      setLastConfirmedAt(Date.now())
+      if (!vehicles.length) throw new Error('No vehicles in this list are available in your current access. Edit the list before creating a customer sheet.')
+      return { listId, label: currentList.label, vehicles, refreshedAt: Date.now(), unavailableCount: currentList.items.length - vehicles.length }
+    } catch (cause) {
+      if (!stillCurrent()) return null
+      setError(messageFor(cause))
+      if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+        revoked.current = true
+        setLists([])
+        setActiveListId(null)
+        setPendingSave(null)
+      }
+      return null
+    } finally {
+      if (requestGeneration === generation.current && sheetAbort.current === controller) setPreparingSheet(false)
+    }
+  }, [accessKey, activeListId, enabled, ownerId, refreshVehicles, role, store])
 
   const addAsync = useCallback(async (vehicle: InventoryVehicle) => {
     if (!viewCurrent || !initialReadConfirmed.current || revoked.current || mutationBusy.current || pendingMutation.current || namingBusy.current) return
@@ -345,6 +415,16 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
       pendingAction: viewCurrent && pendingMutation.current?.generation === generation.current,
       accessRevoked: revoked.current,
       readyForWrites: viewCurrent && initialReadConfirmed.current,
+      preparingSheet: viewCurrent && preparingSheet,
+      prepareCustomerSheet: refreshVehicles ? prepareCustomerSheet : undefined,
+      addVehicleToActiveList: async vin => {
+        if (!activeList || !vehiclesByVin.has(vin) || revoked.current) return false
+        if (activeList.label === DEFAULT_LABEL) {
+          await addAsync(vehiclesByVin.get(vin)!)
+          return false
+        }
+        return addToList(activeList, vin)
+      },
       pendingSave: viewCurrent && pendingSave?.generation === generation.current && vehiclesByVin.has(pendingSave.vin)
         ? { vin: pendingSave.vin, displayName: entryFor(vehiclesByVin.get(pendingSave.vin)!, '').displayName,
           stockNumber: vehiclesByVin.get(pendingSave.vin)!.stockNumber, namingExistingList: Boolean(pendingSave.namingListId), namingListId: pendingSave.namingListId } : null,
