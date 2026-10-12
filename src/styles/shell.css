@@ -1,10 +1,10 @@
 .app-shell {
   --shell-nav-width: 80px;
   --top-height: 68px;
-  --store-accent: var(--ifx-oem-accent);
-  --store-accent-strong: var(--ifx-oem-accent-strong);
-  --store-accent-soft: var(--ifx-oem-surface);
-  --nav-context-base: #062b50;
+  --store-accent: var(--ifx-brand-blue);
+  --store-accent-strong: var(--ifx-brand-blue-strong);
+  --store-accent-soft: var(--ifx-brand-blue-tint);
+  --nav-context-base: var(--ifx-brand-blue);
   --nav-context-glow: rgb(22 111 198 / 22%);
   --blue-700: var(--store-accent-strong);
   --blue-600: var(--store-accent);
@@ -16,7 +16,7 @@
   display: grid;
   grid-template-columns: var(--shell-nav-width) minmax(0, 1fr);
   grid-template-rows: var(--top-height) minmax(0, 1fr);
-  background: var(--ifx-neutral-50);
+  background: var(--ifx-canvas);
   color: var(--app-readable-text);
   font-size: var(--app-readable-body-size);
   line-height: 1.5;
@@ -37,16 +37,15 @@
   --ifx-oem-scene-deep: #041c35;
   --ifx-oem-scene-mid: #136dc3;
   --ifx-oem-scene-glow: #8bc9ff;
-  --nav-context-base: #11263a;
   --nav-context-glow: rgb(35 115 196 / 20%);
 }
 
 .store-theme-lincoln {
-  --nav-context-base: #20272a;
   --nav-context-glow: rgb(198 207 210 / 14%);
 }
 
 .desktop-nav {
+  --ifx-focus-color: var(--ifx-neutral-0);
   position: fixed;
   z-index: 40;
   inset: 0 auto 0 0;
@@ -68,7 +67,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: color-mix(in srgb, var(--store-accent) 4%, transparent);
+  background: color-mix(in srgb, var(--ifx-oem-accent) 4%, transparent);
   opacity: 1;
 }
 
@@ -519,7 +518,7 @@
   grid-column: 2;
   grid-row: 2;
   padding: 24px;
-  background: var(--ifx-neutral-50);
+  background: var(--ifx-canvas);
   color: var(--app-readable-text);
   font-size: var(--app-readable-body-size);
   line-height: 1.5;
@@ -530,9 +529,9 @@
 }
 
 .utility-layer {
-  --store-accent: var(--ifx-oem-accent);
-  --store-accent-strong: var(--ifx-oem-accent-strong);
-  --store-accent-soft: var(--ifx-oem-surface);
+  --store-accent: var(--ifx-brand-blue);
+  --store-accent-strong: var(--ifx-brand-blue-strong);
+  --store-accent-soft: var(--ifx-brand-blue-tint);
   position: fixed;
   z-index: 100;
   inset: 0;
@@ -1293,14 +1292,14 @@
 }
 
 @media (min-width: 761px) and (max-width: 1100px) {
-  .app-shell.app-shell:is(.is-nav-expanded, .is-nav-compact) { --shell-nav-width: 104px; }
+  .app-shell.app-shell:is(.is-nav-expanded, .is-nav-compact) { --shell-nav-width: var(--ifx-space-16); }
   .app-shell .brand-block { justify-content: center; padding: 0; }
   .app-shell .brand-block .ifx-brand-lockup__type,
   .app-shell .nav-footer-copy,
   .app-shell .nav-collapse-button { display: none; }
-  .app-shell .primary-nav { gap: 3px; padding: 10px 6px; }
-  .app-shell .nav-link { flex-direction: column; justify-content: center; gap: 5px; padding: 8px 3px; min-height: 66px; text-align: center; }
-  .app-shell .nav-link .nav-label { width: auto; max-width: 92px; height: auto; opacity: 1; transform: none; pointer-events: auto; overflow: visible; font-size: 13px; }
+  .app-shell .primary-nav { gap:var(--ifx-space-1); padding:var(--ifx-space-3) var(--ifx-space-2); }
+  .app-shell .nav-link { justify-content:center; gap:0; padding:0; min-height:var(--ifx-control-height-md); text-align:center; }
+  .app-shell .nav-link .nav-label { position:absolute; width:var(--ifx-stroke-hairline); height:var(--ifx-stroke-hairline); padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
   .app-shell .nav-count { position: absolute; top: 4px; right: 4px; min-width: 20px; margin: 0; }
   .app-shell .top-bar { padding-left: max(14px, var(--safe-left)); padding-right: max(14px, var(--safe-right)); gap: 10px; }
 }

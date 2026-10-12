@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ScanVehicleDialog } from './ScanVehicleDialog'
 import type { InventoryVehicle } from './types'
 
-const engine = vi.hoisted(() => ({ scanVideo: vi.fn(), readTag: vi.fn(), photoCanvas: vi.fn() }))
+const engine = vi.hoisted(() => ({ scanVideo: vi.fn(), readTag: vi.fn(), photoCanvas: vi.fn(), createTagReader: vi.fn() }))
 const live = vi.hoisted(() => ({ start: vi.fn() }))
 vi.mock('./vehicle-scan-engine', () => engine)
 vi.mock('./vehicle-scan-live', () => ({ scanStockVideo: live.start }))
@@ -44,6 +44,7 @@ beforeEach(() => {
   getUserMedia = vi.fn().mockResolvedValue(media)
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
   engine.scanVideo.mockImplementation(async (_video, _media, callback) => { barcode = callback; return { stop: stopScanner } })
+  engine.createTagReader.mockImplementation(() => ({ readTag: engine.readTag, stop: vi.fn() }))
   live.start.mockImplementation((_video, _reader, callback, signal) => { stockReading = callback; liveSignal = signal; return vi.fn() })
   engine.readTag.mockReset().mockResolvedValue({ text: '', barcode: false })
   engine.photoCanvas.mockImplementation(async () => {

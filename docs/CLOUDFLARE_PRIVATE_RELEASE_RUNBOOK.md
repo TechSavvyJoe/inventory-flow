@@ -417,6 +417,9 @@ inconsistent with the ledger; 1 means a difference was found; 2 means an input
 was unusable, including Wrangler output that is not exactly one successful
 result set, or a live schema that has a `d1_migrations` table when `--ledger`
 was not supplied (its rows must be checked too).
+When ledger rows are supplied, every migration filename must be present exactly
+once. An empty or partial ledger fails even when all schema objects are applied;
+the read-only backfill plan can still be printed for review.
 
 Schema presence cannot prove data changes. Migrations that contain `INSERT`,
 `UPDATE`, or `DELETE` (currently `0002`, `0003`, `0005`, `0010`, `0015`, and `0017`) are

@@ -301,7 +301,8 @@ describe('vehicle document workspace', () => {
     expect(card.querySelector('details')).not.toBeVisible();
     expect(within(card).getByText('Mileage source: Entered dealer odometer')).not.toBeVisible();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).toBeVisible();
-    expect(within(card).getByRole('link', { name: /Open OASIS coverage lookup/ })).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000001');
+    expect(within(card).queryByRole('link', { name: /Open OASIS coverage lookup/ })).not.toBeInTheDocument();
+    expect(within(card).getByRole('status', { name: 'Ford OASIS lookup unavailable' })).toHaveTextContent('Document unavailable');
     expect(within(card).queryByRole('region', { name: 'AutoCheck estimate' })).not.toBeInTheDocument();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).not.toHaveTextContent('Ford source note');
     expect(within(card).queryByRole('table', { name: 'AutoCheck warranty estimate', hidden: true })).not.toBeInTheDocument();
@@ -544,9 +545,9 @@ describe('vehicle document workspace', () => {
     expect(within(panel).getByText('3 months')).toBeInTheDocument();
     expect(within(panel).getByText('12 mi')).toBeInTheDocument();
     expect(within(panel).getByText('01/01/2029')).toBeInTheDocument();
-    const oasisLink = within(panel).getByRole('link', { name: /Open Ford OASIS lookup for 2026 Ford Explorer Active/i });
-    expect(oasisLink).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000001');
-    expect(oasisLink).toHaveAttribute('data-read-only', 'true');
+    expect(within(panel).queryByRole('link', { name: /Open Ford OASIS lookup for 2026 Ford Explorer Active/i })).not.toBeInTheDocument();
+    expect(within(panel).getByRole('status', { name: 'Ford OASIS lookup unavailable' })).toHaveTextContent('Document unavailable');
+    expect(screen.queryByRole('link', { name: /Review OASIS/i })).not.toBeInTheDocument();
   });
 
   it('shows decoded OASIS descriptions as plain text without mutating captured evidence', async () => {

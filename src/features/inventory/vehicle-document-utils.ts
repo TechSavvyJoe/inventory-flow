@@ -43,13 +43,17 @@ function normalizedVin(value: string | null | undefined): string | null {
   return vin && /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? vin : null;
 }
 
+function isSyntheticFixtureVin(vin: string): boolean {
+  return vin.startsWith("TESTDATA");
+}
+
 /**
  * Mirrors DealerMail's working Ford/Lincoln INVOICE destination. The target is
  * read-only, but DealerConnection can require its own authorized sign-in.
  */
 export function fordInvoiceUrl(vinValue: string | null | undefined): string | null {
   const vin = normalizedVin(vinValue);
-  if (!vin) return null;
+  if (!vin || isSyntheticFixtureVin(vin)) return null;
   const url = new URL(FORD_INVOICE_BASE_URL);
   url.searchParams.set("v", vin);
   url.searchParams.set("n", ",");
@@ -77,7 +81,10 @@ export function savedVautoEquipmentPdfUrl(vinValue: string | null | undefined): 
  */
 export function fordOasisUrl(vinValue: string | null | undefined): string | null {
   const vin = normalizedVin(vinValue);
-  if (!vin) return null;
+  // The deterministic repository fixture reserves TESTDATA-prefixed VINs.
+  // Never send a demo record to Ford's live DealerConnection sign-in; real
+  // dealership VINs continue through the generic read-only OASIS URL below.
+  if (!vin || isSyntheticFixtureVin(vin)) return null;
   const url = new URL(FORD_OASIS_BASE_URL);
   url.searchParams.set("vin", vin);
   return url.href;
@@ -86,7 +93,7 @@ export function fordOasisUrl(vinValue: string | null | undefined): string | null
 /** Opens the read-only Ford PTS Retail Service Repair History for an exact VIN. */
 export function fordServiceHistoryUrl(vinValue: string | null | undefined): string | null {
   const vin = normalizedVin(vinValue);
-  if (!vin) return null;
+  if (!vin || isSyntheticFixtureVin(vin)) return null;
   const url = new URL(FORD_SERVICE_HISTORY_BASE_URL);
   url.searchParams.set("VIN", vin);
   return url.href;

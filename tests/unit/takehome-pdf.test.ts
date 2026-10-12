@@ -150,6 +150,32 @@ describe('shared customer PDF', () => {
     expect(rows).not.toContain(model.listingUrl)
   })
 
+  it('keeps two ordinary certified vehicles from different stores side by side without dropping facts', async () => {
+    const specs=[['Body','SuperCrew'],['Drivetrain','4WD'],['Engine','3.5L EcoBoost V6'],['Transmission','10-Speed Automatic'],['Fuel','Gasoline'],['Fuel economy','18 city / 24 hwy'],['Exterior','Antimatter Blue Metallic'],['Interior','Black']]
+    const vehicles=[
+      {...model,name:'2024 Ford F-150 Lariat',stockNumber:'DEMO-H01',storeName:'Bob Maxey Ford of Howell',specs,highlights:['Synthetic touring package','360-Degree Camera','Adaptive Cruise Control','B&O Sound System']},
+      {...model,vin:'TESTDATAFWELL0002',name:'2022 Ford Maverick Lariat',stockNumber:'DEMO-F02',storeName:'Bob Maxey Ford in Fowlerville',specs:[['Body','Crew Cab'],['Drivetrain','AWD'],['Engine','2.0L EcoBoost'],['Transmission','8-Speed Automatic'],['Fuel','Gasoline'],['Fuel economy','18 city / 24 hwy'],['Exterior','Area 51'],['Interior','Desert Brown']],highlights:['4K Tow Package','B&O Sound System','FX4 Off-Road Package','Lariat Luxury Package']},
+    ].map(vehicle=>({...vehicle,certified:{name:'Ford Blue Certified'},listingUrl:null,equipment:['Additional published equipment']}))
+    let plan:any
+    const pdf=await load(await createTakeHomePdf(vehicles,'Choices',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
+    expect(pdf.getPageCount()).toBe(1)
+    expect(plan.pages[0].vehicles.map(vehicle=>vehicle.stockNumber)).toEqual(['DEMO-H01','DEMO-F02'])
+    expect(plan.pages[0].columns).toHaveLength(2)
+    const rows=plan.pages[0].rows
+    expect(rows.find(row=>row.kind==='photo').height).toBeGreaterThanOrEqual(126)
+    expect(rows.find(row=>row.kind==='photo').height).toBeLessThan(150)
+    for(const row of rows) expect(row.top+row.height).toBeLessThanOrEqual(plan.geometry.bodyBottom)
+    for(const [index,vehicle] of vehicles.entries()) {
+      const text=rows.flatMap(row=>row.cells[index].lines).join(' ')
+      expect(text).toContain(vehicle.storeName)
+      expect(text).toContain('Ford Blue Certified')
+      for(const [,value] of vehicle.specs) expect(text).toContain(value)
+      for(const highlight of vehicle.highlights) expect(text).toContain(highlight)
+      expect(text).toContain('More equipment available in the full listing.')
+      for(const row of rows.filter(row=>['specs','highlight','store','certification'].includes(row.kind))) expect(row.size).toBe(10)
+    }
+  })
+
   it('preserves full pathological names, specifications and selected highlights across continuation pages', async () => {
     const name='Long synthetic vehicle designation '.repeat(110)
     const engine='Complete documented engine qualification '.repeat(190)

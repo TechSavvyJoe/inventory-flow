@@ -1,4 +1,4 @@
-import { validateOperationalEvidence, validateServiceHistoryEvidence } from './provider-evidence.mjs'
+import { validateOperationalEvidence, projectServiceHistoryEvidence } from './provider-evidence.mjs'
 import { createHash } from 'node:crypto'
 import {
   appendTransferEvent,
@@ -995,7 +995,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     } : {}),
   }))
   const serviceHistory = source.resourceRecord?.serviceHistory
-    ? validateServiceHistoryEvidence(source.resourceRecord.serviceHistory, source.vin) : undefined
+    ? projectServiceHistoryEvidence(source.resourceRecord.serviceHistory, source.vin) : undefined
   if (serviceHistory) serviceHistory.reports = serviceHistory.reports.map(report => ({ ...report, dataState: independentResourceState(report) }))
   const view = {
     vin: source.vin,

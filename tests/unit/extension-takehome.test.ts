@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // @ts-nocheck -- dependency-free ESM; synthetic fixtures only.
 import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, within } from '@testing-library/react'
 import { renderTakeHome, takeHomeModel } from '../../extension/sidepanel/lib/takehome.mjs'
 import { normalizeTakeHomeDocument, publicListingLinks, shareTakeHomePdf, downloadTakeHomePdf } from '../../extension/sidepanel/lib/takehome-export.mjs'
 import { toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
@@ -71,6 +72,31 @@ describe('take-home sheet model', () => {
     const photos = ['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/2.jpg','https://example.com/3.jpg','https://example.com/4.jpg']
     const sheet = renderTakeHome(takeHomeModel(panel, photos))
     expect([...sheet.querySelectorAll('.th-hero img')].map(image => image.getAttribute('src'))).toEqual(['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/3.jpg'])
+  })
+
+  it('promotes surviving photos and replaces failed images in the detailed printable document', () => {
+    const panel = toPanelVehicle(record, {meta,transfers:[],vehicles:[record]})
+    const model = { ...takeHomeModel(panel, ['https://example.com/hero.jpg','https://example.com/second.jpg','https://example.com/third.jpg']), brand:{ src:'https://example.com/logo.png', alt:'Synthetic dealership logo', wide:true } }
+    const document = renderTakeHome(model), sheet = within(document)
+    globalThis.document.body.append(document)
+    const listing = sheet.getByRole('link', {name:/View vehicle listing/})
+    listing.focus()
+    fireEvent.error(sheet.getByRole('img', {name:model.name}))
+    expect(listing).toHaveFocus()
+    expect(sheet.getByRole('img', {name:model.name})).toHaveAttribute('src',model.photos[1])
+    fireEvent.error(sheet.getByRole('img', {name:`${model.name} view 2`}))
+    expect(sheet.queryByRole('img', {name:`${model.name} view 2`})).toBeNull()
+    expect(sheet.getByRole('img', {name:model.name})).toHaveAttribute('src',model.photos[1])
+    fireEvent.error(sheet.getByRole('img', {name:model.name}))
+    expect(sheet.queryByRole('img', {name:model.name})).toBeNull()
+    expect(sheet.getByText('Photos available at the store')).toBeTruthy()
+    fireEvent.error(sheet.getByRole('img', {name:'Synthetic dealership logo'}))
+    expect(sheet.queryByRole('img', {name:'Synthetic dealership logo'})).toBeNull()
+    expect(sheet.getAllByText(model.storeName).length).toBeGreaterThan(1)
+    const reopened = within(renderTakeHome(model))
+    expect(reopened.getByRole('img', {name:model.name})).toHaveAttribute('src',model.photos[0])
+    expect(reopened.getByRole('img', {name:'Synthetic dealership logo'})).toBeTruthy()
+    document.remove()
   })
 
   it('names the Lincoln store certification for Lincoln-store vehicles', () => {

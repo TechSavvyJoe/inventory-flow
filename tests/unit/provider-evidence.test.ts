@@ -103,7 +103,9 @@ describe('safe independent provider evidence', () => {
     bundle.release.sourceRuns.resources.provenanceSha256 = resourceProvenanceSha256(bundle.release.sourceRuns.resources, bundle.release.vehicles)
     expect(() => validateReleaseBundle(bundle)).toThrow(/service must describe/)
   })
-  it('fails closed before exposing a recognizable private narrative from stored evidence to a driver', () => {
+  // Optional stored narratives previously blocked the whole response; reads
+  // must now quarantine their text while preserving the validated event facts.
+  it('quarantines a recognizable private narrative from stored evidence without blocking a driver', () => {
     const bundle = cloud({ serviceHistory: { reports: [report] } })
     bundle.release.vehicles.find(row => row.vin === VIN).resourceRecord.serviceHistory.reports[0].entries[0].services = ['Customer Jane Example requested repairs; vehicle collected at 123 Example Street.']
     const database = openInventoryDatabase()
@@ -112,7 +114,11 @@ describe('safe independent provider evidence', () => {
       for (const run of Object.values(bundle.release.sourceRuns)) if (run) run.snapshotPath = 'synthetic-fixture://provider-evidence'
       importRelease(database, bundle.release, { loadedAt: observation.capturedAt })
       const service = createInventoryService({ database, now: () => new Date('2026-08-30T15:00:00Z') })
-      expect(() => service.getVehicle(VIN, { role: 'driver', store: 'Howell', user: 'Synthetic driver' })).toThrow(/service must describe mechanical work/)
+      const vehicle = service.getVehicle(VIN, { role: 'driver', store: 'Howell', user: 'Synthetic driver' })
+      expect(vehicle.serviceHistory.reports[0]).toMatchObject({ dataState: 'incomplete', historyStatus: 'reported',
+        entries: [{ date: '2026-08-29', odometer: 42000, odometerUnit: 'mi', services: [] }] })
+      expect(vehicle.privateEvidence).toBeUndefined()
+      expect(JSON.stringify(vehicle)).not.toMatch(/Jane Example|123 Example Street|Customer Jane/)
     } finally { database.close() }
   })
   it('retains safe mechanical descriptions without turning dates or mileage into events', () => {

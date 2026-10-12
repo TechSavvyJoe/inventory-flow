@@ -54,7 +54,7 @@ export interface VehicleResource {
   id: 'window-sticker' | 'autocheck' | 'vauto' | 'oasis' | 'invoice';
   title: string;
   subtitle: string;
-  brand: 'autocheck' | 'vauto' | 'ford' | null;
+  brand: 'autocheck' | 'vauto' | 'ford' | 'lincoln' | 'chevrolet' | null;
   facts: string[];
   /** Concise primary-card facts; full evidence remains in facts and Records. */
   summaryFacts?: string[];
@@ -97,6 +97,11 @@ export interface VehicleResource {
   previewUrl?: string;
   demo?: boolean;
   score?: { value: number; range?: string };
+}
+
+function oemResourceBrand(make?: string | null): 'ford' | 'lincoln' | 'chevrolet' | null {
+  const normalized = make?.trim().toLowerCase();
+  return normalized === 'ford' || normalized === 'lincoln' || normalized === 'chevrolet' ? normalized : null;
 }
 
 function text(value?: string | null): string | null {
@@ -285,7 +290,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   ], 2);
   if (stickerHref || stickerFacts.length || sticker) result.push({
     id: 'window-sticker', title: demoSticker?.label ?? 'Window sticker', subtitle: demoSticker ? 'Synthetic sample · not an original' : 'Original MSRP & equipment',
-    brand: demoSticker ? null : fordFamily ? 'ford' : null,
+    brand: demoSticker ? null : oemResourceBrand(vehicle.make),
     facts: stickerFacts, compactFacts: stickerCompact,
     summaryFacts: stickerSummary,
     stickerDetails: capturedStickerFacts.length ? {

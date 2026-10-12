@@ -1,16 +1,16 @@
 .inventory-experience {
   --inventory-bg: #ffffff;
   --inventory-navy: #062a4d;
-  --inventory-active: var(--store-accent-strong, #0a4e9b);
-  --inventory-blue: var(--store-accent, #0759bd);
-  --inventory-blue-hover: var(--store-accent-strong, #064b9f);
-  --inventory-focus: #8bbcff;
+  --inventory-active: var(--blue-700);
+  --inventory-blue: var(--blue-600);
+  --inventory-blue-hover: var(--blue-700);
+  --inventory-focus: var(--ifx-focus-color);
   --inventory-text: #102238;
   --inventory-secondary: #536579;
   --inventory-muted: #64748b;
   --inventory-border: #dce4ed;
   --inventory-soft: #f5f8fb;
-  --inventory-selected: var(--store-accent-soft, #edf5ff);
+  --inventory-selected: var(--blue-050);
   --inventory-success: #147a3d;
   --inventory-warning: #b85b00;
   --inventory-danger: #c93434;
@@ -82,7 +82,7 @@
 
 .inventory-primary-search:focus-within {
   border-color: var(--inventory-blue);
-  box-shadow: 0 0 0 3px rgb(139 188 255 / 30%);
+  box-shadow: var(--ifx-focus-ring);
 }
 
 .inventory-primary-search input {
@@ -936,8 +936,8 @@
   --v10-surface: var(--ifx-neutral-0);
   --v10-surface-subtle: var(--ifx-neutral-50);
   --v10-surface-header: var(--ifx-neutral-100);
-  --v10-blue: var(--store-accent, var(--ifx-oem-accent));
-  --v10-blue-strong: var(--store-accent-strong, var(--ifx-oem-accent-strong));
+  --v10-blue: var(--blue-600);
+  --v10-blue-strong: var(--blue-700);
   width: 100%;
   max-width: none;
   min-width: 0;

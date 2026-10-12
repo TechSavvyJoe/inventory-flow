@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { CarFront, ChartColumnIncreasing, ChevronDown, ChevronRight, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
+import { toInventoryVehicle } from '../../app/adapters'
+import { transferByVin } from '../inventory/inventory-utils'
+import type { InventoryVehicle } from '../inventory/types'
 import { SourceWarning } from '../../components/SourceWarning'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
 import { FlowIconButton, FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
@@ -183,7 +186,14 @@ function daysAwayText(facts: OverviewVehicleFacts): string | null {
 
 function arrivalText(service: OverviewVehicleFacts['service']): string | null {
   if (!service.arrivalDate) return null
-  return `arrived ${formatDate(service.arrivalDate)} (${service.arrivalBasis === 'intake' ? 'intake' : 'listing date'})`
+  if (service.arrivalBasis === 'intake') return `Arrived ${formatDate(service.arrivalDate)} (intake)`
+  if (service.arrivalBasis === 'listing_date') return `Listed ${formatDate(service.arrivalDate)} · arrival unconfirmed`
+  return 'Arrival timing not recorded'
+}
+
+function serviceAgeText(service: Pick<OverviewVehicleFacts['service'], 'waitingDays' | 'arrivalBasis'>): string {
+  if (service.waitingDays === undefined || service.arrivalBasis === 'unknown') return 'Waiting time not recorded'
+  return `${plural(service.waitingDays, 'day')} ${service.arrivalBasis === 'listing_date' ? 'since listing' : 'waiting'}`
 }
 
 function RecordsLink({ vin, facts, name }: { vin: string; facts?: OverviewVehicleFacts; name: string }) {
@@ -208,7 +218,7 @@ function WhereRow({ row, filter, holdsVerified }: { row: OverviewRow; filter: Wh
   if (facts.holdActive) details.push({ text: `${vehicle.hold.label}${holdsVerified ? '' : ' (last verified)'}${facts.holdPastExpected ? ' · past expected' : ''}`, tone: facts.holdPastExpected ? 'warning' : undefined })
   if (vehicle.appDisposition?.code) details.push({ text: `${dispositionSummary(vehicle.appDisposition)} · recorded` })
   if (filter === 'waiting' && facts.service.waitingDays !== undefined) {
-    details.push({ text: [`Waiting ${plural(facts.service.waitingDays, 'day')}`, arrivalText(facts.service)].filter(Boolean).join(' · ') })
+    details.push({ text: [serviceAgeText(facts.service), arrivalText(facts.service)].filter(Boolean).join(' · ') })
   }
   const transferId = vehicle.movement.transferId
   return (
@@ -433,7 +443,7 @@ function ServiceSection({ data, overview, stores, role, homeStore, reportMode, p
                 <div className="ov-row-main">
                   <strong>{name}</strong>
                   <span className="ov-row-meta">{entry.vehicle ? `Stock ${entry.vehicle.stockNumber} · ` : ''}{entry.store ?? 'Service store not set'}{entry.vehicle?.mileage != null ? ` · ${formatNumber(entry.vehicle.mileage)} mi` : ''}</span>
-                  <span className={`ov-service-wait${entry.waitingDays >= waitingLong ? ' ov-tone-danger' : ' ov-tone-warning'}`}>Waiting {plural(entry.waitingDays, 'day')}<span>{entry.arrivalBasis === 'intake' ? 'From recorded arrival' : entry.arrivalBasis === 'listing_date' ? 'From listing date; arrival unconfirmed' : 'Arrival date unconfirmed'}</span></span>
+                  <span className={`ov-service-wait${entry.waitingDays >= waitingLong ? ' ov-tone-danger' : ' ov-tone-warning'}`}>{serviceAgeText(entry)}<span>{entry.arrivalBasis === 'intake' ? 'From recorded arrival' : entry.arrivalBasis === 'listing_date' ? 'From listing date; arrival unconfirmed' : 'Arrival date unconfirmed'}</span></span>
                 </div>
                 <div className="ov-row-actions">
                   <RecordsLink vin={entry.vin} facts={entry.facts} name={name} />
@@ -723,13 +733,9 @@ function WorkQueueRow({ vehicle, fallbackName, stockNumber, work, detail, owner,
           <VehicleValue vehicle={vehicle} />
         </div>
       </div>
-      <div className="ov-work-detail">
-        <strong>{work}</strong>
-        <p>{detail}</p>
-      </div>
-      <div className="ov-work-owner">
-        <strong>{owner}</strong>
-        <small className={tone ? `ov-tone-${tone}` : undefined}>{status}</small>
+      <div className="ov-work-assignment">
+        <div className="ov-work-detail"><strong>{work}</strong><p>{detail}</p></div>
+        <div className="ov-work-owner"><strong>{owner}</strong><small className={tone ? `ov-tone-${tone}` : undefined}>{status}</small></div>
       </div>
       <div className="ov-work-actions">
         {actionHref ? <Link className={flowButtonClassName({variant:'primary',className:'ov-work-primary'})} to={actionHref}>{actionLabel}<ChevronRight aria-hidden="true" /></Link> : null}
@@ -804,7 +810,7 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
     content = service.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => (
       <WorkQueueRow key={vehicle.vin} vehicle={vehicle} fallbackName={vehicle.vehicleName} work="Waiting for service"
         detail={arrivalText(facts.service) || 'Arrival timing not recorded'}
-        owner={facts.service.store ?? vehicle.homeStore} status={facts.service.waitingDays !== undefined ? `${plural(facts.service.waitingDays, 'day')} waiting` : 'Waiting time not recorded'}
+        owner={facts.service.store ?? vehicle.homeStore} status={serviceAgeText(facts.service)}
         tone={facts.service.waitingDays !== undefined && facts.service.waitingDays >= overview.thresholds.serviceWaitingDays[1] ? 'danger' : undefined}
         actionLabel={serviceActionAllowed(vehicle, facts.service.store, role, homeStore) ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
     ))
@@ -844,12 +850,11 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
   return (
     <section className="ov-work-queue" aria-labelledby="ov-work-title">
       <FlowLedgerHeading className="ov-work-heading" titleId="ov-work-title" title={<><ClipboardCheck aria-hidden="true" />Work queue</>} variant="plain"
-        description="Vehicle-level work and evidence in this scope."
         actions={<Link className={flowButtonClassName({variant:'secondary',className:'ov-button'})} to={`/attention?${view === 'issues' ? 'category=issues&' : ''}scope=${scope}`}>{view === 'issues' ? 'Vehicle issue log' : 'Open Action center'}<ChevronRight aria-hidden="true" /></Link>} />
       <div className="ov-work-tabs" role="group" aria-label="Overview work queue">
         {WORK_QUEUE_VIEWS.map((entry) => <button key={entry.value} type="button" aria-label={`${entry.label} ${queueCounts[entry.value]}`} aria-pressed={view === entry.value} onClick={() => setView(entry.value)}>{entry.label}<span>{queueCounts[entry.value]}</span></button>)}
       </div>
-      <div className="ov-work-columns" aria-hidden="true"><span>Vehicle / value</span><span>Work</span><span>Owner / status</span><span>Next action</span></div>
+      <div className="ov-work-columns" aria-hidden="true"><span>Vehicle / value</span><span>Work / responsible</span><span>Next action</span></div>
       {queueCounts[view] ? <ul className="ov-work-rows">{content}</ul> : <p className="ov-work-empty">No {WORK_QUEUE_VIEWS.find((entry) => entry.value === view)!.label.toLowerCase()} in this scope.</p>}
       {queueCounts[view] > WORK_QUEUE_ROWS ? <p className="ov-work-more">Showing {WORK_QUEUE_ROWS} of {queueCounts[view]} items. Open the full ledger from the row action or section below.</p> : null}
     </section>
@@ -857,8 +862,15 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStor
 }
 
 export function OverviewPage() {
-  const { data, homeStore, role, currentUser, currentUserId, refresh } = useAppData()
+  const { data, homeStore, role, currentUser, currentUserId, refresh, refreshSnapshot } = useAppData()
   const accessContext = JSON.stringify([currentUserId, currentUser, role, homeStore])
+  const refreshSavedListVehicles = useCallback(async (): Promise<InventoryVehicle[] | null> => {
+    const next = await refreshSnapshot()
+    if (!next || !currentUserId || next.savedListsEnabled !== true || next.access?.userId !== currentUserId
+      || next.access.role !== role || next.access.store !== homeStore) return null
+    const transfers = transferByVin(next.transfers)
+    return next.vehicles.map(vehicle => toInventoryVehicle(vehicle, next, transfers.get(vehicle.vin)))
+  }, [currentUserId, homeStore, refreshSnapshot, role])
   const [presentationChoice, setPresentationChoice] = useState<{ context: string; value: 'sales' | 'operations' } | null>(null)
   // An employee or role change gets its own default before the first render;
   // a previous employee's presentation choice never carries across identities.
@@ -876,7 +888,9 @@ export function OverviewPage() {
   const phone = useSyncExternalStore(PHONE.subscribe, PHONE.matches, () => false)
   // Printing from the browser menu gets the same full snapshot as the button.
   useEffect(() => {
-    const before = () => flushSync(() => setPrinting(true))
+    // A customer sheet owns its own print layout, including refresh-failure
+    // recovery. Do not unmount it by switching the underlying Overview.
+    const before = () => { if (!document.querySelector('.takehome-portal')) flushSync(() => setPrinting(true)) }
     const after = () => setPrinting(false)
     window.addEventListener('beforeprint', before)
     window.addEventListener('afterprint', after)
@@ -945,7 +959,7 @@ export function OverviewPage() {
         <button type="button" aria-pressed={presentation === 'operations'} onClick={() => setPresentationChoice({ context: accessContext, value: 'operations' })}><Wrench aria-hidden="true" />Store operations</button>
       </div>
 
-      {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} /> : <>
+      {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} refreshVehicles={refreshSavedListVehicles} /> : <>
       <OverviewWorkQueue data={data} overview={overview} rows={rows} stores={stores} scope={scope} role={role} homeStore={homeStore}
         holdsVerified={holdsVerified} dispositionsEnabled={dispositionsEnabled}
         onDispositionOpen={(vin, opener) => { dispositionOpener.current = opener; setDispositionStatus(''); setDispositionVin(vin) }} />

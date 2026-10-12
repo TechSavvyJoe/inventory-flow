@@ -25,7 +25,8 @@ function providerReport(overrides: Partial<ProviderServiceReport> = {}): Provide
 
 describe('source service history', () => {
   it.each(['Chevrolet', 'Ford'])('shows CARFAX-only service evidence for %s independently of service readiness and OEM history', (make) => {
-    const vehicle = { vin: 'TESTDATAHWELL0002', make, serviceHistory: { reports: [providerReport({ vin: 'TESTDATAHWELL0002' })] }, serviceReadiness: { status: 'needs_service' } } as VehicleRecord
+    // External-source behavior uses a non-reserved test VIN; TESTDATA never opens live OEM portals.
+    const vehicle = { vin: '1FMCU9GN0RUA00000', make, serviceHistory: { reports: [providerReport({ vin: '1FMCU9GN0RUA00000' })] }, serviceReadiness: { status: 'needs_service' } } as VehicleRecord
     render(<MemoryRouter><SourceServiceHistory vehicle={vehicle} recordsHref="/inventory/vehicle/TESTDATASERVICE01?tab=data" /></MemoryRouter>)
     expect(screen.getByRole('region', { name: 'CARFAX service records' })).toBeVisible()
     expect(screen.getByText('Oil and filter changed')).toBeVisible()
@@ -41,6 +42,19 @@ describe('source service history', () => {
     expect(vehicle.serviceReadiness?.status).toBe('needs_service')
   })
 
+  it('keeps captured synthetic service history readable without sending demo VINs to Ford', () => {
+    const vehicle = { vin: 'TESTDATAHWELL0002', make: 'Ford',
+      fordOasis: { dataState: 'current', serviceHistory: { dataState: 'current', repairOrderCount: 1,
+        historyCaptured: true, recentRepairOrders: [order('SYNTHETIC', '09/11/2026', '09/12/2026', ['Battery service'])],
+      } },
+    } as VehicleRecord
+    render(<MemoryRouter><SourceServiceHistory vehicle={vehicle} recordsHref="/inventory?vin=TESTDATAHWELL0002&tab=data" /></MemoryRouter>)
+    expect(screen.getByText('Battery service completed')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'View in Records' })).toHaveAttribute('href', '/inventory?vin=TESTDATAHWELL0002&tab=data')
+    expect(screen.queryByRole('link', { name: 'Open source' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Open Ford history' })).not.toBeInTheDocument()
+  })
+
   it('prioritizes current provider events and keeps retained history explicitly unverified', async () => {
     const vehicle = { vin: 'TESTDATASERVICE01', make: 'Chevrolet', serviceHistory: { reports: [
       providerReport({ provider: 'autocheck', sourceLabel: 'AutoCheck', dataState: 'stale_unverified', entries: [{ date: '2026-09-01', services: ['Battery replaced'] }] }),
@@ -49,7 +63,9 @@ describe('source service history', () => {
     render(<MemoryRouter><SourceServiceHistory vehicle={vehicle} recordsHref="/inventory/vehicle/TESTDATASERVICE01?tab=data" /></MemoryRouter>)
     expect(screen.getByRole('region', { name: 'CARFAX service records' })).toBeVisible()
     expect(screen.getByText('Battery replaced')).not.toBeVisible()
-    const retainedDisclosure = screen.getByText('AutoCheck · 1 reported events · Retained report · unverified')
+    const retainedReport = screen.getByRole('region', { name: 'AutoCheck service records' })
+    const retainedDisclosure = retainedReport.closest('details')!.querySelector('summary')!
+    expect(retainedDisclosure).toHaveTextContent('AutoCheck · 1 reported events · Retained report · unverified')
     expect(retainedDisclosure).toBeVisible()
     await userEvent.setup().click(retainedDisclosure)
     expect(screen.getByText('Battery replaced')).toBeVisible()
@@ -89,7 +105,7 @@ describe('source service history', () => {
   })
 
   it('keeps current OEM history primary while retaining independent CARFAX evidence', async () => {
-    const vehicle = { vin: 'TESTDATAHWELL0002', make: 'Ford', serviceHistory: { reports: [providerReport()] },
+    const vehicle = { vin: '1FMCU9GN0RUA00000', make: 'Ford', serviceHistory: { reports: [providerReport({ vin: '1FMCU9GN0RUA00000' })] },
       fordOasis: { dataState: 'current', serviceHistory: { dataState: 'current', repairOrderCount: 2, historyCaptured: true,
         recentRepairOrders: [order('SYNTHETIC', '09/11/2026', '09/12/2026', ['Battery service'])],
       } },
@@ -98,7 +114,8 @@ describe('source service history', () => {
     expect(screen.getByText('Ford dealer repair history')).toBeVisible()
     expect(screen.getByText('Battery service completed')).toBeVisible()
     expect(screen.getByText('Oil and filter changed')).not.toBeVisible()
-    await userEvent.setup().click(screen.getByText('CARFAX · 1 reported events'))
+    const carfaxReport = screen.getByRole('region', { name: 'CARFAX service records' })
+    await userEvent.setup().click(carfaxReport.closest('details')!.querySelector('summary')!)
     expect(screen.getByRole('region', { name: 'CARFAX service records' })).toBeVisible()
     expect(screen.getByText('Oil and filter changed')).toBeVisible()
     expect(screen.getByRole('link', { name: 'Open source' })).toHaveAttribute('href', expect.stringContaining('ford'))

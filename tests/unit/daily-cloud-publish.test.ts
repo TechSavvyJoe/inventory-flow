@@ -6,11 +6,15 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+// @ts-expect-error -- the production canonical bundle hasher is plain ESM.
+import { cloudBundleSha256 } from '../../scripts/publish-cloud-release.mjs'
 
 const reportDate = '2026-09-25'
 const roots: string[] = []
+const defaultRelease = { reportDate, vehicles: ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln'].map((store, i) => ({ publicRecord: { vin: `1FMCU9GDXRUA0000${i + 1}`, store } })) }
+const defaultBundle = { complete: true, reportDate, release: defaultRelease }
 const receipt = {
-  status: 'published_and_verified', reportDate, bundleSha256: 'a'.repeat(64),
+  complete: true, status: 'published_and_verified', reportDate, bundleSha256: cloudBundleSha256(defaultBundle),
   verifiedAt: `${reportDate}T14:00:00Z`, sourceHashes: { managerDispositionBinding: null },
   counts: { publicRowCount: 4, publicStoreCounts: { Howell: 1, Fowlerville: 1, 'Ford Detroit': 1, Lincoln: 1 } },
 }
@@ -22,6 +26,8 @@ const harness = String.raw`
 param([string]$AppRoot, [string]$WorkspaceRoot, [string]$ScenarioPath)
 $ErrorActionPreference = 'Stop'
 $global:HarnessScenario = Get-Content -LiteralPath $ScenarioPath -Raw | ConvertFrom-Json
+if ($global:HarnessScenario.followupsOnlyHash) { $env:INVENTORY_OPS_FOLLOWUPS_ONLY_BUNDLE_SHA256 = [string]$global:HarnessScenario.followupsOnlyHash }
+else { Remove-Item -LiteralPath 'Env:INVENTORY_OPS_FOLLOWUPS_ONLY_BUNDLE_SHA256' -ErrorAction SilentlyContinue }
 $env:USERPROFILE = $global:HarnessScenario.profile
 $env:INVENTORY_TEST_EXISTING_SECRET = 'synthetic-before'
 Remove-Item -LiteralPath 'Env:INVENTORY_TEST_NEW_SECRET' -ErrorAction SilentlyContinue
@@ -119,6 +125,13 @@ function global:Invoke-SyntheticNative {
       if ($global:LASTEXITCODE -eq 0) { '{"stored":0,"alreadyStored":1}' }
       else { 'INVOICE_PUBLISH_REJECTED' }
     }
+    'publication-followup-metadata.mjs' {
+      & ([string]$global:HarnessScenario.nodePath) ([string]$global:HarnessScenario.metadataHelperPath) $WorkspaceRoot '2026-09-25'
+    }
+    'archive-inventory-history.mjs' {
+      $global:LASTEXITCODE = $global:HarnessScenario.archiveExit
+      if ($global:LASTEXITCODE -eq 0) { '{"synthetic":true}' } else { 'SYNTHETIC_ARCHIVE_FAILED' }
+    }
     'verify-integration-deployment.mjs' {
       $global:LASTEXITCODE = $global:HarnessScenario.integrationExit
       if ($global:LASTEXITCODE -eq 0) { '{"verified":true}' }
@@ -127,8 +140,7 @@ function global:Invoke-SyntheticNative {
     { $_ -in @('cache-vauto-equipment-pdfs.py', 'capture-warranty.mjs',
       'build_vin_document_enrichment.py', 'merge-ford-service-history.mjs',
       'merge-vauto-autocheck.mjs', 'merge-invoice-metadata.mjs',
-      'dryrun_resource_enrichment_check.mjs', 'advance_latest_pointer.py',
-      'archive-inventory-history.mjs') } {
+      'dryrun_resource_enrichment_check.mjs', 'advance_latest_pointer.py') } {
       $global:LASTEXITCODE = 0
       '{"synthetic":true}'
     }
@@ -176,14 +188,21 @@ function fixture(cached = false) {
   writeFileSync(harnessPath, harness)
   const readManifest = () => JSON.parse(readFileSync(manifestPath, 'utf8'))
   const readExpectedMetadata = () => JSON.parse(readFileSync(expectedMetadataPath, 'utf8'))
-  const writeRelease = (release: object) => writeFileSync(releasePath, JSON.stringify({ release }))
+  let fixtureReceipt = { ...receipt }
+  const writeRelease = (release: object) => {
+    const bundle = { complete: true, reportDate, release: { reportDate, ...release } }
+    writeFileSync(releasePath, JSON.stringify(bundle))
+    fixtureReceipt = { ...receipt, bundleSha256: cloudBundleSha256(bundle) }
+    if (cached) writeFileSync(receiptPath, JSON.stringify(fixtureReceipt))
+  }
+  writeRelease(defaultRelease)
   let runNumber = 0
-  function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean; reconcile?: boolean; lockPresent?: boolean; syncExit?: number; syncOutput?: string; syncReconciliationMarker?: object; preexistingReconciliationMarker?: object; reconcilePublication?: string; receipt?: object } = {}) {
+  function run(options: { invoiceExit?: number; archiveExit?: number; followupsOnlyHash?: string; integrationExit?: number; secretPresent?: boolean; force?: boolean; reconcile?: boolean; lockPresent?: boolean; syncExit?: number; syncOutput?: string; syncReconciliationMarker?: object; preexistingReconciliationMarker?: object; reconcilePublication?: string; receipt?: object } = {}) {
     const prefix = path.join(root, `attempt-${++runNumber}`)
     const scenario = {
       profile: path.join(root, 'profile'), events: `${prefix}.events`, result: `${prefix}.result`,
-      receipt, receiptPath, invoiceExit: 0, integrationExit: 0, secretPresent: true, force: false, reconcile: false, lockPresent: false,
-      syncExit: 0, syncOutput: '', syncReconciliationMarker: null, preexistingReconciliationMarker: null,
+      receipt: fixtureReceipt, receiptPath, nodePath: process.execPath, metadataHelperPath: fileURLToPath(new URL('../../scripts/publication-followup-metadata.mjs', import.meta.url)), invoiceExit: 0, archiveExit: 0, integrationExit: 0, secretPresent: true, force: false, reconcile: false, lockPresent: false,
+      followupsOnlyHash: null, syncExit: 0, syncOutput: '', syncReconciliationMarker: null, preexistingReconciliationMarker: null,
       reconcilePublication: 'reconciled_exact_candidate', ...options,
     }
     const scenarioPath = `${prefix}.json`
@@ -207,7 +226,7 @@ function fixture(cached = false) {
     return { output, events, helpers: events.map(event => event.helper), exitCode: result.exitCode }
   }
   const holdStatusPath = path.join(workspaceRoot, 'work/hold-refresh-status', `${reportDate}.json`)
-  return { run, readManifest, readExpectedMetadata, writeRelease, receiptPath, holdStatusPath, appRoot, workspaceRoot }
+  return { run, readManifest, readExpectedMetadata, writeRelease, releasePath, getReceipt: () => fixtureReceipt, receiptPath, holdStatusPath, appRoot, workspaceRoot }
 }
 
 afterEach(() => {
@@ -223,13 +242,13 @@ describe('daily PowerShell publisher document retries', () => {
     expect(first.output).toContain('INVOICE_DOCUMENT_PUBLISH_FAILED')
     expect(first.output).toContain('RELEASE PUBLISHED; FOLLOWUPS FAILED')
     expect(first.output).not.toMatch(/SUCCESS|SKIPPED/)
-    expect(test.readManifest()).not.toHaveProperty('cloudflare_publish')
+    expect(test.readManifest()).toMatchObject({ cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 } })
     const savedReceipt = readFileSync(test.receiptPath, 'utf8')
     expect(JSON.parse(savedReceipt)).toEqual(receipt)
 
     const retry = test.run()
     expect(retry.exitCode, retry.output).toBe(0)
-    expect(retry.helpers).toEqual(['publish-invoice-documents.mjs', 'verify-integration-deployment.mjs',
+    expect(retry.helpers).toEqual(['publish-invoice-documents.mjs', 'publication-followup-metadata.mjs', 'verify-integration-deployment.mjs',
       'advance_latest_pointer.py', 'archive-inventory-history.mjs'])
     expect(retry.events[0].arguments).toEqual([reportDate])
     expect(retry.output).toContain('"alreadyStored":1')
@@ -253,9 +272,48 @@ describe('daily PowerShell publisher document retries', () => {
     const test = fixture(true)
     const result = test.run({ integrationExit: 1 })
     expect(result.exitCode).toBe(1)
-    expect(result.helpers, result.output).toEqual(['publish-invoice-documents.mjs', 'verify-integration-deployment.mjs'])
+    expect(result.helpers, result.output).toEqual(['publish-invoice-documents.mjs', 'publication-followup-metadata.mjs', 'verify-integration-deployment.mjs'])
     expect(result.output).not.toMatch(/SUCCESS|SKIPPED/)
-    expect(test.readManifest()).not.toHaveProperty('cloudflare_publish')
+    expect(test.readManifest()).toMatchObject({ cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 } })
+  }, 30_000)
+
+  it('retains pending followups after pointer advancement when the archive fails and retries without republishing', () => {
+    const test = fixture(true)
+    const first = test.run({ archiveExit: 1 })
+    expect(first.exitCode, first.output).toBe(1)
+    expect(first.output).toContain('HISTORICAL_ARCHIVE_FAILED')
+    expect(test.readManifest()).toMatchObject({ latest_pointers_advanced: true, cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 } })
+    const retainedRelease = readFileSync(test.releasePath, 'utf8')
+    const retainedReceipt = readFileSync(test.receiptPath, 'utf8')
+    const second = test.run()
+    expect(second.exitCode, second.output).toBe(0)
+    expect(second.helpers).not.toContain('sync-cloud-release.mjs')
+    expect(second.helpers.at(-1)).toBe('archive-inventory-history.mjs')
+    expect(readFileSync(test.releasePath, 'utf8')).toBe(retainedRelease)
+    expect(readFileSync(test.receiptPath, 'utf8')).toBe(retainedReceipt)
+    expect(test.readManifest()).toMatchObject({ cloudflare_publish: { status: 'published_and_verified' } })
+  }, 60_000)
+
+  it('preserves an unknown publication candidate before successful followups for a different verified receipt', () => {
+    const test = fixture(true)
+    const manifestPath = path.join(test.workspaceRoot, 'work/run-status', `${reportDate}.json`)
+    const manifest = { ...test.readManifest(), cloudflare_publish: { status: 'publication_outcome_unknown', reconciliation_required: true, expected_bundle_sha256: 'f'.repeat(64) } }
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+    const result = test.run()
+    expect(result.exitCode).toBe(1)
+    expect(test.readManifest()).toEqual(manifest)
+    expect(result.output).toContain('PUBLICATION_RECONCILIATION_RECEIPT_MISMATCH')
+    expect(result.output).toContain('pending completion marker could not be recorded')
+    expect(result.helpers).toEqual([])
+  }, 30_000)
+
+  it.each(['missing', 'different'])('refuses a followups-only retry with a %s receipt before any capture, document upload, or republish', (condition) => {
+    const test = fixture(condition !== 'missing')
+    const result = test.run({ followupsOnlyHash: 'f'.repeat(64) })
+    expect(result.exitCode).toBe(1)
+    expect(result.helpers).toEqual([])
+    expect(result.output).toContain(condition === 'missing' ? 'FOLLOWUPS_ONLY_VERIFIED_RECEIPT_REQUIRED' : 'FOLLOWUPS_ONLY_RECEIPT_MISMATCH')
+    expect(test.readManifest()).not.toHaveProperty('latest_pointers_advanced')
   }, 30_000)
 
   it('reconciles integration counts after exact-VIN manager deliveries without double-counting or hiding review rows', () => {
@@ -270,11 +328,13 @@ describe('daily PowerShell publisher document retries', () => {
         { publicRecord: { vin: fowlervilleVin, store: 'Fowlerville' } },
         { publicRecord: { vin: fordDetroitVin, store: 'Ford Detroit' } },
         { publicRecord: { vin: lincolnVin, store: 'Lincoln' } },
+        { vin: '1FMCU9GDXRUA00005', crmRecord: { vin: '1FMCU9GDXRUA00005', store: 'Howell' }, publicRecord: null },
       ],
       managerDispositionOverlay: {
         records: [
           { vin: howellVin, deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched' },
           { vin: howellVin, deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched' },
+          { vin: '1FMCU9GDXRUA00005', deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched' },
           { vin: fowlervilleVin, deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched_vin_stock_review' },
           { vin: fordDetroitVin, deliveredManagerLog: true, matchMethod: 'unique_stock', matchStatus: 'matched' },
           { vin: lincolnVin, deliveredManagerLog: false, matchMethod: 'vin', matchStatus: 'matched' },
@@ -286,23 +346,31 @@ describe('daily PowerShell publisher document retries', () => {
 
     expect(result.exitCode, result.output).toBe(0)
     expect(test.readExpectedMetadata()).toEqual({
-      bundleSha256: receipt.bundleSha256,
+      bundleSha256: test.getReceipt().bundleSha256,
       total: 3,
       byStore: { Howell: 0, Fowlerville: 1, 'Ford Detroit': 1, Lincoln: 1 },
     })
   }, 30_000)
 
-  it('keeps the verified receipt public counts when the dated release is unavailable', () => {
+  it('fails closed when the receipt-bound dated release is unavailable', () => {
     const test = fixture(true)
-
+    rmSync(test.releasePath)
     const result = test.run()
+    expect(result.exitCode, result.output).toBe(1)
+    expect(result.helpers).toEqual(['publish-invoice-documents.mjs', 'publication-followup-metadata.mjs'])
+    expect(result.output).toContain('RETAINED_RELEASE_FOLLOWUP_METADATA_FAILED')
+    expect(existsSync(path.join(test.appRoot, 'runtime/integration-expected-release.json'))).toBe(false)
+    expect(test.readManifest()).not.toHaveProperty('latest_pointers_advanced')
+  }, 30_000)
 
-    expect(result.exitCode, result.output).toBe(0)
-    expect(test.readExpectedMetadata()).toEqual({
-      bundleSha256: receipt.bundleSha256,
-      total: 4,
-      byStore: { Howell: 1, Fowlerville: 1, 'Ford Detroit': 1, Lincoln: 1 },
-    })
+  it('fails closed when retained release contents differ from the receipt', () => {
+    const test = fixture(true)
+    writeFileSync(test.releasePath, JSON.stringify({ ...defaultBundle, syntheticChanged: true }))
+    const result = test.run()
+    expect(result.exitCode, result.output).toBe(1)
+    expect(result.helpers).toEqual(['publish-invoice-documents.mjs', 'publication-followup-metadata.mjs'])
+    expect(result.output).toContain('RETAINED_RELEASE_FOLLOWUP_METADATA_FAILED')
+    expect(test.readManifest()).not.toHaveProperty('latest_pointers_advanced')
   }, 30_000)
 
   it('fails closed when cached publication has no publisher secret bundle', () => {
@@ -326,8 +394,8 @@ describe('daily PowerShell publisher document retries', () => {
     const test = fixture(true)
     const result = test.run({ force: true })
     expect(result.exitCode, result.output).toBe(0)
-    expect(result.helpers.slice(-5)).toEqual(['sync-cloud-release.mjs', 'publish-invoice-documents.mjs',
-      'verify-integration-deployment.mjs', 'advance_latest_pointer.py', 'archive-inventory-history.mjs'])
+    expect(result.helpers.slice(-6)).toEqual(['sync-cloud-release.mjs', 'publish-invoice-documents.mjs',
+      'publication-followup-metadata.mjs', 'verify-integration-deployment.mjs', 'advance_latest_pointer.py', 'archive-inventory-history.mjs'])
     expect(result.output).toContain('SUCCESS')
     expect(result.output).not.toContain('SKIPPED')
   }, 30_000)
@@ -399,7 +467,7 @@ describe('daily PowerShell publisher document retries', () => {
     }
     const result = test.run({ reconcile: true, preexistingReconciliationMarker: marker })
     expect(result.exitCode, result.output).toBe(0)
-    expect(result.helpers).toEqual(['sync-cloud-release.mjs', 'verify-integration-deployment.mjs',
+    expect(result.helpers).toEqual(['sync-cloud-release.mjs', 'publication-followup-metadata.mjs', 'verify-integration-deployment.mjs',
       'advance_latest_pointer.py', 'archive-inventory-history.mjs'])
     expect(result.events[0].arguments).toEqual(['--reconcile-pending'])
     expect(result.output).toContain('RECONCILED EXACT CANDIDATE')
@@ -409,7 +477,8 @@ describe('daily PowerShell publisher document retries', () => {
   }, 30_000)
 
   describe('guarded recovery of a same-day hold-refresh candidate', () => {
-    const candidateHash = 'c'.repeat(64)
+    const candidateBundle = { ...defaultBundle, syntheticRevision: 'hold refresh' }
+    const candidateHash = cloudBundleSha256(candidateBundle)
     const candidateReceipt = { ...receipt, bundleSha256: candidateHash, sourceHashes: { dealerMail: '2'.repeat(64), managerDispositionBinding: null } }
     const marker = {
       schemaVersion: 1,
@@ -439,6 +508,7 @@ describe('daily PowerShell publisher document retries', () => {
       steps: [],
     }
     function withMorningReceiptAndBlockedStatus(test: ReturnType<typeof fixture>, morningReceipt: string, status: object = blockedStatus) {
+      writeFileSync(test.releasePath, JSON.stringify(candidateBundle))
       writeFileSync(test.receiptPath, morningReceipt)
       mkdirSync(path.dirname(test.holdStatusPath), { recursive: true })
       writeFileSync(test.holdStatusPath, JSON.stringify(status))

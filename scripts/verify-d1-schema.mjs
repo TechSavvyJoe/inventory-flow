@@ -771,12 +771,14 @@ export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirector
   const recorded = ledgerNames ?? []
   const unexpected = [...new Set(recorded.filter((name) => !files.includes(name)))]
   const duplicates = [...new Set(recorded.filter((name, index) => recorded.indexOf(name) !== index))]
+  const missing = ledgerRows ? files.filter((name) => !recorded.includes(name)) : []
   const recordedNotApplied = reports.filter((report) => report.inLedger && report.status !== 'APPLIED').map((report) => report.file)
   const anomalies = []
   if (ledgerTableState === 'differs') anomalies.push("The live d1_migrations table differs from Wrangler's definition.")
   if (ledgerRows && !live.ledgerTable) anomalies.push('--ledger rows were supplied but the live schema has no d1_migrations table; both files must come from the same database.')
   if (unexpected.length) anomalies.push(`Ledger names that match no migration file: ${unexpected.map(display).join(', ')}.`)
   if (duplicates.length) anomalies.push(`Ledger names recorded more than once: ${duplicates.map(display).join(', ')}.`)
+  if (missing.length) anomalies.push(`Migration names missing from the supplied ledger: ${missing.join(', ')}.`)
   if (recordedNotApplied.length) anomalies.push(`Recorded in the ledger but not APPLIED in the live schema: ${recordedNotApplied.join(', ')}.`)
 
   const ok = reports.every((report) => report.status === 'APPLIED') && !extraLiveObjects.length && !anomalies.length
@@ -794,6 +796,7 @@ export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirector
       recorded,
       unexpected,
       duplicates,
+      missing,
       recordedNotApplied,
       anomalies,
     },

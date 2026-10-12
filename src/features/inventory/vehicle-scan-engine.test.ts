@@ -1,6 +1,6 @@
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readTag } from './vehicle-scan-engine'
+import { createTagReader, readTag } from './vehicle-scan-engine'
 
 const { decodeFromCanvas } = vi.hoisted(() => ({ decodeFromCanvas: vi.fn() }))
 vi.mock('@zxing/browser', () => ({ BrowserMultiFormatReader: class { decodeFromCanvas = decodeFromCanvas } }))
@@ -33,14 +33,14 @@ beforeEach(() => {
 })
 afterEach(() => { for (const controller of controllers.splice(0)) controller.abort(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
-async function start() {
+async function start(read = readTag) {
   const controller = new AbortController()
   controllers.push(controller)
   const progress = vi.fn()
   const bytes = new Uint8Array([137, 80, 78, 71])
   const arrayBuffer = vi.fn(async () => bytes.buffer)
   const canvas = { toBlob: vi.fn((callback: BlobCallback) => callback({ arrayBuffer } as unknown as Blob)) } as unknown as HTMLCanvasElement
-  const promise = readTag(canvas, progress, controller.signal)
+  const promise = read(canvas, progress, controller.signal)
   // Observe rejections immediately, including aborts during initialization.
   const outcome = promise.then(value => ({ value, error: undefined }), error => ({ value: undefined, error }))
   await vi.dynamicImportSettled()
@@ -142,7 +142,7 @@ describe('owned local OCR worker lifecycle', () => {
     expect(scan.worker.messages.map(packet => packet.action)).toEqual(['load', 'loadLanguage', 'initialize', 'setParameters', 'recognize'])
     const assetPath = new URL('/scanner-assets/', location.origin).href
     expect(scan.worker.messages[0].payload).toEqual({ options: { lstmOnly: true, corePath: assetPath, logging: false } })
-    expect(scan.worker.messages[1].payload).toEqual({ langs: 'eng', options: { langPath: assetPath, cacheMethod: 'none', gzip: true, lstmOnly: true } })
+    expect(scan.worker.messages[1].payload).toEqual({ langs: 'eng', options: { langPath: assetPath, cachePath: 'inventory-flow-tesseract-7.0.0-eng-1.0.0-best-int', cacheMethod: 'write', gzip: true, lstmOnly: true } })
     expect(scan.worker.messages[2].payload).toEqual({ langs: 'eng', oem: 1, config: {} })
     expect(scan.worker.messages[3].payload).toMatchObject({ params: { tessedit_pageseg_mode: '11', preserve_interword_spaces: '1' } })
     expect(scan.worker.messages[4].payload).toEqual({ image: new Uint8Array([137, 80, 78, 71]), options: {}, output: { text: true } })
@@ -154,6 +154,72 @@ describe('owned local OCR worker lifecycle', () => {
     expect(scan.worker.terminate).toHaveBeenCalledTimes(1)
     scan.controller.abort()
     expect(scan.worker.terminate).toHaveBeenCalledTimes(1)
+  })
+
+  it('initializes once for sequential live frames and rejects a queued prior-frame event', async () => {
+    const owner = new AbortController(); controllers.push(owner)
+    const reader = createTagReader(owner.signal)
+    const first = await start(reader.readTag)
+    await initialize(first.worker)
+    const firstPacket = first.worker.messages.at(-1)!
+    const queued = first.worker.onmessage!
+    first.worker.reply('resolve', { text: 'SYNTHETIC-NO-MATCH' })
+    await first.outcome
+    expect(first.worker.terminate).not.toHaveBeenCalled()
+    const second = await start(reader.readTag)
+    expect(OwnedWorker.instances).toHaveLength(1)
+    expect(first.worker.messages.map(packet => packet.action)).toEqual(['load', 'loadLanguage', 'initialize', 'setParameters', 'recognize', 'recognize'])
+    const reports = second.progress.mock.calls.length
+    queued({ data: { ...firstPacket, status: 'progress', data: { status: 'recognizing text', progress: 1 } } } as MessageEvent)
+    queued({ data: { ...firstPacket, status: 'resolve', data: { text: 'STALE-RESULT' } } } as MessageEvent)
+    expect(second.progress).toHaveBeenCalledTimes(reports)
+    first.worker.reply('resolve', { text: 'STOCK DEMO-H01' })
+    expect((await second.outcome).value).toEqual({ text: 'STOCK DEMO-H01', barcode: false })
+    owner.abort()
+    expect(first.worker.terminate).toHaveBeenCalledTimes(1)
+    reader.stop()
+    expect(first.worker.terminate).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases an idle worker and lazily initializes again without keeping image jobs', async () => {
+    vi.useFakeTimers()
+    const owner = new AbortController(); controllers.push(owner)
+    const reader = createTagReader(owner.signal)
+    const first = await start(reader.readTag)
+    await initialize(first.worker)
+    first.worker.reply('resolve', { text: '' }); await first.outcome
+    const queuedError = first.worker.onerror!
+    const queuedMessageError = first.worker.onmessageerror!
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(first.worker.terminate).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(first.worker.terminate).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+    const second = await start(reader.readTag)
+    expect(OwnedWorker.instances).toHaveLength(2)
+    expect(second.worker.messages.at(-1)?.action).toBe('load')
+    queuedError(new ErrorEvent('error', { cancelable: true }))
+    queuedMessageError(new MessageEvent('messageerror'))
+    expect(second.worker.terminate).not.toHaveBeenCalled()
+    await initialize(second.worker)
+    second.worker.reply('resolve', { text: 'STOCK DEMO-H01' })
+    expect((await second.outcome).value?.text).toBe('STOCK DEMO-H01')
+    owner.abort()
+    expect(second.worker.terminate).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('bounds a session to one active OCR operation', async () => {
+    const owner = new AbortController(); controllers.push(owner)
+    const reader = createTagReader(owner.signal)
+    const first = await start(reader.readTag)
+    const overlap = await start(reader.readTag)
+    expect((await overlap.outcome).error.message).toContain('already in progress')
+    expect(OwnedWorker.instances).toHaveLength(1)
+    expect(first.worker.messages).toHaveLength(1)
+    owner.abort()
+    expect((await first.outcome).error).toMatchObject({ name: 'AbortError' })
+    expect(first.worker.terminate).toHaveBeenCalledTimes(1)
   })
 
   it('terminates if image encoding fails or the result contains no text field', async () => {

@@ -1,0 +1,5 @@
+.source-wordmark { display:inline-flex; align-items:center; gap:var(--ifx-space-2); }
+.source-wordmark__image { display:block; flex:none; max-width:var(--ifx-space-16); max-height:var(--ifx-space-5); object-fit:contain; }
+.source-wordmark__image--autocheck { width:var(--ifx-space-16); }
+.source-wordmark__image--carfax { width:var(--ifx-space-16); }
+.source-wordmark__image--ford { width:var(--ifx-space-8); }

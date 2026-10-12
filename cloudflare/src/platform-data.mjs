@@ -1,7 +1,7 @@
 import { WorkflowError } from '../../server/workflow.mjs'
 import { platformOwner } from './platform-admin.mjs'
 import { schedulePreview, schedulerEnabled } from './platform-scheduler.mjs'
-import { readCollectors } from './collector-execution.mjs'
+import { readCollectors, attemptRequestIds, attemptRequestIdsSql } from './collector-execution.mjs'
 
 const fail = (message,code='PLATFORM_INPUT_INVALID',status=422) => {throw new WorkflowError(message,{code,status})}
 const text = (value,label,max=160) => {
@@ -94,10 +94,15 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
       // Compare the same logical fields on both sides of this state change.
       // The connection name is context, never a rename caused by cancellation.
       previous={id,groupId,connectionId:connection.id,name:connection.name,state:previous.state,kind:previous.request_kind,scheduleSlot:previous.schedule_slot||null}
-      const inFlight=await db.prepare("SELECT id FROM platform_collector_attempts WHERE request_id=? AND stage IN ('publishing','reconciliation_required')").bind(id).first()
-      next={...previous,state:inFlight?'reconciliation_required':'cancelled'}
-      write=db.prepare("UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts WHERE request_id=? AND stage IN ('publishing','reconciliation_required')) THEN 'reconciliation_required' ELSE 'cancelled' END,updated_at=? WHERE id=? AND state IN ('queued','running','reconciliation_required')").bind(id,now,id)
-      extra=[db.prepare("UPDATE platform_collector_attempts SET stage=CASE WHEN stage IN ('publishing','reconciliation_required') THEN 'reconciliation_required' ELSE 'cancelled' END,failure_code='CANCELLED_BY_OWNER' WHERE request_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required')").bind(id)]
+      const shared=await db.prepare(`SELECT a.* FROM platform_collector_attempts a WHERE a.group_id=? AND ? IN (${attemptRequestIdsSql()}) AND a.stage IN ('claimed','captured','publishing','reconciliation_required','expired') ORDER BY a.fence DESC,a.created_at DESC,a.id DESC LIMIT 1`).bind(groupId,id).first()
+      const inFlight=shared && ['publishing','reconciliation_required'].includes(shared.stage),sharedIds=shared?attemptRequestIds(shared):[]
+      next={...previous,state:inFlight?'reconciliation_required':'cancelled',...(sharedIds.length>1?{requestIds:sharedIds}:{})}
+      // Cancelling any frozen member stops the whole capture. Once dispatched,
+      // every member retains the same uncertainty until exact tenant readback.
+      // An expired attempt also owns its queued retry cohort. Freeze those IDs
+      // into this owner transaction; leave the expired evidence unchanged.
+      write=db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ? IN (${attemptRequestIdsSql()}) AND a.stage IN ('publishing','reconciliation_required')) THEN 'reconciliation_required' ELSE 'cancelled' END,updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND group_id=? AND state IN ('queued','running','reconciliation_required')`).bind(id,now,JSON.stringify(sharedIds.length?sharedIds:[id]),groupId)
+      extra=[db.prepare(`UPDATE platform_collector_attempts AS a SET stage=CASE WHEN stage IN ('publishing','reconciliation_required') THEN 'reconciliation_required' ELSE 'cancelled' END,failure_code='CANCELLED_BY_OWNER' WHERE ? IN (${attemptRequestIdsSql()}) AND stage IN ('claimed','captured','publishing','reconciliation_required')`).bind(id)]
       event='cancelled'
     }
   } else fail('Route not found.','NOT_FOUND',404)
@@ -115,7 +120,7 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
   return {saved:true,id,replayed:false}
 }
 
-const AUDIT_FIELDS={collectors:['name','enabled','revokedAt','generation','adapterId','adapterVersion','profileId','profileSha256','scopeSha256'],collector_attempts:['stage','requestId','fence','bundleSha256','code'],groups:['name','status'],dealerships:['name','groupId','storeKey','website','enabled'],owners:['name','email','enabled'],connections:['name','groupId','dealershipId','provider','vendor','oem','method','endpoint','credentialRef','enabled','cadence','localTime','timezone'],pulls:['name','groupId','connectionId','state','kind','scheduleSlot']}
+const AUDIT_FIELDS={collectors:['name','enabled','revokedAt','generation','adapterId','adapterVersion','profileId','profileSha256','scopeSha256'],collector_attempts:['stage','requestIds','requestId','fence','bundleSha256','code'],groups:['name','status'],dealerships:['name','groupId','storeKey','website','enabled'],owners:['name','email','enabled'],connections:['name','groupId','dealershipId','provider','vendor','oem','method','endpoint','credentialRef','enabled','cadence','localTime','timezone'],pulls:['requestIds','name','groupId','connectionId','state','kind','scheduleSlot']}
 const aliases={groupId:'group_id',storeKey:'store_key',dealershipId:'dealership_id',connectionId:'connection_id',credentialRef:'credential_ref',localTime:'local_time',kind:'request_kind',scheduleSlot:'schedule_slot'}
 export async function readPlatformAudit(env,claims,id) {
   const db=env.PLATFORM_DB

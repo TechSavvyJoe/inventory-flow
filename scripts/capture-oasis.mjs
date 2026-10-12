@@ -25,7 +25,8 @@ import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { closeDuplicateTabs, closeOwnedTab, closeUnresponsiveOriginTabs, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
-import { assessOasisCapture, diagnoseOasisActions, parseOasisFull } from './lib/oasis-parser.mjs'
+import { assessOasisCapture, diagnoseOasisActions, parseOasisFull, validateSavedOasisRecords } from './lib/oasis-parser.mjs'
+import { oasisCaptureCompletion, readOasisWithRecovery } from './lib/oasis-capture-outcome.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -61,7 +62,20 @@ let out = { schema: 'bob-maxey-oasis-capture-v1', reportDate, capturedAtUtc: new
             privacyNote: 'Extended coverage is captured as category and expiration date only. No prior-owner name is ever parsed or stored.',
             vehicleCount: 0, records: [] }
 if (!refresh && existsSync(outPath)) {
-  try { const prev = JSON.parse(readFileSync(outPath, 'utf8')); if (Array.isArray(prev.records)) out.records = prev.records } catch {}
+  try {
+    const prev = JSON.parse(readFileSync(outPath, 'utf8'))
+    if (Array.isArray(prev?.records)) {
+      const validated = validateSavedOasisRecords(prev.records)
+      if (validated.skipped) {
+        process.stderr.write(`Warning: skipped ${validated.skipped} malformed saved OASIS record(s)\n`)
+      }
+      out.records = validated.records
+    } else {
+      process.stderr.write('Warning: saved OASIS data has no records array; starting with an empty capture\n')
+    }
+  } catch {
+    process.stderr.write('Warning: saved OASIS data is unreadable; starting with an empty capture\n')
+  }
 }
 const done = new Set(out.records.filter(r => r.openActionsCaptured === true ||
   r.actionResultLimit === 'canadian_service_info_warning').map(r => r.vin))
@@ -103,24 +117,41 @@ const isConfirmed = vin => out.records.some(record => record.vin === vin &&
   (record.openActionsCaptured === true || record.actionResultLimit === 'canadian_service_info_warning'))
 
 let stopped = null
+let lastResolvedVin = null
 // One vehicle never stops the run: fetch every queued VIN, then give each one
 // that failed or stayed unconfirmed one more try at the end, while the session
-// and budget last. Only a session or budget stop ends the capture early.
+// and budget last. A persistent transport failure with no fresh response from
+// another queued VIN is systemic and also ends the capture early.
 async function capturePass(vins) {
   for (const vin of vins) {
     if (Date.now() - t0 > budgetMs) { stopped = 'BUDGET_EXHAUSTED'; return }
     try {
-      const r = await fetchInTab(ctx.page, OASIS_URL(vin), { timeoutMs: 45000 })
-      if (r.status === 0 || r.error) { state = 'session_expired'; stopped = 'SESSION_EXPIRED'; return }
-      if (r.status !== 200 || !r.text) { tally.ERROR++; issues.set(vin, { reason: `http_${r.status}`, excerpt: '' }); continue }
-      if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text)) {
-        state = 'session_expired'; stopped = 'SESSION_EXPIRED'; return
+      const recovery = await readOasisWithRecovery(vin, {
+        read: requestedVin => fetchInTab(ctx.page, OASIS_URL(requestedVin), { timeoutMs: 45000 }),
+        alternateVin: lastResolvedVin && lastResolvedVin !== vin ? lastResolvedVin : queue.find(otherVin => otherVin !== vin),
+        wait: sleep,
+        budgetExhausted: () => Date.now() - t0 > budgetMs,
+      })
+      tally.ERROR += recovery.transportFailures
+      if (recovery.transportFailures) {
+        issues.set(vin, { reason: 'network_unavailable', excerpt: '' })
       }
-      const parsed = parseOasisFull(r.text)
+      if (recovery.stoppedReason) { stopped = recovery.stoppedReason; return }
+      const r = recovery.response
+      if (!r) continue
+      lastResolvedVin = vin
+      if (r.status !== 200 || !r.text) { tally.ERROR++; issues.set(vin, { reason: `http_${r.status}`, excerpt: '' }); continue }
+      const parsed = parseOasisFull(r.text, vin)
       if (!parsed) { tally.NO_OASIS++; issues.set(vin, { reason: 'no_oasis_report', excerpt: '' }); continue }
+      const { sourceVinStatus, ...record } = parsed
+      if (sourceVinStatus !== 'matched') {
+        tally.NO_OASIS++
+        issues.set(vin, { reason: sourceVinStatus === 'mismatch' ? 'requested_vin_mismatch' : 'requested_vin_unverified', excerpt: '' })
+        continue
+      }
       state = 'ok'
       out.records = out.records.filter(previous => previous.vin !== vin)
-      out.records.push({ vin, ...parsed, capturedAt: new Date().toISOString() })
+      out.records.push({ vin, ...record, capturedAt: new Date().toISOString() })
       tally.OK++
       if (isConfirmed(vin)) issues.delete(vin)
       else issues.set(vin, diagnoseOasisActions(r.text))
@@ -151,10 +182,11 @@ const needsReview = worklist.map(({ vin }) => vin).filter(vin => {
 }).map(vin => ({ vin, ...(issues.get(vin) ?? { reason: recordsByVin.has(vin) ? 'carried_unconfirmed' : 'not_captured', excerpt: '' }) }))
 const reviewPath = path.join(ROOT, 'work', 'oasis-history', `${reportDate}-needs-review.json`)
 writeFileSync(reviewPath, JSON.stringify({ reportDate, checkedAt: new Date().toISOString(), vehicles: needsReview }, null, 1))
+const completion = oasisCaptureCompletion(state, stopped)
 console.log(JSON.stringify({
-  sessionStatus: state, records: out.records.length, worklist: worklist.length,
+  sessionStatus: completion.sessionStatus, records: out.records.length, worklist: worklist.length,
   tally, ...quality, retried: retryQueue.length, recovered, needsReview: needsReview.length,
-  stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), out: outPath, review: reviewPath,
+  stoppedReason: completion.stoppedReason, seconds: Math.round((Date.now() - t0) / 1000), out: outPath, review: reviewPath,
 }))
-// Per-vehicle gaps are not a failure; only a session or budget stop is.
-process.exit(stopped ? 1 : 0)
+// Per-vehicle gaps are not a failure; systemic transport/session/budget stops are.
+process.exit(completion.exitCode)

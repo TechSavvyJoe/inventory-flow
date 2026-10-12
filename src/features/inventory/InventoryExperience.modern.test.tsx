@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizedPageSize } from './InventoryExperience';
 import { InventoryExperienceHarness } from '../../../tests/unit/inventory-experience-harness';
@@ -54,6 +55,8 @@ describe('modern inventory scope and paging', () => {
     const offsite = { ...vehicle(3), location: { homeStore, appConfirmedStore: away, appConfirmedAt: '2026-09-25T10:00:00Z' } };
     const visitor = { ...vehicle(4), location: { homeStore: away, appConfirmedStore: homeStore, appConfirmedAt: '2026-09-25T10:00:00Z' } };
     render(<InventoryExperienceHarness initialQuickView="no-hold" homeStore={homeStore} vehicles={[local, held, offsite, visitor]} />);
+    const homeScope = screen.getByRole('button', { name: /^Howell inventory,/ });
+    const initialHomeScope = homeScope.getAttribute('aria-pressed');
     expect(screen.getByRole('button', { name: 'No hold: 2 vehicles' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('Showing 1–2 of 2')).toBeInTheDocument();
     expect(screen.getByText(/Reported at Howell · No hold in the published snapshot. Confirm availability/)).toBeInTheDocument();
@@ -63,6 +66,12 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('button', { name: 'Held: 1 vehicles' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Held: 1 vehicles' }));
     expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Active inventory filters' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All: 4 vehicles' }));
+    expect(screen.getByRole('button', { name: 'Held: 1 vehicles' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'All: 4 vehicles' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Showing 1–4 of 4')).toBeInTheDocument();
+    expect(homeScope).toHaveAttribute('aria-pressed', initialHomeScope);
     fireEvent.click(screen.getByRole('button', { name: 'Offsite: 1 vehicles' }));
     expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All: 4 vehicles' }));
@@ -87,19 +96,24 @@ describe('modern inventory scope and paging', () => {
     await waitFor(() => expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument());
   });
 
-  it('keeps a collapsed service filter visible without counting the already-visible primary view twice', () => {
+  it.each(['buttons', 'select'] as const)('keeps the collapsed service %s filter usable without counting the already-visible primary view twice', control => {
     const readyHeld = { ...vehicle(1), dealerMail: { dataState: 'current' as const, hasActiveHold: true, position: null }, serviceReadiness: { vin: vehicle(1).vin, status: 'serviced' as const, version: 1, serviceEnteredAt: null, completedAt: '2026-09-14', updatedAt: '2026-09-14T12:00:00Z', updatedBy: 'Synthetic manager', updatedByRole: 'manager' as const, updatedAtStore: 'Howell' as const, store: 'Howell' as const, canManage: false } };
     render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[readyHeld, vehicle(2)]} />);
     fireEvent.click(screen.getByRole('button', { name: /^Held:/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^Ready:/ }));
+    expect(screen.queryByRole('group', { name: 'Active inventory filters' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear 0 filters' })).not.toBeInTheDocument();
+    if (control === 'select') fireEvent.change(screen.getByRole('combobox', { name: 'Inventory service status' }), { target: { value: 'serviced' } });
+    else fireEvent.click(screen.getByRole('button', { name: /^Ready:/ }));
     expect(screen.getByRole('button', { name: 'Filters 1' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Clear service filter: Ready' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^All:/ }));
     expect(screen.getByRole('button', { name: 'Filters 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Ready:/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Inventory service status' })).toHaveValue('serviced');
     fireEvent.click(screen.getByRole('button', { name: 'Clear service filter: Ready' }));
     expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^All service:/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Inventory service status' })).toHaveValue('all');
   });
 
   it('combines budget and mileage with Held, then clears each visible customer-fit filter independently', () => {
@@ -125,6 +139,7 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByText('Showing 1–3 of 3')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Held:/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Active inventory filters' })).not.toBeInTheDocument();
   });
 
   it('never loses a secondary view restriction when Filters closes', () => {
@@ -154,8 +169,23 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('combobox', { name: 'Hold' })).toHaveValue('held');
     fireEvent.change(screen.getByRole('combobox', { name: 'Hold' }), { target: { value: 'not-held' } });
     expect(screen.getByRole('button', { name: /^Held:/ })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: /^All:/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^All:/ })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Show 1 vehicle' })).toBeInTheDocument();
+  });
+
+  it('keeps Held counts stable while movement is added and cleared independently', () => {
+    const heldMove = (id: number) => ({ ...vehicle(id), dealerMail: { dataState: 'current' as const, hasActiveHold: true }, movement: { state: 'in_transit', requestId: `move-${id}` } });
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[heldMove(1), heldMove(2), { ...vehicle(3), movement: { state: 'in_transit', requestId: 'move-3' } }]} />);
+    const held = () => screen.getByRole('button', { name: /^Held:/ });
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    fireEvent.click(held());
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Vehicle movement' }), { target: { value: 'active' } });
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Vehicle movement' }), { target: { value: 'all' } });
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    expect(screen.getByRole('button', { name: /^All:/ })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('keeps the Being moved chip and the Vehicle movement select as one state', () => {
@@ -170,7 +200,6 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('combobox', { name: 'Vehicle movement' })).toHaveValue('active');
     fireEvent.click(screen.getByRole('button', { name: 'Show 1 vehicle' }));
     expect(screen.getByRole('button', { name: 'Filters 1' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Clear view filter: Moving' })).toBeInTheDocument();
   });
 
   it.each([
@@ -265,7 +294,14 @@ describe('modern inventory scope and paging', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     expect(screen.getByRole('button', { name: 'Being moved 0' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Inventory quick view' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Inventory service status' })).not.toBeInTheDocument();
+    const service = screen.getByRole('combobox', { name: 'Inventory service status' });
+    expect(service).toHaveValue('all');
+    expect(within(service).getAllByRole('option').map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent }))).toEqual([
+      { value: 'all', label: 'All service: 1 vehicle' },
+      { value: 'needs_service', label: 'Waiting for service: 1 vehicle' },
+      { value: 'in_service', label: 'In service: 0 vehicles' },
+      { value: 'serviced', label: 'Ready: 0 vehicles' },
+    ]);
     expect(container.querySelector('.inventory-quick-filter-label--compact')).toHaveTextContent('No hold');
     expect(container.querySelectorAll('.inventory-quick-filter-label--compact')).toHaveLength(4);
   });
@@ -339,6 +375,51 @@ describe('modern inventory scope and paging', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'All locations, 1 group vehicles' }));
     expect(screen.getByRole('combobox', { name: 'Location' })).toBeInTheDocument();
+  });
+
+  it('exposes every inventory sort field through one keyboard-safe global sort destination', () => {
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[vehicle(1)]} initialSorts={[{ key: 'vehicle', direction: 'asc' }]} />);
+    const trigger = screen.getByRole('button', { name: /^Sort inventory\./ });
+    expect(screen.getAllByRole('button', { name: /^Sort inventory\./ })).toHaveLength(1);
+    expect(document.querySelector('thead button, thead select, thead a')).toBeNull();
+    fireEvent.click(trigger);
+    const field = screen.getByRole('combobox', { name: 'Sort priority 1 field' });
+    expect(new Set(within(field).getAllByRole('option').map(option => (option as HTMLOptionElement).value))).toEqual(new Set([
+      'vehicle', 'year', 'makeModel', 'trim', 'bodyStyle', 'exteriorColor', 'engine', 'transmission', 'fuelType', 'stock', 'vin', 'homeStore', 'price', 'msrp',
+      'mileage', 'daysListed', 'inventoryDate', 'holdStatus', 'websiteStatus', 'movementStatus', 'recentActivity', 'photoCount', 'autoCheckScore',
+      'documentAvailability', 'salesperson', 'certified', 'currentLocation', 'lastMovement',
+    ]));
+    field.focus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+  });
+
+  it('applies price and mileage directions and priorities to actual vehicle order without dropping either rule', () => {
+    const a = { ...vehicle(1), price: 45000, mileage: 1000 };
+    const b = { ...vehicle(2), price: 45000, mileage: 2000 };
+    const c = { ...vehicle(3), price: 50000, mileage: 1500 };
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[a, b, c]} initialSorts={[{ key: 'price', direction: 'asc' }, { key: 'mileage', direction: 'desc' }]} />);
+    const order = () => Array.from(document.querySelectorAll<HTMLElement>('tr[data-stock-number]')).map(row => row.dataset.stockNumber);
+    expect(order()).toEqual([b.stockNumber, a.stockNumber, c.stockNumber]);
+    const trigger = screen.getByRole('button', { name: /^Sort inventory\./ });
+    fireEvent.click(trigger);
+    expect(screen.getByLabelText('Sort priority 1 field')).toHaveValue('price');
+    expect(screen.getByLabelText('Sort priority 2 field')).toHaveValue('mileage');
+    fireEvent.click(screen.getByRole('button', { name: 'Price: change to descending' }));
+    expect(screen.getByRole('button', { name: 'Price: change to ascending' })).toHaveTextContent('Descending');
+    expect(order()).toEqual([c.stockNumber, b.stockNumber, a.stockNumber]);
+    fireEvent.click(screen.getByRole('button', { name: 'Mileage: change to ascending' }));
+    expect(screen.getByRole('button', { name: 'Mileage: change to descending' })).toHaveTextContent('Ascending');
+    expect(order()).toEqual([c.stockNumber, a.stockNumber, b.stockNumber]);
+    expect(screen.getByLabelText('Sort priority 1 field')).toHaveValue('price');
+    fireEvent.click(screen.getByRole('button', { name: 'Move Mileage earlier' }));
+    expect(screen.getByLabelText('Sort priority 1 field')).toHaveValue('mileage');
+    expect(screen.getByLabelText('Sort priority 2 field')).toHaveValue('price');
+    expect(order()).toEqual([a.stockNumber, c.stockNumber, b.stockNumber]);
+    fireEvent.change(screen.getByLabelText('Sort priority 1 field'), { target: { value: 'vehicle' } });
+    expect(screen.getByLabelText('Sort priority 2 field')).toHaveValue('price');
+    expect(order()).toEqual([a.stockNumber, b.stockNumber, c.stockNumber]);
   });
 
   it('exposes five-level sort composition with explicit direction and priority controls', () => {
@@ -448,6 +529,45 @@ describe('vehicle workspace background isolation', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close vehicle details' }));
 
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it.each([
+    ['keyboard', 'Escape'],
+    ['keyboard', 'Close'],
+    ['pointer without native focus', 'Escape'],
+    ['pointer without native focus', 'Close'],
+  ] as const)('returns focus to the exact photo opener after %s activation and %s dismissal', async (activation, dismissal) => {
+    const user = userEvent.setup();
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[vehicle(5)]} />);
+    const photo = screen.getByRole('button', { name: /^View photos and details for 2024 Ford F-150/i });
+    const title = screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i });
+    const visibleRects = { length: 1 } as DOMRectList;
+    const photoRects = vi.spyOn(photo, 'getClientRects').mockReturnValue(visibleRects);
+    const titleRects = vi.spyOn(title, 'getClientRects').mockReturnValue(visibleRects);
+
+    try {
+      if (activation === 'keyboard') {
+        photo.focus();
+        await user.keyboard('{Enter}');
+      } else {
+        screen.getByRole('combobox', { name: 'Search inventory' }).focus();
+        expect(photo).not.toHaveFocus();
+        // fireEvent preserves Safari's pointer behavior: the browser has not
+        // focused this button before its click handler opens the workspace.
+        fireEvent.click(photo);
+      }
+      const workspace = screen.getByRole('dialog', { name: /vehicle workspace/i });
+      expect(within(workspace).getByRole('heading', { name: '2024 Ford F-150 XLT 5' })).toBeVisible();
+      if (dismissal === 'Escape') await user.keyboard('{Escape}');
+      else await user.click(within(workspace).getByRole('button', { name: 'Close vehicle details' }));
+
+      await waitFor(() => expect(photo).toHaveFocus());
+      expect(screen.queryByRole('dialog', { name: /vehicle workspace/i })).not.toBeInTheDocument();
+      expect(title).not.toHaveFocus();
+    } finally {
+      photoRects.mockRestore();
+      titleRects.mockRestore();
+    }
   });
 
   it('uses the primary View action as the fallback when a pointer click does not focus it', async () => {

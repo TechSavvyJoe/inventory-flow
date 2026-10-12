@@ -19,6 +19,14 @@ export interface SyncedShortlistSummary {
   count: number;
 }
 
+export interface SavedListSheetSnapshot {
+  listId: string;
+  label: string;
+  vehicles: InventoryVehicle[];
+  refreshedAt: number;
+  unavailableCount: number;
+}
+
 export interface ShortlistManagement {
   lists: SyncedShortlistSummary[];
   activeListId: string | null;
@@ -34,6 +42,9 @@ export interface ShortlistManagement {
   savePendingToNamedList?: (label: string) => Promise<boolean>;
   savePendingToExistingList?: (id: string) => Promise<boolean>;
   cancelPendingSave?: () => void;
+  addVehicleToActiveList?: (vin: string) => Promise<boolean>;
+  prepareCustomerSheet?: (listId?: string) => Promise<SavedListSheetSnapshot | null>;
+  preparingSheet?: boolean;
   selectList: (id: string) => void;
   createList: (label: string) => Promise<boolean>;
   renameActiveList: (label: string) => Promise<boolean>;

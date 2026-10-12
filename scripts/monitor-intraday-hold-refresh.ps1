@@ -479,7 +479,7 @@ $receiptHealth = Get-ReceiptHealth
 $observationFingerprint = Get-ObservationFingerprint -TaskState $taskState -ReceiptHealth $receiptHealth
 $recoveryTaskFailureFingerprint = [string]$previousState.lastRecoveryTaskFailureFingerprint
 $recoveryReceiptFingerprint = [string]$previousState.lastRecoveryReceiptFingerprint
-$recoveryTaskRunAt = [string]$previousState.lastRecoveryTaskRunAt
+$recoveryTaskRunAt = Format-UtcInstant $previousState.lastRecoveryTaskRunAt
 $alertFingerprint = [string]$previousState.lastAlertFingerprint
 
 if ($receiptHealth.ReconciliationRequired) {
@@ -596,7 +596,7 @@ if ($taskState.Running) {
 }
 
 $scheduledRunFailed = $taskState.HasCompletedRun -and -not $taskState.LastCompletedSucceeded
-$healthyForPeriod = $taskState.Available -and $taskState.LastCompletedSucceeded -and $receiptHealth.Verified -and ($receiptHealth.Period -ne 'inside' -or -not $receiptHealth.Stale)
+$healthyForPeriod = $receiptHealth.Period -ne 'before' -and $taskState.Available -and $taskState.LastCompletedSucceeded -and $receiptHealth.Verified -and ($receiptHealth.Period -ne 'inside' -or -not $receiptHealth.Stale)
 if ($healthyForPeriod) {
   Clear-ActiveAlert
   Save-MonitorState -State $previousState -TaskState $taskState -ReceiptHealth $receiptHealth -RecoveryTaskFailureFingerprint $null -RecoveryReceiptFingerprint $null -RecoveryTaskRunAt $null -AlertFingerprint $null

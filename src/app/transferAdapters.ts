@@ -39,6 +39,8 @@ function requestStatus(value: string): ExplicitStatus<RequestStatusCode> {
       ? 'needs-information'
       : normalized === 'approved'
         ? 'approved'
+        : normalized === 'arrived'
+          ? 'arrived'
         : normalized === 'declined'
           ? 'declined'
           : normalized === 'canceled'
@@ -55,12 +57,14 @@ function requestStatus(value: string): ExplicitStatus<RequestStatusCode> {
       ? 'Waiting on my manager'
       : mapped === 'manager-reviewed'
         ? 'Waiting on home-store used-car manager'
-        : mapped === 'approved'
+      : mapped === 'approved'
           ? 'Home-store release confirmed'
+          : mapped === 'arrived'
+            ? 'Arrived at requesting store'
           : mapped === 'declined'
             ? 'Not available / declined'
             : value || 'Submitted'
-  return explicit(mapped, label, mapped === 'approved' ? 'success' : mapped === 'declined' ? 'danger' : 'info')
+  return explicit(mapped, label, mapped === 'approved' || mapped === 'arrived' ? 'success' : mapped === 'declined' ? 'danger' : 'info')
 }
 
 function movementStatus(value: string): ExplicitStatus<MovementStatusCode> {
@@ -163,7 +167,7 @@ export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): Tra
       label: vehicle.movement.currentLocation || vehicle.sourceReportedLocation,
       type: 'store',
       confidence: vehicle.movement.locationConfidence,
-      confirmedAt: vehicle.movement.lastConfirmedAt || meta.publicCapturedAt || meta.completedAt,
+      confirmedAt: vehicle.movement.lastConfirmedAt || (vehicle.publicListing === 'pre_listing' || vehicle.publicListing === 'not_in_release' ? meta.dealerMailCapturedAt : meta.publicCapturedAt) || meta.completedAt,
       confirmedBy: vehicle.movement.currentCustodian,
     },
     listedPriceLabel: formatCurrency(vehicle.listedPrice),
@@ -172,7 +176,7 @@ export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): Tra
     engine: vehicle.engine,
     drivetrain: vehicle.drivetrain,
     daysListed: vehicle.daysListed,
-    listingUrl: vehicle.listingUrl,
+    listingUrl: vehicle.vin.startsWith('TESTDATA') ? undefined : vehicle.listingUrl,
     serviceReadiness: vehicle.serviceReadiness,
     status: {
       dealerMail: dealerMailStatus(vehicle.hold.label),
@@ -298,6 +302,7 @@ export function toTransferDetail(
     nextAction: {
       label: transfer.nextAction || 'Manager review',
       ownerLabel: transfer.nextActionOwner || 'Manager',
+      ownerStore: transfer.nextActionStore,
       dueAt: transfer.dueAt,
       sla: slaState(transfer.dueAt),
     },
@@ -326,6 +331,8 @@ export function toTransferDetail(
         : event.note,
       exception: event.type.includes('exception'),
     })),
-    allowedActions: allowedActions(transfer, role),
+    allowedActions: allowedActions(transfer, role).filter(action =>
+      action !== 'open-source' || Boolean(fallbackVehicle.listingUrl),
+    ),
   }
 }

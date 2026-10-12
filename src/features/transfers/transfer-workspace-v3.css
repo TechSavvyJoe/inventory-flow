@@ -190,7 +190,7 @@
 
 .transfer-workspace-v3 .transfer-list-item.is-selected {
   background: var(--transfer-v3-selected);
-  box-shadow: inset 4px 0 0 #0759bd;
+  box-shadow: inset 4px 0 0 var(--blue-600);
 }
 
 .transfer-workspace-v3 .transfer-list-photo {
@@ -315,7 +315,7 @@
 .transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
   border-color: #8bb7e5;
   background: var(--transfer-v3-selected);
-  box-shadow: inset 4px 0 0 #0759bd;
+  box-shadow: inset 4px 0 0 var(--blue-600);
 }
 
 .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
@@ -484,7 +484,7 @@
   border: 1px solid #c8daec;
   border-left: 4px solid var(--mif-blue);
   border-radius: 7px;
-  background: #edf5ff;
+  background: var(--blue-050);
   box-shadow: none;
 }
 
@@ -1112,19 +1112,19 @@
   }
 
   .transfer-workspace-v3 .transfer-workflow-path li.is-complete > span {
-    border-color: #0759bd;
-    background: #0759bd;
+    border-color: var(--blue-600);
+    background: var(--blue-600);
     color: #fff;
   }
 
   .transfer-workspace-v3 .transfer-workflow-path li.is-current {
-    color: #0759bd;
+    color: var(--blue-600);
     box-shadow: none;
   }
 
   .transfer-workspace-v3 .transfer-workflow-path li.is-current > span {
-    border: 2px solid #0759bd;
-    background: #0759bd;
+    border: 2px solid var(--blue-600);
+    background: var(--blue-600);
     color: #fff;
   }
 
@@ -1209,7 +1209,7 @@
   }
 
   .transfer-list-filter:focus-within {
-    border-color: #0759bd;
+    border-color: var(--blue-600);
     box-shadow: 0 0 0 3px rgb(7 89 189 / 14%);
   }
 
@@ -1247,9 +1247,9 @@
     gap: 6px;
     margin: 0;
     padding: 0 12px;
-    border: 1px solid #0759bd;
+    border: 1px solid var(--blue-600);
     border-radius: 7px;
-    color: #0759bd;
+    color: var(--blue-600);
     background: #fff;
     box-shadow: none;
     font-size: 13px;
@@ -1295,9 +1295,9 @@
   }
 
   .transfer-workspace-v3 .transfer-list-views button.is-active {
-    color: #0759bd;
+    color: var(--blue-600);
     background: #fff;
-    box-shadow: inset 0 -3px #0759bd;
+    box-shadow: inset 0 -3px var(--blue-600);
   }
 
   .transfer-workspace-v3 .transfer-list-views button span {
@@ -1305,7 +1305,7 @@
     padding: 2px 4px;
     border-radius: 999px;
     background: #edf3f9;
-    color: #0759bd;
+    color: var(--blue-600);
     font-size: 11px;
   }
 
@@ -1355,7 +1355,7 @@
   .transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
     border-color: #dde5ed;
     background: linear-gradient(90deg, #edf5fe 0%, #f9fbfd 75%, #fff 100%);
-    box-shadow: inset 4px 0 #0759bd;
+    box-shadow: inset 4px 0 var(--blue-600);
   }
 
   .transfer-workspace-v3 .transfer-list-item:active {
@@ -1443,7 +1443,7 @@
     display: flex;
     align-items: flex-start;
     gap: 6px;
-    color: #164f86;
+    color: var(--blue-700);
     font-size: 12.5px !important;
     font-weight: 700;
     line-height: 1.2;
@@ -1455,9 +1455,9 @@
     flex: 0 0 18px;
     display: grid;
     place-items: center;
-    border: 1px solid #0759bd;
+    border: 1px solid var(--blue-600);
     border-radius: 50%;
-    color: #0759bd;
+    color: var(--blue-600);
     background: #fff;
     font-size: 8px;
   }
@@ -1589,7 +1589,7 @@
     place-items: center;
     border: 0;
     border-radius: 7px;
-    color: #164f86;
+    color: var(--blue-700);
     background: #edf4fb;
     cursor: pointer;
   }
@@ -1813,7 +1813,7 @@
 
 .transfer-workspace-v3 .transfer-list-filter:focus-within,
 .transfer-workspace-v3 .transfer-list-sort:focus-within {
-  border-color: #0759bd;
+  border-color: var(--blue-600);
   box-shadow: 0 0 0 3px rgb(7 89 189 / 12%);
 }
 
@@ -2624,7 +2624,7 @@
   --transfer-v3-border: #c8d5df;
   --transfer-v3-divider: #dce5ec;
   --transfer-v3-soft: #f5f8fa;
-  --transfer-v3-selected: #edf5fb;
+  --transfer-v3-selected: var(--blue-050);
   --transfer-v3-shadow: 0 10px 28px rgb(12 42 69 / 8%);
 }
 
@@ -2701,8 +2701,8 @@
 .transfer-workspace-v3 .transfer-list-item.is-selected,
 .transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
   border-color: #7ca9d0;
-  background: #edf5fb;
-  box-shadow: inset 3px 0 0 #0b5f9f;
+  background: var(--blue-050);
+  box-shadow: inset 3px 0 0 var(--blue-600);
 }
 
 .transfer-workspace-v3 .transfer-list-top strong {

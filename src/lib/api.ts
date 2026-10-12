@@ -1,4 +1,4 @@
-import { apiAccessGeneration, recordConfirmedMutation, reportAccessFailure } from './apiSession'
+import { apiAccessGeneration, bootstrapPreviewIntent, markOperationDenial, recordConfirmedMutation, reportAccessFailure } from './apiSession'
 import type {
   ManualHoldDetail, ManualHoldInput,
   AppDispositionDetail,
@@ -209,7 +209,8 @@ export async function request<T>(path: string, options: RequestInit = {}, timing
       reportAccessFailure({ status: 401, role: headers.get('x-inventory-preview-role') as UserRole | null, store: headers.get('x-inventory-preview-store') as StoreName | null, message: SIGN_IN_MESSAGE }, accessGeneration)
       throw new ApiError(SIGN_IN_MESSAGE, 401)
     }
-    if (response.status === 403) {
+    const operationDenied = response.status === 403 && isJson && response.headers.get('X-Inventory-Error-Scope') === 'operation'
+    if (response.status === 403 && !operationDenied) {
       reportAccessFailure({ status: 403, role: headers.get('x-inventory-preview-role') as UserRole | null, store: headers.get('x-inventory-preview-store') as StoreName | null, message: 'Your account does not have access to this workspace. Reload to check your current access.' }, accessGeneration)
     }
     if (response.status === 304 && cached) {
@@ -220,7 +221,9 @@ export async function request<T>(path: string, options: RequestInit = {}, timing
       confirmed = response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)
       const payload = isJson ? await response.json().catch(() => null) : null
       const message = typeof payload?.error === 'string' ? payload.error : response.statusText || 'Request failed'
-      throw new ApiError(message, response.status, typeof payload?.code === 'string' ? payload.code : undefined)
+      const error = new ApiError(message, response.status, typeof payload?.code === 'string' ? payload.code : undefined)
+      if (operationDenied) markOperationDenial(error)
+      throw error
     }
     let payload: T
     try {
@@ -257,12 +260,11 @@ export async function request<T>(path: string, options: RequestInit = {}, timing
   }
 }
 
-export function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
+export function demoIdentityHeaders(role: UserRole, store: StoreName, previewSelected = true): Record<string, string> {
   return {
     'x-inventory-demo-role': role,
     // Production honors this only for a server-authenticated group manager.
-    'x-inventory-preview-role': role,
-    'x-inventory-preview-store': store,
+    ...(previewSelected ? { 'x-inventory-preview-role': role, 'x-inventory-preview-store': store } : {}),
     'x-inventory-demo-store': store,
     'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Demo user',
   }
@@ -272,7 +274,7 @@ export function getBootstrap(homeStore: StoreName, role: UserRole, signal?: Abor
   const params = new URLSearchParams({ homeStore, role })
   return request<BootstrapData>(
     `/api/bootstrap?${params}`,
-    { headers: demoIdentityHeaders(role, homeStore), signal },
+    { headers: demoIdentityHeaders(role, homeStore, bootstrapPreviewIntent(signal)), signal },
     { bodyTimeoutMs: BOOTSTRAP_BODY_TIMEOUT_MS, revalidate: true },
   )
 }

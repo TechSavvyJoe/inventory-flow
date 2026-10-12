@@ -55,6 +55,14 @@ export function createComparisonPlan(models, {wrap, safeLink = () => null, photo
     rows.push({kind:'qr',label:'Selling price',height:Math.max(90,...offerCells.map(cell=>Math.max(69+cell.lines.length*10+4,cell.offer.stockTop+cell.offer.stockLines.length*12.5+5))),size:10,lineHeight:12.5,bold:false,cells:offerCells})
     add('stock','',longStock)
     for(let index=0;index<facts[0].length;index++) add(facts[0][index].kind,facts[0][index].label,facts.map(list=>list[index].value),facts[0][index].kind==='more'?9:10,false,facts[0][index].kind==='more'?11:12.5)
+    // Keep ordinary comparisons together before discarding a column: a store
+    // label or one extra text line can use the photo's flexible height. Never
+    // shrink customer text or go below the existing three-column photo size.
+    if (group.length > 1) {
+      const overflow = rows.reduce((sum,row) => sum + row.height,0) - capacity
+      const photo = rows.find(row => row.kind === 'photo')
+      if (overflow > 0) photo.height = Math.max(126,photo.height - overflow)
+    }
     return rows
   }
   const safeVehicle = model => ({vin:clean(model.vin),name:clean(model.name),stockNumber:clean(model.stockNumber),storeName:clean(model.storeName),storeSite:clean(model.storeSite),logo:logoSources.get(model.vin) ?? null,photoSrc:photoSources.get(model.vin) ?? null,listingUrl:safeLink(model.listingUrl)})

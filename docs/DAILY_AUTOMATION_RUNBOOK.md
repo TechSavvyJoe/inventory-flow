@@ -46,7 +46,8 @@ run it, against authenticated dealer sources, over CDP.
 | `prepare-cloud-assets.mjs` | local/Windows host | Hashes and stages `dist/` assets for the cloud release's asset store. |
 | `preview-extension.mjs` | local (`extension:preview`) | Serves the side panel as a plain page for design review and screenshots. |
 | `publish-cloud-release.mjs` | internal library | Builds, validates, and encrypts the daily release bundle. Its compatibility executable delegates to the guarded sync coordinator and never publishes directly. |
-| `publish-invoice-documents.mjs` | Windows host | Uploads exact-VIN Ford/Lincoln invoice PDFs to the app's private R2 store. |
+| `publication-followup-metadata.mjs` | Windows host (`daily-cloud-publish.ps1`) | Verifies the retained dated release against the exact verified receipt and computes the public-only integration counts after exact-VIN manager delivery exclusions; no network calls. |
+| `publish-invoice-documents.mjs` | Windows host | Reconciles every advertised current invoice in the retained dated release against the parsed exact-VIN batch and enrichment, then uploads the matching PDFs to the app's private R2 store. |
 | `publish-vauto-documents.mjs` | Windows host (`daily-cloud-publish.ps1`) | Stages the VIN-bound, hash-checked vAuto equipment PDFs from `work\vauto-documents\` in the app's private R2 store before a release publishes; posts only to the app's own Worker. |
 | `report-dead-css.mjs` | local (`report:dead-css`) | Read-only report of CSS selectors under `src/` that need a class no source file renders; judges each selector of a rule separately. |
 | `run-inventory-flow-daily.mjs` | Windows host (`daily:run`) | The daily pipeline orchestrator invoked by the Windows scheduled publish task. |
@@ -96,6 +97,34 @@ bundle, and DealerMail files are transactional: a capture, validation, or
 prepublication failure restores the last verified copies. A new receipt is
 never rolled back merely because a later integration, pointer, document, or
 archive follow-up failed.
+
+A verified receipt proves publication, not completion of its follow-ups. When
+`cloudflare_publish.status` is `published_and_verified_followups_pending`, the
+Node runner retries that date's exact receipt-bound candidate before any new
+morning or hold capture for that date, including a forced invocation.
+`--no-publish` defers this retry and keeps its pending status without capture or
+uploads. It passes a follow-ups-only hash to
+the Windows publisher, which refuses a missing, different, or overlay-mismatched
+receipt instead of falling through to capture or republish. A failed retry keeps
+the pending completion state, including when pointer advancement succeeded but
+the archive did not.
+
+Follow-up integration counts come from the retained dated release after checking
+its canonical bundle hash against the receipt. They start with public rows,
+exclude each qualifying exact-VIN manager-delivered public vehicle once, and
+never include DealerMail-only pre-listing rows. A missing/mismatched retained
+release fails completion; source totals from the receipt cannot substitute for
+this projection. No listing, hold, availability, or sale signal creates a
+delivery exclusion.
+
+Invoice capture remains non-blocking, but its step is complete only after an
+explicit final successful outcome and a dated persisted index with every queued
+VIN resolved. A recovered historical fetch error can clear only on that evidence.
+An invoice advertised as current by the retained release must also have matching
+parsed/enrichment evidence and a saved PDF before document follow-ups complete.
+Missing or empty parsing cannot turn it into a successful zero-upload day. A
+release that advertises no invoices can legitimately complete with zero uploads;
+the standalone tool also preserves its no-release/no-parsed-file compatibility.
 
 The daily publisher and intraday orchestrator hold the same
 `work\app-feed-status\.publication.lock` for their entire pipeline. A child

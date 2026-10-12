@@ -116,10 +116,10 @@ async function lifecycleFixture() {
     },
   }
   let requestNumber = 0
-  const queue = async () => {
+  const queue = async (storeIndex = 0) => {
     requestNumber += 1
     const revision = remote.sqlite.prepare('SELECT revision FROM platform_revision').get().revision
-    return saveDataControl(remote.env, COLLECTOR_OWNER, profile.groupId, 'pulls', { operation: 'request', connectionId: remote.dealers[0].connectionId, reason: 'Synthetic lifecycle request', expectedRevision: revision }, `lifecycle-request-${requestNumber}`, COLLECTOR_SYNTHETIC_NOW)
+    return saveDataControl(remote.env, COLLECTOR_OWNER, profile.groupId, 'pulls', { operation: 'request', connectionId: remote.dealers[storeIndex].connectionId, reason: 'Synthetic lifecycle request', expectedRevision: revision }, `lifecycle-request-${requestNumber}`, COLLECTOR_SYNTHETIC_NOW)
   }
   return { root, remote, profile, runner, runOnce, collectorHostInternals, options, queue, actualFetch, envelopes, dealerPath, manifestPath, receiptPath, releasePath,
     captures: () => captures, publications: () => publications,
@@ -196,6 +196,39 @@ async function crashAfterInitialCandidateState(f) {
 }
 
 describe('collector exact candidate local baseline lifecycle', () => {
+  it('completes four queued stores through one existing host capture and publication', async () => {
+    const f = await lifecycleFixture(), requests = []
+    for (let i = 0; i < 4; i += 1) requests.push(await f.queue(i))
+    expect(await f.runOnce(f.options)).toMatchObject({ status: 'published_verified' })
+    expect(f.captures()).toBe(1)
+    expect(f.publications()).toBe(1)
+    expect(f.remote.sqlite.prepare('SELECT id,state FROM platform_pull_requests ORDER BY id').all()).toEqual(requests.map(r => ({ id: r.id, state: 'completed' })).sort((a, b) => a.id.localeCompare(b.id)))
+    expect(f.localHash()).toBe(f.cloudHash())
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
+  it('retires a stale grouped candidate after a dropped capture receipt and preserves membership on recovery', async () => {
+    const f = await lifecycleFixture()
+    await f.queue(0); await f.queue(1)
+    let dropped = false
+    const interrupted = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/receipts' && !dropped && JSON.parse(String(options.body)).kind === 'capture') { dropped = true; throw new TypeError('Synthetic lost grouped capture receipt') }
+      return f.actualFetch(url, options)
+    } })
+    expect(interrupted.status).toBe('capture_receipt_pending')
+    const first = f.remote.sqlite.prepare('SELECT * FROM platform_collector_attempts').get()
+    const ids = JSON.parse(first.config_json).requestIds, late = await f.queue(2)
+    vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
+    expect(await f.runOnce(f.options)).toMatchObject({ status: 'published_verified' })
+    const attempts = f.remote.sqlite.prepare('SELECT * FROM platform_collector_attempts ORDER BY fence').all()
+    expect(attempts.map(a => ({ fence: a.fence, stage: a.stage, ids: JSON.parse(a.config_json).requestIds }))).toEqual([{ fence: 1, stage: 'expired', ids }, { fence: 2, stage: 'completed', ids }])
+    expect(f.remote.sqlite.prepare('SELECT state FROM platform_pull_requests WHERE id=?').get(late.id).state).toBe('queued')
+    expect(f.captures()).toBe(2)
+    expect(f.publications()).toBe(1)
+    expect(f.localHash()).toBe(f.cloudHash())
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
   it.each(['resume', 'expired', 'lost-capture-reply', 'lost-publication-reply', 'execution-off'])('discovers the actual all-false durable host crash marker and safely handles %s without second capture', async mode => {
     const f = await lifecycleFixture(), baseline = f.localHash()
     await f.queue()

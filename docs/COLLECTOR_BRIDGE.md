@@ -270,8 +270,18 @@ tasks implicitly.
 
 This first adapter uses `America/New_York` for its report date and accepts only
 connections configured in that timezone. It reads the complete four-store hold
-snapshot for each queued connection request. Requests are bounded and isolated,
-but simultaneous requests for several stores are not yet coalesced into one pull.
+snapshot once for up to four compatible queued connection requests. The claim
+freezes their IDs in its configuration hash; receipts and publication settle
+only those requests. Later queued requests stay independent. A capture retry
+retains exactly the same membership and three-attempt budget, including legacy
+single-request attempts; different immutable profile authority cannot claim it.
+Cancelling any member stops the complete shared capture, with the affected IDs
+recorded in the owner's audit. Before dispatch all members become cancelled, including a frozen cohort
+queued again after a conclusively undispatched expiry; the expired attempt
+evidence remains unchanged. Operators must submit new requests to retry. Once publication may be in flight,
+all members remain reconciliation-required until the exact tenant receipt or a
+positive no-publication proof resolves the outcome. A verified tenant commit
+completes the frozen group even if cancellation happened after admission.
 All enabled profiles for one group share one active-attempt exclusion: claimed,
 captured, publishing and reconciliation-required attempts block another claim.
 A positively undispatched retry remains captured and retains the same exclusion.

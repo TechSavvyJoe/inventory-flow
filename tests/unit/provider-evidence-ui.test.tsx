@@ -60,7 +60,9 @@ describe('provider-neutral vehicle evidence', () => {
   })
   it('does not invent rows from not-reported reports or hide alternate source history', () => {
     render(<ServiceHistory vehicle={premiumVehicle({ serviceHistory: { reports: [report, { ...report, provider: 'autocheck', sourceLabel: 'Synthetic AutoCheck', historyStatus: 'not_reported', entries: [] }] } })} />)
-    expect(screen.getByText('Synthetic AutoCheck · 0 reported events')).toBeInTheDocument()
+    const alternate = screen.getByRole('region', { name: 'Synthetic AutoCheck service records', hidden: true })
+    expect(alternate.closest('details')?.querySelector('summary')).toHaveTextContent('Synthetic AutoCheck · 0 reported events')
+    expect(within(alternate).queryByRole('list', { hidden: true })).not.toBeInTheDocument()
     expect(screen.getByText('No service events reported by this source.')).toBeInTheDocument()
     expect(screen.getAllByText('Synthetic oil and filter service')).toHaveLength(1)
   })

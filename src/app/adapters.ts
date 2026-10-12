@@ -367,8 +367,6 @@ function officialDocumentSearchText(
     fordOasis?.monthsInService != null ? `${fordOasis.monthsInService} months in service` : null,
     fordOasis?.saleMileage,
     ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
-    ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
-    ...(fordOasis?.extendedCoverageExpirations ?? []),
     fordOasis?.serviceHistory?.latestRepairOrder?.openDate,
     fordOasis?.serviceHistory?.latestRepairOrder?.closeDate,
     fordOasis?.serviceHistory?.latestRepairOrder?.odometer,
@@ -685,7 +683,7 @@ export function toInventoryVehicle(
       dataState: publicState,
       isListed: isListed(vehicle.publicListing),
       websiteStatus: vehicle.websiteStatus,
-      listingUrl: vehicle.listingUrl || null,
+      listingUrl: vehicle.vin.startsWith('TESTDATA') ? null : vehicle.listingUrl || null,
       updatedAt: data.meta.publicCapturedAt || data.meta.completedAt,
     },
     dealerOn: {

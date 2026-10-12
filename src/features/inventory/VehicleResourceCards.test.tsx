@@ -543,15 +543,14 @@ describe('source-backed vehicle resource cards', () => {
     expect(within(oasis).getByText('08/14/2024')).toBeVisible();
   });
 
-  it('keeps sparse evidence visible while uncaptured destinations remain compact source links', () => {
+  it('keeps sparse synthetic evidence visible without inventing live OEM destinations', () => {
     render(<VehicleResourceCards vehicle={{vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.jpg'}} variant="summary"/>);
     const sample = document.querySelector('.vehicle-resource-summary--sparse') as HTMLElement;
     expect(within(sample).getByText('F-150 Lariat')).toBeVisible();
     expect(within(sample).getByText('$68,420 MSRP')).toBeVisible();
     expect(within(sample).getByRole('link', { name:/Open demo sticker/ })).toBeVisible();
-    const lookups = document.querySelector('.vehicle-resource-lookups') as HTMLElement;
-    expect(within(lookups).getByRole('link', { name:/Open OASIS/ })).toBeVisible();
-    expect(within(lookups).getByRole('link', { name:/Open invoice/ })).toBeVisible();
+    expect(screen.queryByRole('link', { name:/Open OASIS/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name:/Open invoice/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/No open Ford actions|clean history/i)).not.toBeInTheDocument();
   });
 

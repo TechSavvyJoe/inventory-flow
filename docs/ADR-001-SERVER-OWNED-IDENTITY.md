@@ -25,6 +25,10 @@ Use separate, explicit identity boundaries for local demonstration and deployed 
 
 User-supplied role/store headers and write-payload actor fields do not grant authority. The API resolves canonical identity for every protected request, and the workflow service rejects missing, invalid, disabled, or unmapped identities rather than defaulting to Sales/Howell.
 
+The first browser bootstrap omits production preview headers, even if UI role/store preferences were saved. It learns the current membership before a person explicitly selects a role or working-store preview. The synthetic Node demo continues to receive its separate demo identity headers.
+
+An authenticated employee API refusal for a known domain operation returns HTTP 403 with `X-Inventory-Error-Scope: operation`. The Node and Worker emit this header only after resolving identity and catching an allowlisted `WorkflowError`; the requested operation remains denied, while the client retains the authenticated workspace and draft. Access, tenant, host, membership, saved-list owner-change, unknown errors, and unmarked 403 responses never receive that marker and still purge protected client state immediately. The client never derives this exception from an error body's code or message. The marker is a same-origin response contract, not an authentication grant.
+
 Google or another approved sign-in option belongs in the existing Cloudflare Access application. Enabling an Access identity provider does not require a second OAuth implementation in the React client, but every permitted employee still requires both an approved Access policy decision and a matching enabled D1 membership. Recreating the Access application changes its audience and therefore requires a coordinated Worker configuration change; adding a provider to the existing application avoids that unnecessary break.
 
 ## Options Considered

@@ -15,20 +15,20 @@
 .sales-overview__workspace--no-saved .sales-overview__other { order:-1; }
 .sales-overview__panel { min-width:0; border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-radius:var(--radius-panel); background:var(--surface); overflow:hidden; }
 .sales-overview__list-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:var(--ifx-space-2); padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); background:var(--ifx-neutral-50); }
-.sales-overview__list-tabs { display:flex; flex:1 1 calc(var(--control-target) * 3); min-width:0; gap:var(--ifx-space-2); overflow-x:auto; }
+.sales-overview__list-tabs { display:flex; flex:1 1 calc(var(--control-target) * 3); min-width:0; gap:0; overflow-x:auto; }
 .sales-overview__saved-note { margin:0; padding:var(--ifx-space-2) var(--ifx-space-4); border-bottom:1px solid var(--border); background:var(--surface-soft); color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
-.sales-overview__list-tabs button { display:inline-flex; align-items:center; gap:var(--ifx-space-2); flex:0 0 auto; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--radius-control); background:var(--surface); color:var(--ink-700); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
-.sales-overview__list-tabs button[aria-pressed="true"] { border-color:var(--blue-600); background:var(--blue-050); color:var(--navy-900); }
+.sales-overview__list-tabs button { display:inline-flex; align-items:center; gap:var(--ifx-space-2); flex:0 0 auto; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:0; border-bottom:var(--ifx-stroke-emphasis) solid transparent; border-radius:0; background:var(--surface); color:var(--ink-700); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
+.sales-overview__list-tabs button[aria-pressed="true"] { border-bottom-color:var(--blue-600); background:var(--surface); color:var(--navy-900); }
 .sales-overview__list-tabs button span { min-width:var(--ifx-space-5); color:var(--ink-600); text-align:center; }
 
 .sales-overview__vehicle-list,
 .sales-overview__plain-list { margin:0; padding:0; list-style:none; }
-.sales-overview__vehicle-row { display:grid; grid-template-columns:calc(var(--control-target) * 2 + var(--ifx-space-4)) minmax(0,1fr); gap:var(--ifx-workspace-gap); align-items:start; padding:var(--ifx-space-3); border-bottom:1px solid var(--border); }
+.sales-overview__vehicle-row { display:grid; grid-template-columns:calc(var(--ifx-space-16) * 2) minmax(0,1fr); gap:var(--ifx-space-2); align-items:start; padding:var(--ifx-space-3); border-bottom:1px solid var(--border); }
 .sales-overview__vehicle-row:last-child,
 .sales-overview__plain-list > li:last-child { border-bottom:0; }
-.sales-overview__vehicle-photo { display:flex; align-items:center; justify-content:center; width:calc(var(--control-target) * 2 + var(--ifx-space-4)); height:calc(var(--control-target) + var(--ifx-space-6) + var(--ifx-space-1)); border-radius:var(--radius-control); background:var(--surface-soft); overflow:hidden; }
+.sales-overview__vehicle-photo { display:flex; align-items:center; justify-content:center; width:calc(var(--ifx-space-16) * 2); height:calc(var(--ifx-space-16) + var(--ifx-space-5)); border-radius:var(--radius-control); background:var(--surface-soft); overflow:hidden; }
 .sales-overview__vehicle-photo :is(img,svg) { width:100%; height:100%; object-fit:contain; }
-.sales-overview__vehicle-content { display:grid; min-width:0; gap:var(--ifx-space-3); }
+.sales-overview__vehicle-content { display:grid; min-width:0; gap:var(--ifx-space-2); }
 .sales-overview__vehicle-heading { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--ifx-space-3); align-items:start; }
 .sales-overview__vehicle-identity { display:grid; min-width:0; gap:var(--ifx-space-1); color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
 .sales-overview__vehicle-identity strong { color:var(--navy-900); font-size:var(--ifx-text-body); line-height:var(--ifx-leading-heading); }
@@ -36,11 +36,10 @@
 .sales-overview__price-mileage { display:grid; justify-items:end; gap:var(--ifx-space-1); color:var(--ink-600); font-size:var(--ifx-text-sm); white-space:nowrap; }
 .sales-overview__price-mileage strong { color:var(--navy-900); font-size:var(--ifx-text-xl); line-height:var(--ifx-leading-heading); }
 
-.sales-overview__operational-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--ifx-space-3); min-width:0; margin:0; padding:0; }
-.sales-overview__operational-facts > div { display:grid; align-content:start; min-width:0; gap:var(--ifx-space-1); }
+.sales-overview__operational-facts { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:var(--ifx-stroke-hairline); min-width:0; margin:0; padding:0; border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); background:var(--ifx-border-control); }
+.sales-overview__operational-facts > div { display:grid; align-content:start; min-width:0; gap:var(--ifx-space-1); padding:var(--ifx-space-1-5) var(--ifx-space-2); background:var(--surface); }
 .sales-overview__operational-facts dt { color:var(--ink-600); font-size:var(--ifx-text-sm); font-weight:var(--ifx-weight-semibold); line-height:var(--ifx-leading-compact); }
 .sales-overview__operational-facts dd { margin:0; color:var(--ink-800); font-size:var(--ifx-text-md); line-height:var(--ifx-leading-compact); overflow-wrap:anywhere; }
-.sales-overview__operational-facts { grid-template-columns:repeat(auto-fit,minmax(calc(var(--ifx-space-16) * 2),1fr)); padding-top:var(--ifx-space-3); border-top:1px solid var(--border); }
 .sales-overview__operational-facts dt { color:var(--navy-900); }
 
 .sales-overview__browse-panel { display:grid; gap:var(--ifx-space-2); padding-bottom:var(--ifx-space-3); }
@@ -81,7 +80,7 @@
   .sales-overview__price-mileage { justify-items:start; }
   .sales-overview__price-mileage strong { font-size:var(--ifx-text-lg); }
   .sales-overview__open { align-self:center; }
-  .sales-overview__operational-facts { grid-column:1 / -1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-3) var(--ifx-space-2); }
+  .sales-overview__operational-facts { grid-column:1 / -1; grid-template-columns:repeat(2,minmax(0,1fr)); }
   .sales-overview__operational-facts > div:nth-child(5) { grid-column:1 / -1; }
   .sales-overview__plain-list > li { align-items:flex-start; }
 }
@@ -99,7 +98,7 @@
   .sales-overview__list-tabs button[aria-pressed="false"] { display:none; }
 }
 
-.sales-overview__specs { min-width:0; border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); padding-top:var(--ifx-space-2); }
+.sales-overview__specs { min-width:0; padding-top:0; }
 .sales-overview__specs .vehicle-quick-facts { width:100%; }
 @media(max-width:48rem) { .sales-overview__specs { grid-column:1 / -1; } }
 .sales-overview__value-actions { display:flex; align-items:center; justify-content:space-between; gap:var(--ifx-space-3); min-width:0; }

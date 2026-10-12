@@ -1,7 +1,7 @@
 import { importJWK, jwtVerify } from 'jose'
 import { assertTenantIdentity } from './tenant-gate.mjs'
-import { collectorScope, scopeGuard } from './collector-execution.mjs'
-import { canonical, collectorFail, executionEnabled } from './collector-common.mjs'
+import { collectorScope, scopeGuard, attemptRequestsGuardSql } from './collector-execution.mjs'
+import { canonical, collectorFail, executionEnabled, digest } from './collector-common.mjs'
 
 export async function verifyPublicationTicket(env,authorization,operation,now=new Date(),{deferFence=false}={}) {
  if(operation==='publish' && !deferFence && !executionEnabled(env) || !env.PLATFORM_CONTROL_DB || !env.PLATFORM_TENANT_ID || !env.COLLECTOR_PUBLICATION_PUBLIC_KEY)collectorFail('COLLECTOR_PUBLICATION_UNAVAILABLE',503)
@@ -30,11 +30,11 @@ export async function assertPublicationFence(env,ticket,now=new Date(),{onReject
  const row=await db.prepare('SELECT * FROM platform_collectors WHERE id=? AND group_id=?').bind(ticket.collectorId,ticket.groupId).first()
  if(!row || !row.enabled || row.revoked_at || row.generation!==ticket.grantGeneration)reject('COLLECTOR_LEASE_STALE',409)
  const scope=await collectorScope({PLATFORM_DB:db},row,{active:true}),guard=scopeGuard(row,scope)
- const valid=await db.prepare(`SELECT a.id FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id WHERE a.id=? AND a.fence=? AND a.config_sha256=? AND a.expected_bundle_sha256=? AND a.stage='publishing' AND p.state='running' AND a.lease_until>? AND a.hard_deadline>? AND ${guard.sql}`).bind(ticket.attemptId,ticket.fence,ticket.configSha256,ticket.bundleSha256,now.toISOString(),now.toISOString(),...guard.args).first()
+ const valid=await db.prepare(`SELECT a.id FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id WHERE a.id=? AND a.fence=? AND a.config_sha256=? AND a.expected_bundle_sha256=? AND a.stage='publishing' AND p.state='running' AND ${attemptRequestsGuardSql()} AND a.lease_until>? AND a.hard_deadline>? AND ${guard.sql}`).bind(ticket.attemptId,ticket.fence,ticket.configSha256,ticket.bundleSha256,now.toISOString(),now.toISOString(),...guard.args).first()
  if(!valid)reject('COLLECTOR_LEASE_STALE',409)
  const frozen=JSON.parse((await db.prepare('SELECT config_json FROM platform_collector_attempts WHERE id=?').bind(ticket.attemptId).first()).config_json)
  const current={...frozen,...scope}
- if(canonical(current)!==canonical(frozen))reject('COLLECTOR_LEASE_STALE',409)
+ if(await digest(frozen)!==ticket.configSha256 || canonical(current)!==canonical(frozen))reject('COLLECTOR_LEASE_STALE',409)
 }
 
 export function publicationReceiptStatement(env,ticket,counts,status,now=new Date()) {

@@ -10,6 +10,8 @@ type ReadabilityViolation = {
 
 type ContrastViolation = {
   contrast: number
+  foreground: string
+  background: string
   selector: string
   text: string
 }
@@ -68,12 +70,49 @@ async function collectContrastViolations(page: Page) {
   return page.evaluate<ContrastViolation[]>(() => {
     type Rgba = [number, number, number, number]
     const main = document.querySelector('main')
-    if (!main) return [{ contrast: 0, selector: 'main', text: 'Missing main landmark' }]
+    if (!main) return [{ contrast: 0, foreground: 'unknown', background: 'unknown', selector: 'main', text: 'Missing main landmark' }]
 
     function parseColor(value: string): Rgba | null {
-      const channels = value.match(/[\d.]+/g)?.map(Number)
-      if (!channels || channels.length < 3) return null
-      return [channels[0], channels[1], channels[2], channels[3] ?? 1]
+      if (value === 'transparent') return [0, 0, 0, 0]
+      const match = value.match(/^([a-z-]+)\((.*)\)$/i)
+      if (!match) throw new Error(`Unsupported computed color syntax: ${value}`)
+      const [, functionName, body] = match
+      let colorSpace: string | undefined
+      let components = body.trim()
+      if (functionName === 'color') {
+        const space = components.match(/^([a-z-]+)\s+/i)
+        if (!space) throw new Error(`Missing color space in computed color: ${value}`)
+        colorSpace = space[1]!.toLowerCase()
+        components = components.slice(space[0].length)
+        if (!['srgb', 'srgb-linear'].includes(colorSpace)) throw new Error(`Unsupported computed color space: ${colorSpace}`)
+      } else if (!['rgb', 'rgba'].includes(functionName!.toLowerCase())) {
+        throw new Error(`Unsupported computed color function: ${functionName}`)
+      }
+
+      const [channelText, alphaText] = components.split('/')
+      const tokens = channelText!.replace(/,/g, ' ').trim().split(/\s+/)
+      const legacyAlpha = !alphaText && tokens.length === 4 ? tokens.pop() : undefined
+      const channels = tokens
+      if (channels.length !== 3) throw new Error(`Expected three channels in computed color: ${value}`)
+      const channelScale = colorSpace ? 1 : 255
+      const parseChannel = (channel: string) => {
+        const percentage = channel.endsWith('%')
+        const raw = Number.parseFloat(channel)
+        if (!Number.isFinite(raw)) throw new Error(`Invalid computed color channel: ${channel}`)
+        return percentage ? (raw / 100) * channelScale : raw
+      }
+      const alphaToken = alphaText?.trim() ?? legacyAlpha ?? '1'
+      const alphaValue = Number.parseFloat(alphaToken)
+      if (!Number.isFinite(alphaValue)) throw new Error(`Invalid computed color alpha: ${alphaToken}`)
+      const alpha = alphaToken.endsWith('%') ? alphaValue / 100 : alphaValue
+      const rgb = channels.map(parseChannel)
+      if (colorSpace === 'srgb-linear') {
+        return [
+          ...rgb.map(channel => (channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055) * 255),
+          alpha,
+        ] as Rgba
+      }
+      return [rgb[0]! * (colorSpace ? 255 : 1), rgb[1]! * (colorSpace ? 255 : 1), rgb[2]! * (colorSpace ? 255 : 1), alpha]
     }
 
     function composite(foreground: Rgba, background: Rgba): Rgba {
@@ -156,6 +195,8 @@ async function collectContrastViolations(page: Page) {
             const key = `${selector}|${text.slice(0, 80)}`
             violations.set(key, {
               contrast: Number(contrast.toFixed(2)),
+              foreground: style.color,
+              background: `rgb(${background[0].toFixed(2)} ${background[1].toFixed(2)} ${background[2].toFixed(2)})`,
               selector,
               text: text.slice(0, 120),
             })

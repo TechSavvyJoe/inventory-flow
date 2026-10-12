@@ -1,13 +1,13 @@
 .mif-transfer-feature {
   --mif-navy: #062a4d;
-  --mif-blue: #0759bd;
-  --mif-blue-hover: #064b9f;
+  --mif-blue: var(--blue-600);
+  --mif-blue-hover: var(--blue-700);
   --mif-text: #102238;
   --mif-secondary: var(--app-readable-support);
   --mif-muted: var(--app-readable-muted);
   --mif-border: #dce4ed;
   --mif-soft: #f5f8fb;
-  --mif-selected: #edf5ff;
+  --mif-selected: var(--blue-050);
   --mif-success: #147a3d;
   --mif-warning: #b85b00;
   --mif-danger: #c93434;
@@ -333,7 +333,7 @@
 .mif-exception-banner span { font-size: 12px; }
 .mif-exception-banner.is-warning { background: #fff6ec; color: var(--mif-warning); }
 .mif-exception-banner.is-critical { background: #fff0f0; color: var(--mif-danger); }
-.mif-exception-banner.is-info { background: #eef5ff; color: var(--mif-blue); }
+.mif-exception-banner.is-info { background: var(--blue-050); color: var(--mif-blue); }
 .mif-condition-banner { align-items: flex-start; display: flex; gap: 9px; margin: 12px 20px 0; padding: 11px 12px; border: 1px solid #e3bd6f; border-left: 3px solid #b66c00; background: #fff8e8; color: #704600; }
 .mif-condition-banner > div { display: flex; flex-direction: column; gap: 3px; }
 .mif-condition-banner span { font-size: 11px; line-height: 1.4; }
@@ -472,7 +472,7 @@
   .mif-tracker-header h2 { margin: 2px 0; font-size: 17px; }
   .mif-tracker-header p { margin-bottom: 3px; }
   .mif-tracker-header small { font-size: 9px; }
-  .mif-tracker-stock { color: #0a4f8c; font-size: 17px; }
+  .mif-tracker-stock { color: var(--blue-700); font-size: 17px; }
 
   .mif-tracker-request-summary { padding: 0 14px; background: linear-gradient(180deg, #f8fafc, #f4f7fa); }
   .mif-tracker-request-summary > div { gap: 2px; padding: 7px 8px; }
@@ -491,7 +491,7 @@
     border: 1px solid #c8daec;
     border-left: 4px solid var(--mif-blue);
     border-radius: 8px;
-    background: linear-gradient(100deg, #edf5ff, #f8fbff);
+    background: var(--blue-050);
     box-shadow: 0 6px 15px rgb(14 62 108 / 6%);
   }
 
@@ -509,7 +509,7 @@
   }
 
   .mif-tracker-actions--prominent .mif-button--primary {
-    background: linear-gradient(145deg, #0b67ba, #06457e);
+    background: var(--blue-600);
     box-shadow: 0 8px 18px rgb(7 76 139 / 18%);
   }
 
@@ -599,9 +599,9 @@
 }
 
 .mif-transfer-tracker.transfer-tracker-v3 .mif-button.mif-button--primary {
-  border-color: #0759bd;
+  border-color: var(--blue-600);
   color: #fff;
-  background: #0759bd;
+  background: var(--blue-600);
   box-shadow: none;
 }
 

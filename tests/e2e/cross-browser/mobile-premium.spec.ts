@@ -1,4 +1,4 @@
-import { expect, test, type Dialog, type Page } from '@playwright/test'
+import { expect, test, type Dialog, type Locator, type Page } from '@playwright/test'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 async function fits(page: Page) {
@@ -31,15 +31,72 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     await page.getByRole('button', { name: /^All:/ }).click()
     const rows = page.locator('.if-srp-mobile-row--scan')
     await expect(rows).toHaveCount(2)
+    const firstVisible = rows.first()
+    expect((await firstVisible.boundingBox())!.y).toBeLessThanOrEqual(300)
+    const firstVisibleActions = firstVisible.getByRole('group', { name: /^Actions for / })
+    const dock = page.getByRole('navigation', { name: 'Mobile primary' })
+    await expect(firstVisibleActions).toBeVisible()
+    await expect(dock).toBeVisible()
+    const dockTop = (await dock.boundingBox())!.y
+    const firstActionBoxes = await Promise.all((await firstVisibleActions.locator('button, a').all()).map(target => target.boundingBox()))
+    expect(firstActionBoxes.length).toBeGreaterThan(0)
+    expect(Math.max(...firstActionBoxes.map(box => box!.y + box!.height)), `${width}px first visible vehicle actions remain above the mobile dock`).toBeLessThanOrEqual(dockTop)
     // Default price ordering puts the Bronco before the F-150. Select the
     // intended rich-record fixture rather than coupling this test to row order.
     const first = rows.filter({ hasText: 'DEMO-H01' })
     const initialHeight = (await first.boundingBox())!.height
-    // A list is a comparison surface; full source ledgers belong in Records.
-    // Even this held vehicle with movement attention must stay compact.
-    expect(initialHeight).toBeLessThanOrEqual(280)
-    expect((await rows.first().boundingBox())!.y).toBeLessThanOrEqual(300)
-    await expect(first.locator('.vehicle-resources--scan')).toHaveCount(0)
+    // Full visible identity, operational signals, direct workflow controls,
+    // calculator facts, and source shortcuts intentionally make this rich row
+    // taller than a legacy compact-card budget. Keep its hierarchy and facts.
+    const details = first.getByRole('button', { name: /Open details for 2024 Ford F-150 Lariat, stock DEMO-H01, VIN TESTDATAHWELL0001/ })
+    const originalMsrp = first.locator('.inventory-mobile-row__factory-pricing')
+    const identifiers = first.getByRole('group', { name: 'Copy identifiers for 2024 Ford F-150 Lariat' })
+    const signals = first.getByLabel('Operational vehicle signals')
+    const actions = first.getByRole('group', { name: 'Actions for 2024 Ford F-150 Lariat' })
+    const registration = first.getByLabel('Registration calculator values')
+    const sources = first.getByLabel('Source evidence for 2024 Ford F-150 Lariat', { exact: true })
+    await expect(originalMsrp).toBeVisible()
+    for (const [before, after] of [[details, originalMsrp], [originalMsrp, identifiers], [identifiers, registration], [registration, signals], [signals, actions], [actions, sources]]) {
+      const follows = await before.evaluate((element, following) => Boolean(element.compareDocumentPosition(following as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await after.elementHandle())
+      expect(follows, `${width}px rich card keeps factory pricing, identifiers, calculator facts, status, actions, and sources in reading order`).toBe(true)
+    }
+    for (const name of [
+      'Copy stock number: DEMO-H01',
+      'Copy VIN: TESTDATAHWELL0001',
+      /^Copy .*base MSRP:/,
+      /^Copy mileage:/,
+    ]) {
+      const copy = first.getByRole('button', { name, exact: typeof name === 'string' })
+      await expect(copy).toBeVisible()
+      const box = await copy.boundingBox()
+      expect(box!.width, `${width}px identifier/calculator copy target width`).toBeGreaterThanOrEqual(44)
+      expect(box!.height, `${width}px identifier/calculator copy target height`).toBeGreaterThanOrEqual(44)
+    }
+    const actionControls = actions.locator(':scope > button, :scope > a')
+    await expect(actionControls).toHaveCount(4)
+    const actionBoxes = await Promise.all((await actionControls.all()).map(async control => {
+      await expect(control).toBeVisible()
+      const box = await control.boundingBox()
+      expect(box!.width, `${width}px direct workflow target width`).toBeGreaterThanOrEqual(44)
+      expect(box!.height, `${width}px direct workflow target height`).toBeGreaterThanOrEqual(44)
+      return box!
+    }))
+    expect(Math.abs(actionBoxes[0].y - actionBoxes[1].y)).toBeLessThanOrEqual(2)
+    expect(Math.abs(actionBoxes[2].y - actionBoxes[3].y)).toBeLessThanOrEqual(2)
+    expect(actionBoxes[0].y).toBeLessThan(actionBoxes[2].y)
+    const clipping = await first.evaluate(element => Array.from(element.querySelectorAll<HTMLElement>('*'))
+      .filter(node => {
+        if (!node.getClientRects().length || ['IMG', 'SVG'].includes(node.tagName)) return false
+        if (node.matches('.copyable-value__button-label, .inventory-sr-only')) return false
+        const style = getComputedStyle(node)
+        const bounds = node.getBoundingClientRect()
+        return !(bounds.width <= 1 && bounds.height <= 1 && (style.clip !== 'auto' || style.clipPath !== 'none'))
+      })
+      .filter(node => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1)
+      .map(node => ({ className: node.className, text: node.innerText?.slice(0, 80), clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, clientHeight: node.clientHeight, scrollHeight: node.scrollHeight })))
+    expect(clipping, `${width}px rich card has no clipped visible content`).toEqual([])
+    await expect(sources.getByRole('region')).toHaveCount(3)
+    await expect(first.locator('.vehicle-resource-summary')).toHaveCount(0)
     const url = page.url()
     const toggle = first.getByRole('button', { name: /^Open vehicle records for/ })
     await toggle.click()
@@ -98,6 +155,25 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
   await page.goto('/inventory?vin=TESTDATAHWELL0002')
   const workspace = page.getByRole('dialog', { name: /vehicle workspace/ })
   await expect(workspace).toBeVisible()
+  const expectCompleteIdentifiers = async (reference: Locator, width: number) => {
+    for (const [label, value] of [['stock number', 'DEMO-H02'], ['VIN', 'TESTDATAHWELL0002']]) {
+      const copy = reference.getByRole('button', { name: `Copy ${label}: ${value}`, exact: true })
+      const text = copy.locator('..').getByText(value, { exact: true })
+      await expect(copy).toBeVisible()
+      await expect(text).toHaveText(value)
+      await copy.scrollIntoViewIfNeeded()
+      const copyBounds = (await copy.boundingBox())!
+      const textBounds = (await text.boundingBox())!
+      expect(copyBounds.x + copyBounds.width, `${label} copy stays inside the phone`).toBeLessThanOrEqual(width)
+      expect(copyBounds.width).toBeGreaterThanOrEqual(44)
+      expect(copyBounds.height).toBeGreaterThanOrEqual(44)
+      expect(textBounds.x + textBounds.width, `${label} text stays inside the phone`).toBeLessThanOrEqual(width)
+      expect(textBounds.x + textBounds.width, `${label} text stays separate from its copy target`).toBeLessThanOrEqual(copyBounds.x)
+      await expect(text).toHaveCSS('white-space', 'nowrap')
+      const readable = await text.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
+      expect(readable.scroll, `full ${label} is readable without clipping`).toBeLessThanOrEqual(readable.client + 1)
+    }
+  }
   for (const viewport of [{ width: 320, height: 568 }, { width: 844, height: 390 }, { width: 390, height: 420 }]) {
     await page.setViewportSize(viewport)
     await fits(page)
@@ -117,24 +193,9 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
         await tab.scrollIntoViewIfNeeded()
         await expect(tab).toBeInViewport()
       }
-      // Phone identity keeps stock under price and the full copyable VIN near
-      // the photo; the desktop identifier rail is intentionally hidden.
-      await expect(workspace.locator('.vdp-focus-mobile-stock')).toHaveText('Stock DEMO-H02')
-      await expect(workspace.locator('.vdp-focus-mobile-stock')).toBeVisible()
-      const identifiers = workspace.locator('.vdp-focus-mobile-vin .copyable-value__content')
-      await expect(identifiers).toHaveText('TESTDATAHWELL0002')
-      const vinCopy = workspace.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0002', exact: true })
-      await vinCopy.scrollIntoViewIfNeeded()
-      const vinCopyBounds = (await vinCopy.boundingBox())!
-      expect(vinCopyBounds.x + vinCopyBounds.width, 'full VIN copy stays inside the phone').toBeLessThanOrEqual(viewport.width)
-      for (const value of await identifiers.all()) {
-        await value.scrollIntoViewIfNeeded()
-        const content = (await value.boundingBox())!
-        expect(content.x + content.width).toBeLessThanOrEqual(viewport.width)
-        await expect(value).toHaveCSS('white-space', 'nowrap')
-        const readable = await value.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
-        expect(readable.scroll, 'full VIN is readable without clipping').toBeLessThanOrEqual(readable.client + 1)
-      }
+      // The bounded photo/reference panel exposes both complete identifiers.
+      const reference = workspace.getByRole('region', { name: 'Vehicle photo and reference values' })
+      await expectCompleteIdentifiers(reference, viewport.width)
       for (const fact of await workspace.locator('.vdp-focus-operations dd:visible').all()) {
         expect((await fact.boundingBox())!.width).toBeGreaterThan(120)
       }
@@ -142,6 +203,7 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
     await workspace.getByRole('tab', { name: 'Records', exact: true }).click()
     await expect(workspace.getByRole('tab', { name: 'Records', exact: true })).toHaveAttribute('aria-selected', 'true')
     if (viewport.width <= 390) {
+      await expectCompleteIdentifiers(workspace.getByRole('group', { name: 'Vehicle reference', exact: true }), viewport.width)
       for (const title of await workspace.locator('.inventory-vehicle-document__title').all()) {
         expect((await title.boundingBox())!.width).toBeGreaterThan(140)
       }
@@ -274,10 +336,12 @@ async function openFilteredVehicle(page: Page) {
 async function openVehicleService(page: Page) {
   const workspace = page.getByRole('dialog', { name: /vehicle workspace/ })
   // Other acceptance cases may have recorded service on this synthetic VIN.
-  // Ready vehicles keep their service link in the masthead; the secondary
-  // history shortcut lives under More. Follow the visible status or action.
-  const action = workspace.getByRole('link', { name: /^(Start service|Mark Ready)\b/ }).first()
-  const serviceLink = await action.isVisible() ? action : workspace.getByRole('link', { name: /^Service:/ })
+  // The operational summary exposes the current status as a direct service
+  // link. The href and resulting URL identify the exact vehicle destination.
+  const serviceLink = workspace.getByRole('link', {
+    name: /^Service: (?:Ready|Waiting for service)$/,
+  })
+  await expect(serviceLink).toHaveCount(1)
   await expect(serviceLink).toBeVisible()
   await expect(serviceLink).toHaveAttribute('href', new RegExp(`/service\\?vin=${workflowVin}(?:&|$)`))
   await serviceLink.click()

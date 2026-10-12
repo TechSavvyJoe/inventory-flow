@@ -163,37 +163,44 @@ describe('inventory quick views use independent hold and location evidence', () 
   })
 })
 
-describe('quick-view chips and Filters-panel selects are one state', () => {
+describe('quick-view chips and Filters-panel facets', () => {
   const start = (quickView: InventoryViewState['quickView'] = 'all', filters: Partial<InventoryViewState['filters']> = {}): InventoryViewState =>
     ({ quickView, filters: { ...DEFAULT_INVENTORY_FILTERS, ...filters } })
 
-  it('stores Held once, whichever control chose it, and reads it back in both', () => {
+  it('selects Held without conflating it with the quick-view state', () => {
     const fromSelect = selectHoldFilter(start(), 'held')
-    expect(fromSelect.quickView).toBe('held')
-    expect(fromSelect.filters.dealerMail).toBe('all')
+    expect(fromSelect.quickView).toBe('all')
+    expect(fromSelect.filters.dealerMail).toBe('held')
     expect(filterPanelHoldValue(fromSelect)).toBe('held')
     const fromChip = selectQuickView(start(), 'held')
     expect(fromChip).toEqual(fromSelect)
     expect(selectHoldFilter(fromChip, 'all')).toEqual(start())
   })
 
-  it('stores Being moved once and keeps the narrower overdue refinement', () => {
+  it('stores movement independently and keeps the narrower overdue refinement', () => {
     const fromSelect = selectMovementFilter(start(), 'active')
     expect(fromSelect).toEqual(selectQuickView(start(), 'moving'))
     expect(filterPanelMovementValue(fromSelect)).toBe('active')
     const overdue = selectMovementFilter(fromSelect, 'overdue')
-    expect(overdue.quickView).toBe('moving')
+    expect(overdue.quickView).toBe('all')
     expect(filterPanelMovementValue(overdue)).toBe('overdue')
     expect(selectMovementFilter(fromSelect, 'none').quickView).toBe('all')
   })
 
-  it('clears a chip a select contradicts instead of leaving an empty list', () => {
+  it('clears only the changed facet and preserves the other family', () => {
     expect(selectHoldFilter(start('held'), 'not-held')).toEqual(start('all', { dealerMail: 'not-held' }))
     expect(selectHoldFilter(start('no-hold'), 'unverified')).toEqual(start('all', { dealerMail: 'unverified' }))
     expect(selectHoldFilter(start('no-hold'), 'not-held').quickView).toBe('no-hold')
     expect(selectHoldFilter(start('offsite'), 'unverified').quickView).toBe('offsite')
     expect(selectQuickView(start('all', { dealerMail: 'unverified' }), 'no-hold').filters.dealerMail).toBe('all')
     expect(selectQuickView(start('all', { dealerMail: 'not-held' }), 'offsite').filters.dealerMail).toBe('not-held')
-    expect(selectQuickView(start('all', { movement: 'none' }), 'moving').filters.movement).toBe('all')
+    expect(selectQuickView(start('all', { movement: 'none' }), 'moving').filters.movement).toBe('active')
+    const combined = selectQuickView(selectQuickView(start(), 'held'), 'moving')
+    expect(combined.filters).toMatchObject({ dealerMail: 'held', movement: 'active' })
+    expect(selectQuickView(combined, 'held').filters).toMatchObject({ dealerMail: 'held', movement: 'active' })
+    expect(selectQuickView(combined, 'moving').filters).toMatchObject({ dealerMail: 'held', movement: 'active' })
+    expect(selectQuickView(combined, 'all').filters).toMatchObject({ dealerMail: 'all', movement: 'active' })
+    expect(selectHoldFilter(combined, 'all').filters).toMatchObject({ dealerMail: 'all', movement: 'active' })
+    expect(selectMovementFilter(combined, 'none').filters).toMatchObject({ dealerMail: 'held', movement: 'none' })
   })
 })

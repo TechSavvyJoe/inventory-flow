@@ -7,6 +7,21 @@
    element styles belong in base.css. */
 
 :root {
+  /* The approved navigation blue anchors every operational app surface.
+     OEM colours remain reserved for dealership identity and assets. */
+  --ifx-brand-blue: #062b50;
+  --ifx-brand-blue-strong: var(--navy-950);
+  --ifx-brand-blue-tint: color-mix(in srgb, var(--ifx-brand-blue) 6%, white);
+  --blue-700: var(--ifx-brand-blue-strong);
+  --blue-600: var(--ifx-brand-blue);
+  --blue-500: color-mix(in srgb, var(--ifx-brand-blue) 82%, white);
+  --blue-100: color-mix(in srgb, var(--ifx-brand-blue) 18%, white);
+  --blue-050: var(--ifx-brand-blue-tint);
+  --focus: var(--ifx-brand-blue);
+  --store-accent: var(--ifx-brand-blue);
+  --store-accent-strong: var(--ifx-brand-blue-strong);
+  --store-accent-soft: var(--ifx-brand-blue-tint);
+
   --ifx-layer-modal: 100;
   /* Vehicle workspace portals sit above list overlays; nested issue dialogs
      must remain above the workspace while its content is inert. */
@@ -67,10 +82,10 @@
   --ifx-warning-surface: #fff4d6;
   --ifx-danger: #b92f3d;
   --ifx-danger-surface: #ffecef;
-  --ifx-info: #1263bf;
-  --ifx-info-surface: #eaf4ff;
+  --ifx-info: var(--blue-600);
+  --ifx-info-surface: var(--blue-050);
   /* Shared page anatomy follows the approved compact vehicle workspace. */
-  --ifx-workspace-header-background: var(--ifx-neutral-100);
+  --ifx-workspace-header-background: var(--ifx-panel-surface);
   --ifx-workspace-header-ink: var(--navy-900);
   --ifx-workspace-header-muted: var(--ink-600);
   --ifx-workspace-header-control: var(--blue-050);
@@ -186,11 +201,23 @@
 
   --ifx-border-subtle: var(--ifx-neutral-200);
   --ifx-border-control: var(--ifx-neutral-300);
+  /* Four distinct working surfaces keep dense records legible without adding
+     padding: recessed canvas, white panels, section bands, and action wells. */
+  --ifx-canvas: #f3f5f7;
+  --ifx-panel-surface: #ffffff;
+  --ifx-panel-header: #f4f6f8;
+  --ifx-panel-border: #aabdd0;
+  --ifx-ledger-line: #d5e0eb;
+  --ifx-evidence-surface: #f6f8fa;
+  --ifx-action-well: #f0f3f6;
+  --ifx-panel-shadow: 0 1px 2px rgb(6 43 80 / 6%);
+  --ifx-control-shadow: 0 1px 2px rgb(6 43 80 / 9%);
+  --ifx-primary-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), 0 2px 5px rgb(6 43 80 / 20%);
   --ifx-control-height-sm: 36px;
   --ifx-control-height-md: 44px;
   --ifx-control-height-lg: 48px;
   --ifx-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ifx-info) 24%, transparent);
-  --ifx-focus-color: #1686e4;
+  --ifx-focus-color: var(--blue-600);
   --ifx-control-border-hover: #8fa6b9;
 
   --ifx-elevation-1: 0 1px 2px rgb(7 23 34 / 7%), 0 3px 8px rgb(7 23 34 / 4%);

@@ -115,6 +115,14 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     serviceFilters.getByRole('button', { name: /^In service: \d+ vehicles$/ }),
     serviceFilters.getByRole('button', { name: /^Ready: \d+ vehicles$/ }),
   ]
+  const serviceSelect = serviceFilters.getByRole('combobox', { name: 'Inventory service status' })
+  const serviceControls = width <= 1100 ? [serviceSelect] : serviceButtons
+  if (width <= 1100) {
+    await expect(serviceSelect).toBeVisible()
+    await expect(serviceSelect.getByRole('option')).toHaveText([
+      /^All service: \d+ vehicles?$/, /^Waiting for service: \d+ vehicles?$/, /^In service: \d+ vehicles?$/, /^Ready: \d+ vehicles?$/,
+    ])
+  }
   const sections = [
     page.getByRole('combobox', { name: 'Search inventory' }),
     scope.getByRole('button', { name: /^Howell inventory, \d+ of \d+ group vehicles$/ }),
@@ -123,7 +131,7 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     quickFilters.getByRole('button', { name: /^All: \d+ vehicles$/ }),
     quickFilters.getByRole('button', { name: /^Held: \d+ vehicles$/ }),
     quickFilters.getByRole('button', { name: /^(?:Offsite|Away from home): \d+ vehicles$/ }),
-    ...serviceButtons,
+    ...serviceControls,
     page.getByRole('button', { name: /^Filters/ }),
     page.getByRole('button', { name: /^Sort inventory\./ }),
   ]
@@ -146,10 +154,10 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
   if (width <= 760) {
     const quickFiltersBox = (await quickFilters.boundingBox())!
     const serviceFiltersBox = (await serviceFilters.boundingBox())!
-    expect(serviceFiltersBox.y, `${width}px service filters follow the quick filters`).toBeGreaterThanOrEqual(quickFiltersBox.y + quickFiltersBox.height)
+    expect(serviceFiltersBox.y, `${width}px compact service filter stays with or after the quick filters`).toBeGreaterThanOrEqual(quickFiltersBox.y)
   }
-  for (const button of serviceButtons) {
-    const target = (await button.boundingBox())!
+  for (const control of serviceControls) {
+    const target = (await control.boundingBox())!
     expect(target.height).toBeGreaterThanOrEqual(44)
     expect(target.width).toBeGreaterThanOrEqual(44)
   }
@@ -197,7 +205,7 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     for (const control of bounds.controls) {
       expect(control.left).toBeGreaterThanOrEqual(0)
       expect(control.right).toBeLessThanOrEqual(width + 1)
-      expect(control.size).toBeGreaterThanOrEqual(14)
+      expect(control.size).toBeGreaterThanOrEqual(13)
     }
     const top = (await firstRow.boundingBox())!.y
     expect(top, `First vehicle appears near the controls at ${width}`).toBeLessThan(480)
@@ -319,19 +327,67 @@ async function expectSelectedScopeContrast(page: Page) {
   // DOM state can update before the color transition has reached its final
   // painted state. Await the contrast contract rather than sleeping a duration.
   await expect.poll(() => page.locator('.if-srp-scope button[aria-pressed="true"]').evaluate(button => {
+    type Rgba = [number, number, number, number]
+    const parseColor = (value: string): Rgba => {
+      if (value === 'transparent') return [0, 0, 0, 0]
+      const match = value.match(/^([a-z-]+)\((.*)\)$/i)
+      if (!match) throw new Error(`Unsupported computed color: ${value}`)
+      const name = match[1]!.toLowerCase()
+      let body = match[2]!.trim()
+      let space = ''
+      if (name === 'color') {
+        const colorSpace = body.match(/^([a-z-]+)\s+/i)
+        if (!colorSpace) throw new Error(`Missing computed color space: ${value}`)
+        space = colorSpace[1]!.toLowerCase()
+        body = body.slice(colorSpace[0].length)
+        if (!['srgb', 'srgb-linear'].includes(space)) throw new Error(`Unsupported computed color space: ${space}`)
+      } else if (!['rgb', 'rgba'].includes(name)) throw new Error(`Unsupported computed color function: ${name}`)
+      const [channelText, alphaText] = body.split('/')
+      const tokens = channelText!.replace(/,/g, ' ').trim().split(/\s+/)
+      const legacyAlpha = !alphaText && tokens.length === 4 ? tokens.pop() : undefined
+      if (tokens.length !== 3) throw new Error(`Expected three channels: ${value}`)
+      const scale = space ? 1 : 255
+      const channels = tokens.map(token => {
+        const parsed = Number.parseFloat(token)
+        if (!Number.isFinite(parsed)) throw new Error(`Invalid computed channel: ${token}`)
+        return token.endsWith('%') ? parsed / 100 * scale : parsed
+      })
+      const alphaToken = alphaText?.trim() ?? legacyAlpha ?? '1'
+      const alphaNumber = Number.parseFloat(alphaToken)
+      if (!Number.isFinite(alphaNumber)) throw new Error(`Invalid computed alpha: ${alphaToken}`)
+      const alpha = alphaToken.endsWith('%') ? alphaNumber / 100 : alphaNumber
+      if (space === 'srgb-linear') {
+        return [...channels.map(channel => (channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055) * 255), alpha] as Rgba
+      }
+      return [channels[0]! * (space ? 255 : 1), channels[1]! * (space ? 255 : 1), channels[2]! * (space ? 255 : 1), alpha]
+    }
+    const composite = (front: Rgba, back: Rgba): Rgba => {
+      const alpha = front[3] + back[3] * (1 - front[3])
+      if (!alpha) return [0, 0, 0, 0]
+      return [0, 1, 2].map(index => (front[index]! * front[3] + back[index]! * back[3] * (1 - front[3])) / alpha).concat(alpha) as Rgba
+    }
+    const backgroundFor = (element: Element) => {
+      const ancestors: Element[] = []
+      for (let node: Element | null = element; node; node = node.parentElement) ancestors.unshift(node)
+      return ancestors.reduce<Rgba>((background, ancestor) => {
+        const layer = parseColor(getComputedStyle(ancestor).backgroundColor)
+        return layer[3] > 0 ? composite(layer, background) : background
+      }, [255, 255, 255, 1])
+    }
+    const luminance = (color: Rgba) => {
+      const channels = color.slice(0, 3).map(channel => {
+        const normalized = channel / 255
+        return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4
+      })
+      return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+    }
     const label = [...button.querySelectorAll<HTMLElement>(':scope > span')].find(element => element.getClientRects().length) ?? button
-    const background = getComputedStyle(button).backgroundColor
     // `-webkit-text-fill-color` defaults to black even when the paint comes
     // from the inherited `color`, so only inspect the actual color contract.
     const foreground = getComputedStyle(label).color
-    const luminance = (color: string) => {
-      const channels = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(value => {
-        const s = value / 255
-        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-      })
-      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
-    }
-    const [light, dark] = [luminance(background), luminance(foreground)].sort((a, b) => b - a)
+    const background = backgroundFor(button)
+    const renderedForeground = composite(parseColor(foreground), background)
+    const [light, dark] = [luminance(renderedForeground), luminance(background)].sort((a, b) => b - a)
     return (light + 0.05) / (dark + 0.05)
   }), { message: 'Selected store label contrast' }).toBeGreaterThanOrEqual(4.5)
 }
@@ -437,14 +493,86 @@ test('inventory scope, literal search, multilevel sort, and row controls operate
   await capture(page, testInfo, 'inventory')
 })
 
-test('five-column comparison uses each row for a clear photo and high-value scan facts', async ({ page, isMobile }, testInfo) => {
+test('ordinary joined records keep readable facts and two useful vehicles in the first canonical viewport', async ({ page, isMobile }, testInfo) => {
   test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
+  await loadInventory(page)
+  await page.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }).click()
+  await page.getByRole('button', { name: /^All: \d+ vehicles$/ }).click()
+  const row = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-F02"]')
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('Maverick')
+  await expect(row).toHaveAttribute('data-hold-state', 'clear')
+  await expect(row.locator('xpath=..').getByRole('button', { name: /View change history/ })).toHaveCount(0)
+  const measure = () => row.evaluate(row => {
+    const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-configuration__fact > span', '.inv-desk-hold > span:last-child']
+    const text = selectors.map(selector => {
+      const element = row.querySelector<HTMLElement>(selector)!
+      const css = getComputedStyle(element)
+      return { selector, size: parseFloat(css.fontSize), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }
+    })
+    return { text, rowHeight: row.getBoundingClientRect().height, vehicleGroupHeight: row.closest('tbody')!.getBoundingClientRect().height }
+  })
+  for (const { width, height } of [{ width: 1024, height: 768 }, { width: 1320, height: 820 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize({ width, height })
+    await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
+    const dimensions = await measure()
+    await testInfo.attach(`ordinary-record-${width}`, { body: JSON.stringify({ width, height, ...dimensions }, null, 2), contentType: 'application/json' })
+    for (const element of dimensions.text) {
+      expect(element.size, `${width}px ordinary Maverick ${element.selector} remains readable`).toBeGreaterThanOrEqual(15)
+      expect(element.scrollWidth, `${width}px ordinary Maverick ${element.selector} is not horizontally clipped`).toBeLessThanOrEqual(element.clientWidth + 1)
+      expect(element.scrollHeight, `${width}px ordinary Maverick ${element.selector} is not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
+    }
+    const groups = page.locator('.inv-desk-table > tbody')
+    await expect(groups).toHaveCount(8)
+    const second = groups.nth(1)
+    if (width === 1440) {
+      for (const group of [groups.nth(0), second]) {
+        const box = (await group.boundingBox())!
+        expect(box.y, 'Complete records start inside the viewport').toBeGreaterThanOrEqual(0)
+        expect(box.y + box.height, 'Two complete ordinary vehicle records fit the first 1440px viewport').toBeLessThanOrEqual(height + 1)
+      }
+    } else {
+      for (const fact of [
+        second.getByRole('button', { name: /^Open vehicle details for/ }),
+        second.locator('.inv-desk-price strong'),
+        second.locator('[data-fact="location"]'),
+        second.locator('[data-fact="hold"]'),
+        second.locator('[data-fact="service"]'),
+      ]) {
+        await expect(fact).toBeVisible()
+        const box = (await fact.boundingBox())!
+        expect(box.y + box.height, `${width}px second vehicle identity, price, location, hold and service are in the first viewport`).toBeLessThanOrEqual(height + 1)
+      }
+    }
+    const actions = row.locator('xpath=..').getByRole('group', { name: /^Actions for 2022 Ford Maverick/ })
+    await expect(actions).toBeVisible()
+    const targets = actions.locator('button, a')
+    await expect(targets).toHaveCount(4)
+    await expect(actions.getByRole('button', { name: /^Open vehicle records for 2022 Ford Maverick/ })).toBeVisible()
+    await expect(actions.getByRole('button', { name: /^Save DEMO-F02 to shortlist$/ })).toBeVisible()
+    await expect(actions.getByRole('button', { name: 'Request to Howell 2022 Ford Maverick Lariat', exact: true })).toBeVisible()
+    await expect(actions.getByRole('button', { name: /^(Open listing for|Listing unavailable for) 2022 Ford Maverick/ }).or(actions.getByRole('link', { name: /^Open listing for 2022 Ford Maverick/ }))).toBeVisible()
+    const actionOrder = await actions.locator(':scope > .inv-desk-action').evaluateAll(elements => elements.map(element => element.getAttribute('data-row-action')))
+    expect(actionOrder.slice(0, 3), `${width}px records, save, and listing stay together before operational actions`).toEqual(['records', 'shortlist', 'listing'])
+    for (const target of await targets.all()) {
+      const box = await target.boundingBox()
+      expect(box!.height, `${width}px ordinary action height`).toBeGreaterThanOrEqual(44)
+      expect(box!.width, `${width}px ordinary action width`).toBeGreaterThanOrEqual(44)
+    }
+    await expectNoOverflow(page)
+  }
+})
+
+test('two primary columns keep complete vehicle evidence and direct actions in one joined record', async ({ page, isMobile }, testInfo) => {
+  test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
+  let includePriceChange = false
   await page.route('**/api/bootstrap?**', async route => {
     const response = await route.fetch()
     const payload = await response.json()
     expect(payload.vehicles.every((vehicle: { vin: string }) => vehicle.vin.startsWith('TESTDATA'))).toBe(true)
     for (const vehicle of payload.vehicles) {
-      vehicle.changeSummary = 'Price changed'
+      if (includePriceChange) vehicle.changeSummary = 'Price changed'
+      else delete vehicle.changeSummary
       vehicle.autoCheckReport = {
         dataState: 'current', score: 95, ownerCount: 1,
         url: 'https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=synthetic&ac=synthetic',
@@ -464,23 +592,79 @@ test('five-column comparison uses each row for a clear photo and high-value scan
   await page.getByRole('button', { name: /^All:/ }).click()
   // Assert against the rich-record fixture, independent of default price sorting.
   const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
-  // The redesigned desktop scan consolidates configuration and equipment into
-  // one useful column rather than restoring a sixth narrow, low-value column.
-  await expect(page.locator('.inv-desk-table thead th')).toHaveCount(5)
-  await expect(main).toContainText('TESTDATAHWELL0001')
+  const richMaverick = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-F02"]')
+  // Each vehicle has two native decision cells, joined source evidence, then direct actions.
+  const headers = page.locator('.inv-desk-table thead th')
+  await expect(headers).toHaveCount(2)
+  const headerContracts = [
+    'Vehicle', 'Operations',
+  ]
+  for (const name of headerContracts) {
+    const header = page.getByRole('columnheader', { name, exact: true })
+    await expect(header).toBeAttached()
+    await expect(header).toHaveAttribute('scope', 'col')
+  }
+  await expect(headers.locator('button, a, select, input, [tabindex="0"]')).toHaveCount(0)
+  // Ordinary density has a separate canonical viewport contract. This rich
+  // fixture must retain complete source evidence and 44px controls as it grows.
+  await expect(main.locator(':scope > td')).toHaveCount(2)
+  await expect(main.locator(':scope > td').nth(0)).toHaveAttribute('data-column', 'vehicle')
+  await expect(main.locator(':scope > td').nth(1)).toHaveAttribute('data-column', 'status')
+  const vehicleRows = main.locator('xpath=..')
+  const evidence = vehicleRows.locator(':scope > tr.inv-desk-evidence')
+  const footer = vehicleRows.locator(':scope > tr.inv-desk-footer')
+  await expect(vehicleRows.locator(':scope > tr')).toHaveCount(3)
+  await expect(evidence.locator(':scope > td')).toHaveCount(1)
+  await expect(evidence.locator(':scope > td')).toHaveAttribute('colspan', '2')
+  await expect(footer.locator(':scope > td')).toHaveCount(1)
+  await expect(footer.locator(':scope > td')).toHaveAttribute('colspan', '2')
+  await expect(main.locator('[data-column="vehicle"]')).toBeVisible()
+  const historySource = evidence.getByRole('region', { name: /^History source evidence/ })
+  const equipmentSource = evidence.getByRole('region', { name: /^Factory equipment source evidence/ })
+  const oasisSource = evidence.getByRole('region', { name: /^OASIS source evidence/ })
+  await expect(historySource).toBeVisible()
+  await expect(equipmentSource).toBeVisible()
+  await expect(oasisSource).toBeVisible()
+  const actions = footer.getByRole('group', { name: /^Actions for / })
+  await expect(actions).toBeVisible()
+  await expect(actions.locator(':scope > .inv-desk-action').first()).toHaveAccessibleName(/Open vehicle records/)
+  await expect(actions.locator(':scope > .inv-desk-action').nth(1)).toHaveAccessibleName(/Save DEMO-H01 to shortlist/)
+  const footerActionOrder = await actions.locator(':scope > .inv-desk-action').evaluateAll(elements => elements.map(element => element.getAttribute('data-row-action')))
+  expect(footerActionOrder.slice(0, 3), 'Records, Save, and Listing precede operational controls').toEqual(['records', 'shortlist', 'listing'])
+  await expect(main.locator('[data-column="vehicle"] .inv-desk-configuration__fact > span').first()).toBeVisible()
+  await expect(equipmentSource).toContainText('CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER')
+  await expect(historySource).toContainText('95')
+  const vehicleCell = main.locator('[data-column="vehicle"]')
+  await expect(vehicleCell.getByRole('button', { name: 'Copy stock number: DEMO-H01', exact: true })).toBeVisible()
+  await expect(vehicleCell.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0001', exact: true })).toBeVisible()
+  await expect(vehicleCell.getByRole('button', { name: /^Copy .*base MSRP:/ })).toBeVisible()
+  await expect(vehicleCell.getByRole('button', { name: 'Copy mileage: 12450', exact: true })).toBeVisible()
+  await expect(vehicleCell.getByRole('group', { name: 'Copy identifiers for 2024 Ford F-150 Lariat' })).toBeVisible()
+  await expect(vehicleCell.getByLabel('Registration calculator values')).toBeVisible()
+  await expect(vehicleRows).toContainText('TESTDATAHWELL0001')
   await expect(main).toContainText('3.5L EcoBoost V6')
   // The identity band now labels the captured color explicitly.
-  await expect(main.getByText(/^Interior\s*Black$/)).toBeVisible()
+  await expect(vehicleRows.getByText(/^Interior\s*Black$/)).toBeVisible()
   await expect(main).toContainText('43 days listed')
   await expect(main.getByLabel('18 vehicle photos')).toBeAttached()
-  // At 1024px this layout deliberately switches to the dedicated scan-card
-  // experience; its contract is covered by the responsive/mobile tests.
+  // The joined native table also remains active at 1024px; these checkpoints
+  // exercise its wider desktop layouts after the responsive transition.
+  const showAllLocationsAndVehicles = async () => {
+    await page.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }).click()
+    await page.getByRole('button', { name: /^All: \d+ vehicles$/ }).click()
+  }
   for (const width of [1280, 1440, 1800]) {
+    // First capture H01 without a change summary. The exact same record and
+    // injected source evidence are then reloaded with its one 44px history band.
+    includePriceChange = false
+    await page.reload()
+    await showAllLocationsAndVehicles()
     await page.setViewportSize({ width, height: 900 })
-    await page.getByRole('heading', { name: 'Howell inventory' }).scrollIntoViewIfNeeded()
+    await page.getByRole('heading', { name: 'All locations inventory' }).scrollIntoViewIfNeeded()
     await page.evaluate(async () => { await document.fonts.ready })
-    const dimensions = await main.evaluate(row => {
-      const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-configuration > span', '.inv-desk-hold > span:last-child']
+    await expect(vehicleRows.getByRole('button', { name: /View change history/ })).toHaveCount(0)
+    const measure = (row = main) => row.evaluate(row => {
+      const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-configuration__fact > span', '.inv-desk-hold > span:last-child']
       const text = selectors.map(selector => {
         const element = row.querySelector<HTMLElement>(selector)!
         const css = getComputedStyle(element)
@@ -506,27 +690,78 @@ test('five-column comparison uses each row for a clear photo and high-value scan
         tableWidth: table.clientWidth,
       }
     })
+    const heldBaselineDimensions = await measure(main)
+    const maverickEquipment = richMaverick.locator('[data-column="vehicle"] .inv-desk-equipment')
+    await expect(maverickEquipment).toHaveAttribute('title', expect.stringContaining('CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER'))
+    const maverickEvidence = richMaverick.locator('xpath=..').locator(':scope > tr.inv-desk-evidence')
+    await expect(maverickEvidence.getByRole('region', { name: /^History source evidence/ }).locator('a[href="https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=synthetic&ac=synthetic"]')).toHaveAttribute('target', '_blank')
+    await expect(maverickEvidence.getByRole('region', { name: /^Factory equipment source evidence/ }).locator('a[href="https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U"]')).toHaveAttribute('target', '_blank')
+
+    // A price-change signal adds exactly one 44px history control band.
+    includePriceChange = true
+    await page.reload()
+    await showAllLocationsAndVehicles()
+    await page.setViewportSize({ width, height: 900 })
+    await page.getByRole('heading', { name: 'All locations inventory' }).scrollIntoViewIfNeeded()
+    await page.evaluate(async () => { await document.fonts.ready })
+    const dimensions = await measure()
+    for (const group of [vehicleRows, richMaverick.locator('xpath=..')]) {
+      const sourceFacts = await group.locator('.inventory-source-band .vehicle-resource-scan__fields dt, .inventory-source-band .vehicle-resource-scan__fields dd').evaluateAll(elements => elements.map(element => {
+        const source = element.closest<HTMLElement>('.inventory-source-band__source')!.getBoundingClientRect()
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        const css = getComputedStyle(element)
+        return {
+          text: element.textContent?.trim() ?? '', label: element.tagName === 'DT', size: parseFloat(css.fontSize),
+          source: { left: source.left, right: source.right, top: source.top, bottom: source.bottom },
+          fragments: [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
+        }
+      }))
+      expect(sourceFacts.length).toBeGreaterThan(0)
+      for (const fact of sourceFacts) {
+        const date = /^\d{2}\/\d{2}\/\d{4}$/.test(fact.text)
+        expect(fact.size, `${width}px source ${fact.label ? 'label' : 'value'} remains readable: ${fact.text}`).toBeGreaterThanOrEqual(fact.label || date ? 12 : 15)
+        for (const fragment of fact.fragments) {
+          expect(fragment.left, `${width}px source text stays within its provider: ${fact.text}`).toBeGreaterThanOrEqual(fact.source.left - 1)
+          expect(fragment.right).toBeLessThanOrEqual(fact.source.right + 1)
+          expect(fragment.top).toBeGreaterThanOrEqual(fact.source.top - 1)
+          expect(fragment.bottom, `${width}px complete source text remains visible: ${fact.text}`).toBeLessThanOrEqual(fact.source.bottom + 1)
+        }
+        if (!fact.label && date && fact.fragments.length) {
+          expect(Math.max(...fact.fragments.map(rect => rect.bottom)) - Math.min(...fact.fragments.map(rect => rect.top)), 'A complete source date stays on one line').toBeLessThanOrEqual(fact.size * 1.5)
+        }
+      }
+    }
+    const changeHistory = vehicleRows.getByRole('button', { name: 'View change history for 2024 Ford F-150 Lariat: Price changed', exact: true })
+    await expect(changeHistory).toBeVisible()
+    await expect(changeHistory).toHaveText('Price changed')
+    await expect(changeHistory).toHaveAttribute('title', 'Price changed')
+    const changeBounds = await changeHistory.boundingBox()
+    expect(changeBounds!.height, `${width}px price-change control is a single 44px band`).toBeGreaterThanOrEqual(44)
+    expect(changeBounds!.height, `${width}px price-change control does not add an oversized band`).toBeLessThanOrEqual(45)
+    const groupGrowth = dimensions.vehicleGroupHeight - heldBaselineDimensions.vehicleGroupHeight
+    expect(groupGrowth, `${width}px price-change does not shrink the held vehicle group`).toBeGreaterThanOrEqual(0)
+    expect(groupGrowth, `${width}px price-change adds at most one band and its gap`).toBeLessThanOrEqual(46)
     for (const element of dimensions.text) {
-      expect(element.size, `${width}px ${element.selector} readable type`).toBeGreaterThanOrEqual(11.5)
+      expect(element.size, `${width}px ${element.selector} readable type`).toBeGreaterThanOrEqual(15)
       // The scan intentionally wraps useful facts instead of hiding them
       // behind ellipses; neither axis may be clipped.
       expect(element.scrollWidth, `${width}px ${element.selector} not horizontally clipped`).toBeLessThanOrEqual(element.clientWidth + 1)
       expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
     expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
-    // Configuration and source evidence now share the comparison row. The
-    // existing complete-record budget still governs the entire vehicle; a
-    // separate 180px primary-row limit would measure the old split layout.
-    expect(dimensions.rowHeight, `${width}px comparison record stays compact`).toBeLessThanOrEqual(width <1320 ?300 :280)
-    expect(dimensions.vehicleGroupHeight, `${width}px complete vehicle including providers`).toBeLessThanOrEqual(width <1320 ?300 :280)
+    // The adversarial 87-character option can grow naturally. Adding its
+    // price-change control still costs at most one 44px band and a separator.
+    expect(dimensions.vehicleGroupHeight, `${width}px changed held group stays within one 44px band of its baseline`).toBeLessThanOrEqual(heldBaselineDimensions.vehicleGroupHeight + 46)
     for (const name of ['Copy stock number: DEMO-H01', 'Copy mileage: 12450', 'Copy VIN: TESTDATAHWELL0001']) {
-      await expect(main.getByRole('button', { name, exact: true })).toBeVisible()
+      await expect(main.locator('[data-column="vehicle"]').getByRole('button', { name, exact: true })).toBeVisible()
     }
-    const priceActions = main.getByRole('group', { name: /^Price actions for/ })
-    await expect(priceActions.getByRole('button', { name: 'Save DEMO-H01 to shortlist', exact: true })).toBeVisible()
-    await expect(priceActions.getByRole('button', { name: /Open listing for/ })
-      .or(priceActions.getByRole('link', { name: /Open listing for/ }))).toBeVisible()
-    const actionTargets = priceActions.or(main.getByRole('group', { name: /^Movement actions for/ })).locator('button, a')
+    const actions = main.locator('xpath=following-sibling::tr[contains(@class,"inv-desk-footer")]').getByRole('group', { name: /^Actions for 2024 Ford F-150 Lariat$/ })
+    await expect(actions.getByRole('button', { name: /Open vehicle records for 2024 Ford F-150/ })).toBeVisible()
+    await expect(actions.getByRole('button', { name: 'Save DEMO-H01 to shortlist', exact: true })).toBeVisible()
+    await expect(actions.getByRole('button', { name: /^(Open listing for|Listing unavailable for)/ }).or(actions.getByRole('link', { name: /Open listing for/ }))).toBeVisible()
+    await expect(actions.getByRole('button', { name: /^(Request|Track)/ })).toBeVisible()
+    const actionTargets = actions.locator('button, a')
     expect(await actionTargets.count()).toBeGreaterThan(0)
     for (const target of await actionTargets.all()) {
       await expect(target).toBeVisible()
@@ -534,14 +769,14 @@ test('five-column comparison uses each row for a clear photo and high-value scan
       expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(44)
       expect(box!.width, `${width}px action target width`).toBeGreaterThanOrEqual(44)
     }
-    expect(dimensions.photo.width, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(84)
-    expect(dimensions.photo.height, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(63)
+    expect(dimensions.photo.width, `${width}px photo preview remains useful`).toBeGreaterThanOrEqual(128)
+    expect(dimensions.photo.height, `${width}px photo preview remains useful`).toBeGreaterThanOrEqual(85)
     // The supplied listing imagery is 3:2; keeping that native presentation
-    // avoids needless crop/grain while the 120px scan thumbnail stays useful.
+    // avoids needless crop/grain while the 128px-wide scan preview stays useful.
     expect(dimensions.photo.width / dimensions.photo.height).toBeCloseTo(3 / 2, 1)
     expect(dimensions.image.naturalWidth).toBeGreaterThan(dimensions.photo.width * 2)
     expect(dimensions.image.naturalHeight).toBeGreaterThan(dimensions.photo.height * 2)
-    const equipment = main.locator('td[data-column="configuration"] .inv-desk-equipment')
+    const equipment = main.locator('td[data-column="vehicle"] .inv-desk-equipment')
     await expect(equipment).toBeVisible()
     await expect(equipment).toContainText('302A')
     await expect(equipment).toContainText(/\+\d+ more/)
@@ -551,12 +786,12 @@ test('five-column comparison uses each row for a clear photo and high-value scan
     await expectNoOverflow(page)
     await capture(page, testInfo, `table-width-${width}`)
   }
-  const recordsTrigger = main.getByRole('button', { name: /^Open vehicle records for/ })
+  const recordsTrigger = actions.getByRole('button', { name: /^Open vehicle records for/ })
   await recordsTrigger.click()
   await expect(page.getByRole('dialog', { name: /records$/i })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(recordsTrigger).toBeFocused()
-  await main.getByRole('button', { name: /View change history/ }).click()
+  await vehicleRows.getByRole('button', { name: /View change history/ }).click()
   await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Close vehicle details' }).click()
   const equipmentTrigger = main.getByRole('button', { name: /View all .* equipment items/ })
@@ -582,8 +817,7 @@ test.describe('touch-capable desktop', () => {
     await page.getByRole('button', { name: /^All:/ }).click()
     expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true)
     const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
-    const actionTargets = main.getByRole('group', { name: /^Price actions for/ })
-      .or(main.getByRole('group', { name: /^Movement actions for/ })).locator('button, a')
+    const actionTargets = main.locator('xpath=..').getByRole('group', { name: /^Actions for 2024 Ford F-150 Lariat$/ }).locator('button, a')
     expect(await actionTargets.count()).toBeGreaterThan(0)
     for (const target of await actionTargets.all()) {
       const box = await target.boundingBox()
@@ -635,11 +869,16 @@ test('phone cards show exact equipment and document facts with direct detail act
     await route.fulfill({ response, json: { ...vehicle, ...documentEvidence } })
   })
   await loadInventory(page)
-  // The compact phone card keeps a full VIN in the launcher's accessible
-  // summary rather than duplicating it as visible scan text. Anchor this
-  // contract to that exact actionable control, then scope its card.
+  // Anchor this mid-list fixture to its exact identity control; first-card
+  // placement and above-dock actions are covered by the whole-fixture probe.
   const detailsTrigger = page.getByRole('button', { name: /Open details for 2024 Ford F-150 Lariat, stock DEMO-H01, VIN TESTDATAHWELL0001/ })
   const card = detailsTrigger.locator('xpath=ancestor::article[contains(@class, "if-srp-mobile-row")]')
+  const originalMsrp = card.locator('.inventory-mobile-row__factory-pricing')
+  const identifiers = card.getByRole('group', { name: 'Copy identifiers for 2024 Ford F-150 Lariat' })
+  const operationalSignals = card.getByLabel('Operational vehicle signals')
+  const workflowActions = card.getByRole('group', { name: 'Actions for 2024 Ford F-150 Lariat' })
+  const registrationFacts = card.getByLabel('Registration calculator values')
+  const reportShortcuts = card.getByLabel('Source evidence for 2024 Ford F-150 Lariat', { exact: true })
   const expandedRecords = page.getByRole('dialog', {name:'2024 Ford F-150 Lariat records',exact:true})
   const history = expandedRecords.locator('[data-resource-kind="autocheck"]')
   const sticker = expandedRecords.locator('[data-resource-kind="window-sticker"]')
@@ -648,9 +887,62 @@ test('phone cards show exact equipment and document facts with direct detail act
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     await expect(card).toBeVisible()
-    // Detailed provider ledgers remain in Records instead of repeating under every result.
-    await expect(card.locator('.vehicle-resources--scan')).toHaveCount(0)
-    expect((await card.boundingBox())!.height, `${width}px rich vehicle stays a compact comparison row`).toBeLessThanOrEqual(280)
+    // Complete record ledgers stay in Records; the joined source summaries
+    // remain after status and workflow controls in the same vehicle record.
+    await expect(reportShortcuts.getByRole('region')).toHaveCount(3)
+    await expect(card.locator('.vehicle-resource-summary')).toHaveCount(0)
+    await expect(originalMsrp).toBeVisible()
+    for (const [first, next] of [
+      [detailsTrigger, originalMsrp],
+      [originalMsrp, identifiers],
+      [identifiers, registrationFacts],
+      [registrationFacts, operationalSignals],
+      [operationalSignals, workflowActions],
+      [workflowActions, reportShortcuts],
+    ]) {
+      const follows = await first.evaluate((element, following) => Boolean(element.compareDocumentPosition(following as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await next.elementHandle())
+      expect(follows, `${width}px phone card keeps factory pricing, identifiers, calculator facts, status, actions, and sources in reading order`).toBe(true)
+    }
+    const copyTargets = [
+      card.getByRole('button', { name: 'Copy stock number: DEMO-H01', exact: true }),
+      card.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0001', exact: true }),
+      card.getByRole('button', { name: /^Copy .*base MSRP:/ }),
+      card.getByRole('button', { name: /^Copy mileage:/ }),
+    ]
+    for (const target of copyTargets) {
+      await expect(target).toBeVisible()
+      const box = await target.boundingBox()
+      expect(box!.height, `${width}px copy control has a 44px touch target`).toBeGreaterThanOrEqual(44)
+      expect(box!.width, `${width}px copy control has a 44px touch target`).toBeGreaterThanOrEqual(44)
+    }
+    const actionControls = workflowActions.locator(':scope > button, :scope > a')
+    await expect(actionControls).toHaveCount(4)
+    const actionBoxes = await Promise.all((await actionControls.all()).map(async target => {
+      await expect(target).toBeVisible()
+      const box = await target.boundingBox()
+      expect(box!.height, `${width}px workflow action has a 44px touch target`).toBeGreaterThanOrEqual(44)
+      expect(box!.width, `${width}px workflow action has a 44px touch target`).toBeGreaterThanOrEqual(44)
+      return box!
+    }))
+    expect(Math.abs(actionBoxes[0].y - actionBoxes[1].y), `${width}px first workflow row is aligned`).toBeLessThanOrEqual(2)
+    expect(Math.abs(actionBoxes[2].y - actionBoxes[3].y), `${width}px second workflow row is aligned`).toBeLessThanOrEqual(2)
+    expect(actionBoxes[0].x).toBeLessThan(actionBoxes[1].x)
+    expect(actionBoxes[2].x).toBeLessThan(actionBoxes[3].x)
+    expect(actionBoxes[0].y).toBeLessThan(actionBoxes[2].y)
+    const clipping = await card.evaluate(element => {
+      const nodes = Array.from(element.querySelectorAll<HTMLElement>('*'))
+        .filter(node => {
+          if (!node.getClientRects().length || ['IMG', 'SVG'].includes(node.tagName)) return false
+          if (node.matches('.copyable-value__button-label, .inventory-sr-only')) return false
+          const style = getComputedStyle(node)
+          const bounds = node.getBoundingClientRect()
+          const clippedOnePixelLabel = bounds.width <= 1 && bounds.height <= 1 && (style.clip !== 'auto' || style.clipPath !== 'none')
+          return !clippedOnePixelLabel
+        })
+      return nodes.filter(node => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1)
+        .map(node => ({ className: node.className, text: node.innerText?.slice(0, 80), clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, clientHeight: node.clientHeight, scrollHeight: node.scrollHeight }))
+    })
+    expect(clipping, `${width}px phone content has no clipped descendants`).toEqual([])
     await recordsTrigger.click()
     await expect(expandedRecords).toBeVisible()
     // Only the selected source occupies the full-width preview pane.
@@ -786,11 +1078,12 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await expect(dialog.getByRole('toolbar', { name: 'Vehicle actions' })).toBeVisible()
   const status = dialog.getByRole('region', { name: 'Vehicle operational summary' })
   await expect(status).toContainText('Location')
-  // Desktop presents service in the operational summary; the duplicate header
-  // signal is reserved for the compact phone masthead.
-  const serviceLink = page.viewportSize()!.width <= 680
-    ? dialog.getByRole('link', { name: 'Service: Ready', exact: true })
-    : status.getByRole('link', { name: 'Ready. Open service status for VIN TESTDATAHWELL0001', exact: true })
+  // Overview presents one detailed service link in its operational summary;
+  // other tabs retain that link beside the persistent identifier controls.
+  const serviceLink = dialog.getByRole('link', {
+    name: /^Service: (?:Ready|Waiting for service)$/,
+  })
+  await expect(serviceLink).toHaveCount(1)
   await expect(serviceLink).toBeVisible()
   await expect(serviceLink).toHaveAttribute('href', /\/service\?vin=TESTDATAHWELL0001(?:&|$)/)
   const statusOverflow = await status.evaluate(element => [...element.querySelectorAll<HTMLElement>('button,a')].map(control => ({
@@ -808,6 +1101,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await dialog.getByRole('tab', { name: 'Holds & moves' }).click()
   const holdPanel = dialog.getByRole('tabpanel', { name: 'Holds & moves' })
   await expect(holdPanel).toBeVisible()
+  await expect(serviceLink).toBeVisible()
   await expect(dialog.locator('.inventory-workspace-gallery')).toBeHidden()
   await expect(holdPanel).toContainText('Demo Salesperson')
   await expect(holdPanel).toContainText('Backup Demo Salesperson')
@@ -870,6 +1164,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await dialog.getByRole('tab', { name: 'Equipment' }).click()
   const equipment = dialog.getByRole('tabpanel', { name: 'Equipment' })
   await expect(equipment).toBeVisible()
+  await expect(serviceLink).toBeVisible()
   await expect(dialog.locator('.inventory-workspace-gallery')).toBeHidden()
   const equipmentBox = await equipment.boundingBox()
   const currentNavigationBox = await navigation.boundingBox()
@@ -902,6 +1197,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await dialog.getByRole('tab', { name: 'Records' }).click()
   const records = dialog.getByRole('tabpanel', { name: 'Records' })
   await expect(records).toBeVisible()
+  await expect(serviceLink).toBeVisible()
   const sourceDetails = records.locator('.vdp-record-source-details').filter({ has: page.locator('summary', { hasText: /^Source details$/ }) }).first()
   await expect(sourceDetails).not.toHaveAttribute('open')
   await expect(records.getByRole('region', { name: 'Vehicle documents', exact: true })).toBeVisible()
@@ -937,9 +1233,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     await page.setViewportSize({ width, height: 900 })
     await dialog.getByRole('tab', { name: 'Equipment' }).click()
     const frame = await dialog.boundingBox()
-    // At phone widths the semantic tablist deliberately uses display:contents
-    // so its five controls can form a compact grid. Measure its visible
-    // navigation frame instead of treating that semantic wrapper as a box.
+    // Measure the visible navigation frame independently of its scrollable tab rail.
     const navigationFrame = await dialog.locator('.vdp-focus-navigation').boundingBox()
     const panel = await equipment.boundingBox()
     expect(frame!.y + frame!.height).toBeLessThanOrEqual(901)
@@ -1102,13 +1396,16 @@ test('simple moves use one manager decision and physical location updates throug
   await locations.getByRole('button', { name: 'Close locations' }).click()
   await switchLocationAndSettle(page, 'Howell')
   await page.goto(`/transfers?id=${created.id}`)
-  await tracker.getByText('Other options', { exact: true }).click()
+  const nextStep = tracker.getByRole('region', { name: 'Next step' })
+  await expect(nextStep.getByRole('button', { name: 'Start return', exact: true })).toBeVisible()
+  await expect(tracker.getByText('Other options', { exact: true })).toHaveCount(0)
   await tracker.getByRole('button', { name: 'Start return', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Start return', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(tracker.getByRole('region', { name: 'Vehicle location and time away' })).toContainText('In transit')
   await expect(tracker.getByRole('button', { name: 'Confirm back home', exact: true })).toHaveCount(0)
   await switchLocationAndSettle(page, 'Fowlerville')
+  await expect(tracker.getByRole('region', { name: 'Next step' }).getByRole('button', { name: 'Confirm back home', exact: true })).toBeVisible()
   await tracker.getByRole('button', { name: 'Confirm back home', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Confirm back home', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)

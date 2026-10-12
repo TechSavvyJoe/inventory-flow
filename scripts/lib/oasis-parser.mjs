@@ -1,5 +1,26 @@
 import { stripTags } from './cdp.mjs'
 
+/** Keep malformed entries in a valid JSON capture from breaking later work. */
+export function validateSavedOasisRecords(records) {
+  if (!Array.isArray(records)) return { records: [], skipped: 0 }
+  const vinPattern = /^[A-HJ-NPR-Z0-9]{17}$/
+  const valid = records.filter(record => {
+    if (!record || typeof record !== 'object' || Array.isArray(record) ||
+        typeof record.vin !== 'string' || !vinPattern.test(record.vin)) return false
+    if (typeof record.openActionsCaptured !== 'boolean' || !Array.isArray(record.openFieldServiceActions) ||
+        !record.openFieldServiceActions.every(action => action && typeof action === 'object' && !Array.isArray(action) &&
+          typeof action.code === 'string' && typeof action.description === 'string')) return false
+    if (record.openActionsCaptured) {
+      return Number.isInteger(record.openFieldServiceActionCount) && record.openFieldServiceActionCount >= 0 &&
+        record.openFieldServiceActionCount === record.openFieldServiceActions.length &&
+        record.actionResultLimit === undefined
+    }
+    return record.openFieldServiceActionCount === null &&
+      (record.actionResultLimit === undefined || record.actionResultLimit === 'canadian_service_info_warning')
+  })
+  return { records: valid, skipped: records.length - valid.length }
+}
+
 /** Missing or incomplete action evidence must never become an observed zero. */
 export function parseOasisActions(text) {
   const result = { openFieldServiceActions: [], openActionsCaptured: false, openFieldServiceActionCount: null }
@@ -38,7 +59,7 @@ export function parseOasisActions(text) {
   return result
 }
 
-export function parseOasisFull(html) {
+export function parseOasisFull(html, requestedVin = '') {
   const text = stripTags(html)
   if (!/OASIS RESULT/i.test(text)) return null
   // Once tags are stripped, a value runs straight into the next label
@@ -114,7 +135,7 @@ export function parseOasisFull(html) {
   const monthsRaw = (text.match(/MONTHS IN SERVICE:\s*(\d+)/i) || [])[1]
   const saleRaw = (text.match(/SALE MILEAGE:\s*([\d,]+)/i) || [])[1]
 
-  return {
+  const parsed = {
     vehicleDescription: field('VEHICLE DESCRIPTION'),
     versionSeries: field('VERSION/SERIES'),
     bodyStyle: field('BODY STYLE'),
@@ -141,6 +162,14 @@ export function parseOasisFull(html) {
     extendedCoverageCategories: categories,
     extendedCoverageExpirations: expirations,
   }
+  if (requestedVin) {
+    const sourceVin = field('VIN').replace(/[^A-Z0-9]/gi, '').toUpperCase()
+    const requested = String(requestedVin).replace(/[^A-Z0-9]/gi, '').toUpperCase()
+    // Do not attach the source VIN to the parsed record. The caller only needs
+    // to know whether this response belongs to the requested vehicle.
+    parsed.sourceVinStatus = !sourceVin ? 'missing' : sourceVin === requested ? 'matched' : 'mismatch'
+  }
+  return parsed
 }
 
 /**

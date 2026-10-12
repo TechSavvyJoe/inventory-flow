@@ -281,59 +281,15 @@ function Update-IntegrationExpectedMetadata {
     throw 'VERIFIED_RECEIPT_METADATA_INVALID'
   }
 
-  # The external integration projection is public-only, after manager-delivered
-  # listed vehicles are hidden from the API. The app's active inventory can also
-  # include DealerMail-only pre-listing vehicles, so do not use active counts.
-  $sourceCounts = [ordered]@{}
-  foreach ($store in @('Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln')) {
-    $sourceCounts[$store] = [int64]$Receipt.counts.publicStoreCounts.$store
-  }
-  $sourceTotal = [int64]$Receipt.counts.publicRowCount
-  $releasePath = Join-Path $WorkspaceRoot ("work\releases\{0}\inventory-flow-release.json" -f $Date)
-  if (Test-Path -LiteralPath $releasePath) {
-    $releaseEnvelope = Get-Content -LiteralPath $releasePath -Raw | ConvertFrom-Json
-    $publicStoresByVin = @{}
-    foreach ($vehicle in @($releaseEnvelope.release.vehicles)) {
-      if ($null -eq $vehicle.publicRecord) { continue }
-      $vin = ([string]$vehicle.publicRecord.vin).Trim().ToUpperInvariant()
-      $store = [string]$vehicle.publicRecord.store
-      if ($vin -match '^[A-HJ-NPR-Z0-9]{17}$' -and $sourceCounts.Contains($store)) {
-        $publicStoresByVin[$vin] = $store
-      }
-    }
-    $excludedVins = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($record in @($releaseEnvelope.release.managerDispositionOverlay.records)) {
-      $vin = ([string]$record.vin).Trim().ToUpperInvariant()
-      $conflicting = @('matched_vin_stock_review', 'stock_ambiguous') -contains [string]$record.matchStatus
-      $qualifies = $record.deliveredManagerLog -eq $true -and
-        [string]$record.matchMethod -eq 'vin' -and
-        $vin -match '^[A-HJ-NPR-Z0-9]{17}$' -and
-        -not $conflicting -and
-        $publicStoresByVin.ContainsKey($vin)
-      if ($qualifies -and $excludedVins.Add($vin)) {
-        $store = $publicStoresByVin[$vin]
-        $sourceCounts[$store] = [int64]$sourceCounts[$store] - 1
-        $sourceTotal -= 1
-      }
-    }
-  }
-  if (-not $sourceCounts) { throw 'VERIFIED_RECEIPT_METADATA_INVALID' }
-
-  $stores = [ordered]@{}
-  foreach ($store in @('Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln')) {
-    $value = $sourceCounts.$store
-    if ($null -eq $value -or [int64]$value -lt 0) { throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID' }
-    $stores[$store] = [int64]$value
-  }
-  $total = [int64]$sourceTotal
-  if (($stores.Values | Measure-Object -Sum).Sum -ne $total -or $total -le 0) {
-    throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID'
-  }
-
-  $metadata = [ordered]@{
-    bundleSha256 = ([string]$Receipt.bundleSha256).ToLowerInvariant()
-    total = $total
-    byStore = $stores
+  # Compute the public-only projection from the exact receipt-bound retained
+  # release. Missing evidence cannot fall back to pre-exclusion source totals.
+  $metadataRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @(
+    'scripts\publication-followup-metadata.mjs', $WorkspaceRoot, $Date
+  )
+  if ($metadataRun.ExitCode -ne 0) { throw 'RETAINED_RELEASE_FOLLOWUP_METADATA_FAILED' }
+  $metadata = $metadataRun.Output | ConvertFrom-Json
+  if ([string]$metadata.bundleSha256 -cne ([string]$Receipt.bundleSha256).ToLowerInvariant()) {
+    throw 'RETAINED_RELEASE_RECEIPT_MISMATCH'
   }
   $parent = Split-Path -Parent $IntegrationExpectedPath
   if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
@@ -397,11 +353,35 @@ function Test-ReceiptMatchesManagerOverlay {
   return $expected.Equals($published, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
+function Assert-ManifestReconciliationReceipt {
+  param([Parameter(Mandatory)]$Manifest, [Parameter(Mandatory)]$Receipt)
+  if (-not ($Manifest.PSObject.Properties.Name -contains 'cloudflare_publish')) { return }
+  $publication = $Manifest.cloudflare_publish
+  if ($null -eq $publication) { return }
+  $fields = @($publication.PSObject.Properties.Name)
+  $requiresReconciliation = ($fields -contains 'reconciliation_required' -and $publication.reconciliation_required -eq $true) -or
+    ($fields -contains 'status' -and $publication.status -eq 'publication_outcome_unknown')
+  if (-not $requiresReconciliation) { return }
+  $expected = if ($fields -contains 'expected_bundle_sha256') { [string]$publication.expected_bundle_sha256 } else { '' }
+  if ($expected -notmatch '^[a-fA-F0-9]{64}$' -or $expected.ToLowerInvariant() -cne ([string]$Receipt.bundleSha256).ToLowerInvariant()) {
+    throw 'PUBLICATION_RECONCILIATION_RECEIPT_MISMATCH'
+  }
+}
+
 function Complete-VerifiedPublicationState {
   param(
     [Parameter(Mandatory)]$Receipt,
     [Parameter(Mandatory)][string]$Date
   )
+
+  $manifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $Date)
+  if (-not (Test-Path $manifestPath)) { throw 'RUN_MANIFEST_MISSING_AFTER_PUBLISH' }
+  $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+  if ($manifest.complete -ne $true -or $manifest.report_date -ne $Date) {
+    throw 'RUN_MANIFEST_NOT_COMPLETE_AFTER_PUBLISH'
+  }
+
+  Assert-ManifestReconciliationReceipt -Manifest $manifest -Receipt $Receipt
 
   $pointerRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @(
     (Join-Path $WorkspaceRoot 'work\advance_latest_pointer.py'),
@@ -413,13 +393,6 @@ function Complete-VerifiedPublicationState {
     throw 'LATEST_POINTER_ADVANCE_FAILED'
   }
   Write-Log "latest pointers: $($pointerRun.Output.Trim())"
-
-  $manifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $Date)
-  if (-not (Test-Path $manifestPath)) { throw 'RUN_MANIFEST_MISSING_AFTER_PUBLISH' }
-  $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
-  if ($manifest.complete -ne $true -or $manifest.report_date -ne $Date) {
-    throw 'RUN_MANIFEST_NOT_COMPLETE_AFTER_PUBLISH'
-  }
 
   if ($manifest.PSObject.Properties.Name -contains 'latest_pointers_advanced') {
     $manifest.latest_pointers_advanced = $true
@@ -453,23 +426,52 @@ function Complete-PublicationFollowups {
     [switch]$ReuseDocuments
   )
 
-  # The inventory receipt is written before document uploads. Retry these
-  # idempotent uploads even when the inventory release is already verified.
-  if (-not $ReuseDocuments) {
-    Write-Log 'invoice documents: publishing private saved copies'
-    $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $Date)
-    if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishRun.Output.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
-    Write-Log "invoice documents: $($invoicePublishRun.Output.Trim())"
-  } else {
-    Write-Log 'invoice documents: reused for hold-only refresh'
+  try {
+    $retainedManifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $Date)
+    $retainedManifest = Get-Content -LiteralPath $retainedManifestPath -Raw | ConvertFrom-Json
+    Assert-ManifestReconciliationReceipt -Manifest $retainedManifest -Receipt $Receipt
+    # The inventory receipt is written before document uploads. Retry these
+    # idempotent uploads even when the inventory release is already verified.
+    if (-not $ReuseDocuments) {
+      Write-Log 'invoice documents: publishing private saved copies'
+      $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $Date)
+      if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishRun.Output.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
+      Write-Log "invoice documents: $($invoicePublishRun.Output.Trim())"
+    } else {
+      Write-Log 'invoice documents: reused for hold-only refresh'
+    }
+    Update-IntegrationExpectedMetadata -Receipt $Receipt -Date $Date
+    Assert-IntegrationDeployment
+    Complete-VerifiedPublicationState -Receipt $Receipt -Date $Date
+    # Preserve report-ready evidence only after the publication follow-ups pass.
+    $archiveRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\archive-inventory-history.mjs', $Date, '--workspace-root', $WorkspaceRoot)
+    if ($archiveRun.ExitCode -ne 0) { Write-Log "historical archive FAILED: $($archiveRun.Output.Trim())" 'ERROR'; throw 'HISTORICAL_ARCHIVE_FAILED' }
+    Write-Log "historical archive: $($archiveRun.Output.Trim())"
+  } catch {
+    # A standalone publisher also needs a durable retry signal for Node. In
+    # particular, pointer advancement is not proof that the archive completed.
+    $followupFailure = $_
+    try {
+      $manifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $Date)
+      $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+      if ($manifest.complete -ne $true -or $manifest.report_date -ne $Date) { throw 'RUN_MANIFEST_INVALID_AFTER_PUBLISH' }
+      Assert-ManifestReconciliationReceipt -Manifest $manifest -Receipt $Receipt
+      $pending = [ordered]@{
+        attempted = $true
+        status = 'published_and_verified_followups_pending'
+        receipt_path = (Join-Path $LogDir ("{0}.json" -f $Date))
+        bundle_sha256 = [string]$Receipt.bundleSha256
+        verified_at = $Receipt.verifiedAt
+        publisher = 'BobMaxey-InventoryFlow-DailyPublish'
+      }
+      if ($manifest.PSObject.Properties.Name -contains 'cloudflare_publish') { $manifest.cloudflare_publish = $pending }
+      else { $manifest | Add-Member -NotePropertyName cloudflare_publish -NotePropertyValue $pending }
+      $temporary = "$manifestPath.tmp"
+      [System.IO.File]::WriteAllText($temporary, ($manifest | ConvertTo-Json -Depth 32) + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+      Move-Item -LiteralPath $temporary -Destination $manifestPath -Force
+    } catch { Write-Log 'follow-ups: pending completion marker could not be recorded; operator review required' 'ERROR' }
+    throw $followupFailure
   }
-  Update-IntegrationExpectedMetadata -Receipt $Receipt -Date $Date
-  Assert-IntegrationDeployment
-  Complete-VerifiedPublicationState -Receipt $Receipt -Date $Date
-  # Preserve report-ready evidence only after the publication follow-ups pass.
-  $archiveRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\archive-inventory-history.mjs', $Date, '--workspace-root', $WorkspaceRoot)
-  if ($archiveRun.ExitCode -ne 0) { Write-Log "historical archive FAILED: $($archiveRun.Output.Trim())" 'ERROR'; throw 'HISTORICAL_ARCHIVE_FAILED' }
-  Write-Log "historical archive: $($archiveRun.Output.Trim())"
 }
 
 $exitCode = 0
@@ -540,6 +542,9 @@ try {
     } finally { Pop-Location }
   }
 
+  $followupsOnlyHash = $env:INVENTORY_OPS_FOLLOWUPS_ONLY_BUNDLE_SHA256
+  if ($followupsOnlyHash -and ($Force -or $followupsOnlyHash -notmatch '^[a-fA-F0-9]{64}$')) { throw 'FOLLOWUPS_ONLY_IDENTITY_INVALID' }
+
   # A verified inventory release still needs its document and completion
   # follow-ups. Reuse the receipt without re-scraping or republishing sources.
   $receiptPath = Join-Path $LogDir ("{0}.json" -f $date)
@@ -551,6 +556,7 @@ try {
       Write-Log "existing receipt unreadable, continuing with publish" 'WARN'
     }
     if ($receipt -and $receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
+      if ($followupsOnlyHash -and ([string]$receipt.bundleSha256).ToLowerInvariant() -cne $followupsOnlyHash.ToLowerInvariant()) { throw 'FOLLOWUPS_ONLY_RECEIPT_MISMATCH' }
       if (Test-ReceiptMatchesManagerOverlay -Receipt $receipt -Date $date) {
         $verifiedPublicationAvailable = $true
         Push-Location $AppRoot
@@ -561,9 +567,12 @@ try {
         Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
         exit 0
       }
+      if ($followupsOnlyHash) { throw 'FOLLOWUPS_ONLY_OVERLAY_MISMATCH' }
       Write-Log "verified receipt is missing the manifest-bound manager disposition overlay; rebuilding through the protected Windows publisher" 'WARN'
     }
   }
+
+  if ($followupsOnlyHash) { throw 'FOLLOWUPS_ONLY_VERIFIED_RECEIPT_REQUIRED' }
 
   Push-Location $AppRoot
   try {

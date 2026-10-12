@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { isMainModule } from './lib/is-main.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { readRetainedPublication } from './publication-followup-metadata.mjs'
 
 const PRIVATE_HOSTNAME = 'inventory-ops.joegallant.me'
 const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
@@ -55,6 +56,24 @@ export function invoiceFiles({ parsed, enrichment, folder, fileExists = existsSy
   })
 }
 
+// Parsed eligibility and the retained release contract are separate checks. A
+// missing parse row must not make an advertised current saved invoice vanish.
+export function retainedInvoiceFiles({ bundle, parsed, enrichment, folder, fileExists = existsSync }) {
+  const advertisedVins = new Set(bundle.release.vehicles.filter(vehicle => vehicle.resourceRecord?.fordInvoice?.available === true && vehicle.resourceRecord.fordInvoice.dataState === 'current').map(vehicle => String(vehicle.vin ?? '').toUpperCase()))
+  const eligible = parsed ? invoiceFiles({ parsed: { ...parsed, results: parsed.results?.filter(entry => advertisedVins.has(String(entry?.vin ?? '').toUpperCase())) }, enrichment, folder, fileExists }) : []
+  const byVin = new Map(eligible.map(item => [item.vin, item]))
+  return bundle.release.vehicles.flatMap(vehicle => {
+    const resource = vehicle.resourceRecord?.fordInvoice
+    if (resource?.available !== true || resource?.dataState !== 'current') return []
+    const vin = String(vehicle.vin ?? '').toUpperCase()
+    const currentResource = enrichment?.recordsByVin?.[vin]?.fordInvoice
+    if (!VIN_RE.test(vin) || !byVin.has(vin) || typeof resource.capturedAt !== 'string' || !Number.isFinite(Date.parse(resource.capturedAt)) || currentResource?.capturedAt !== resource.capturedAt) {
+      throw new Error('ADVERTISED_INVOICE_NOT_RECONCILED')
+    }
+    return [byVin.get(vin)]
+  })
+}
+
 export async function publishInvoiceFile({ reportDate, vin, file, environment = process.env, fetchImpl = fetch }) {
   const pdf = readFileSync(file)
   if (pdf.length < 8 || pdf.length > MAX_PDF_BYTES || pdf.subarray(0, 5).toString('latin1') !== '%PDF-' || !pdf.subarray(Math.max(0, pdf.length - 2048)).toString('latin1').includes('%%EOF')) {
@@ -77,28 +96,29 @@ export async function publishInvoiceFile({ reportDate, vin, file, environment = 
   return payload.status
 }
 
-export async function main(reportDate = process.argv[2]) {
+export async function main(reportDate = process.argv[2], { root = workspaceRoot(), appRoot = APP_ROOT, environment = process.env, fetchImpl = fetch } = {}) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate ?? '')) throw new Error('usage: publish-invoice-documents.mjs <YYYY-MM-DD>')
-  const root = workspaceRoot()
   const folder = path.join(root, 'work', 'invoice-history', reportDate)
   const parsedPath = path.join(folder, 'parsed.json')
-  // Invoice capture and parsing are non-blocking; when they produced nothing
-  // there is nothing to upload. Failing here would hold back the pointer
-  // advance and archive of an already verified release (merge-invoice-metadata
-  // treats the same missing file as an empty day).
-  if (!existsSync(parsedPath)) {
+  const receiptPath = path.join(root, 'work', 'app-feed-status', `${reportDate}.json`)
+  const receipt = existsSync(receiptPath) ? JSON.parse(readFileSync(receiptPath, 'utf8')) : null
+  const bundle = readRetainedPublication({ workspaceRoot: root, reportDate, receipt })
+  // A zero-document day is valid only when the retained release advertises
+  // none. A standalone invocation without a retained release stays compatible.
+  if (!existsSync(parsedPath) && !bundle?.release.vehicles.some(vehicle => vehicle.resourceRecord?.fordInvoice?.available === true && vehicle.resourceRecord.fordInvoice.dataState === 'current')) {
     process.stdout.write(`${JSON.stringify({ reportDate, invoices: 0, stored: 0, alreadyStored: 0, skipped: 'no_parsed_invoices' })}\n`)
     return
   }
-  const parsed = JSON.parse(readFileSync(parsedPath, 'utf8'))
-  const enrichment = JSON.parse(readFileSync(path.join(APP_ROOT, 'data', 'vin-document-enrichment.json'), 'utf8'))
-  if (parsed.reportDate !== reportDate) throw new Error('Ford invoice report date mismatch')
-  const files = invoiceFiles({ parsed, enrichment, folder })
+  if (!existsSync(parsedPath)) throw new Error('ADVERTISED_INVOICE_NOT_RECONCILED')
+  const parsed = existsSync(parsedPath) ? JSON.parse(readFileSync(parsedPath, 'utf8')) : null
+  const enrichment = JSON.parse(readFileSync(path.join(appRoot, 'data', 'vin-document-enrichment.json'), 'utf8'))
+  if (parsed && parsed.reportDate !== reportDate) throw new Error('Ford invoice report date mismatch')
+  const files = bundle ? retainedInvoiceFiles({ bundle, parsed, enrichment, folder }) : invoiceFiles({ parsed, enrichment, folder })
   let cursor = 0; let stored = 0; let alreadyStored = 0
   const upload = async () => {
     while (cursor < files.length) {
       const item = files[cursor++]
-      const status = await publishInvoiceFile({ reportDate, ...item })
+      const status = await publishInvoiceFile({ reportDate, ...item, environment, fetchImpl })
       if (status === 'stored') stored += 1
       else alreadyStored += 1
     }

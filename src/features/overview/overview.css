@@ -27,12 +27,13 @@
 .ov-page p { margin: 0; }
 
 .ov-work-queue {
-  background: var(--ifx-neutral-0);
-  border: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
+  background: var(--ifx-panel-surface);
+  border: var(--ifx-stroke-hairline) solid var(--ifx-panel-border);
   border-radius: var(--ifx-radius-sm);
   display: grid;
   min-width: 0;
   overflow: hidden;
+  box-shadow: var(--ifx-panel-shadow);
 }
 
 .ov-work-tabs {
@@ -64,8 +65,8 @@
 
 .ov-work-tabs button[aria-pressed="true"] {
   background: var(--ifx-neutral-0);
-  box-shadow: inset 0 calc(var(--ifx-space-0-5) * -1) var(--ifx-oem-accent);
-  color: var(--ifx-oem-accent-strong);
+  box-shadow: inset 0 calc(var(--ifx-space-0-5) * -1) var(--blue-600);
+  color: var(--blue-700);
 }
 
 .ov-work-tabs button:hover:not([aria-pressed="true"]) { background: var(--ifx-neutral-50); }
@@ -87,19 +88,23 @@
 .ov-work-columns,
 .ov-work-row {
   display: grid;
-  grid-template-columns: minmax(300px, 1.35fr) minmax(230px, 1.15fr) minmax(180px, 0.85fr) minmax(170px, 0.7fr);
+  grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(calc(var(--ifx-space-16) * 4 + var(--ifx-space-8)),.85fr);
 }
 
 .ov-work-columns {
-  background: var(--ifx-neutral-50);
-  border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
-  color: var(--ifx-neutral-600);
-  font-size: var(--ifx-text-xs);
+  background:var(--ifx-brand-blue);
+  border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border);
+  color:var(--ifx-neutral-0);
+  font-size:var(--ifx-text-sm);
   font-weight: var(--ifx-weight-semibold);
   padding: 0 var(--ifx-space-3);
 }
 
 .ov-work-columns span { padding: var(--ifx-space-2); }
+@media (min-width:881px) {
+  .ov-work-columns span + span,
+  .ov-work-row > div + div { border-left:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
+}
 
 .ov-work-rows {
   display: grid;
@@ -156,8 +161,8 @@
   border: 1px solid var(--ifx-border-subtle);
   border-radius: var(--ifx-radius-sm);
   display: flex;
-  flex: 0 0 calc(var(--ifx-space-16) + var(--ifx-space-6));
-  height: calc(var(--ifx-space-12) + var(--ifx-space-4));
+  flex:0 0 calc(var(--ifx-space-16) + var(--ifx-space-10));
+  height:calc(var(--ifx-space-16) + var(--ifx-space-1));
   justify-content: center;
   overflow: hidden;
 }
@@ -165,11 +170,12 @@
 .ov-work-photo img { height: 100%; object-fit: cover; width: 100%; }
 .ov-work-photo > svg { color: var(--ifx-neutral-500); height: var(--ifx-space-6); width: var(--ifx-space-6); }
 
-.ov-work-actions {
-  align-items: stretch;
-  display: grid;
-  gap: var(--ifx-space-1);
-}
+.ov-work-assignment { display:grid; align-content:start; gap:var(--ifx-space-2); }
+.ov-work-assignment .ov-work-owner { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--ifx-space-1) var(--ifx-space-2); padding-top:var(--ifx-space-1); border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+.ov-work-assignment .ov-work-owner strong { font-size:var(--ifx-text-sm); }
+.ov-work-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:var(--ifx-space-1); }
+.ov-work-actions .ifx-button { padding-inline:var(--ifx-space-2); }
+
 
 .ov-work-primary,
 .ov-work-secondary { text-align:center; }
@@ -213,7 +219,7 @@
 
 .ov-scope button[aria-pressed="true"],
 .ov-chips button[aria-pressed="true"] {
-  background: var(--ifx-oem-accent);
+  background: var(--blue-600);
   color: var(--ifx-neutral-0);
 }
 
@@ -246,7 +252,7 @@
 }
 
 .ov-store-card:last-child { border-bottom: 0; }
-.ov-store-card.is-home { box-shadow: inset var(--ifx-space-0-5) 0 var(--ifx-oem-accent); }
+.ov-store-card.is-home { box-shadow: inset var(--ifx-space-0-5) 0 var(--blue-600); }
 
 .ov-store-card header {
   background: var(--ifx-neutral-50);
@@ -346,7 +352,7 @@
 }
 
 .ov-count dd a {
-  color: var(--ifx-oem-accent-strong);
+  color: var(--blue-700);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
@@ -360,7 +366,7 @@
 /* Phone only: the secondary counts sit behind one disclosure (OVERVIEW_SPEC §3). */
 .ov-more > summary {
   align-items: center;
-  color: var(--ifx-oem-accent-strong);
+  color: var(--blue-700);
   cursor: pointer;
   display: flex;
   font-size: var(--ifx-text-sm);
@@ -463,7 +469,7 @@
 .ov-column {
   align-content: start;
   display: grid;
-  gap: var(--ifx-space-4);
+  gap: var(--ifx-space-3);
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }
@@ -478,13 +484,14 @@
 }
 
 .ov-section {
-  background: var(--ifx-neutral-0);
-  border: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
+  background: var(--ifx-panel-surface);
+  border: var(--ifx-stroke-hairline) solid var(--ifx-panel-border);
   border-radius: var(--ifx-radius-sm);
   display: grid;
   gap: var(--ifx-space-3);
   min-width: 0;
   padding: var(--ifx-space-3);
+  box-shadow: var(--ifx-panel-shadow);
 }
 
 .ov-section-heading {
@@ -702,7 +709,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  color: var(--ifx-oem-accent-strong);
+  color: var(--blue-700);
   cursor: pointer;
   display: flex;
   font-size: var(--ifx-text-sm);
@@ -721,7 +728,7 @@
 .ov-service-basis dt { color: var(--ifx-neutral-600); }
 .ov-service-basis dd { font-weight: var(--ifx-weight-semibold); margin: 0; }
 
-.ov-table-wrap { min-width: 0; }
+.ov-table-wrap { min-width: 0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--ifx-panel-surface); box-shadow:var(--ifx-panel-shadow); }
 
 .ov-table {
   border-collapse: collapse;
@@ -731,7 +738,8 @@
 
 .ov-table th,
 .ov-table td {
-  border-bottom: 1px solid var(--ifx-border-subtle);
+  border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
+  border-right: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
   padding: 0 var(--ifx-space-2);
   text-align: right;
   vertical-align: middle;
@@ -740,13 +748,16 @@
 .ov-table th:first-child { text-align: left; }
 
 .ov-table thead th {
+  background:var(--ifx-neutral-100);
   color: var(--ifx-neutral-600);
   font-size: var(--ifx-text-xs);
   font-weight: var(--ifx-weight-semibold);
-  padding-bottom: var(--ifx-space-1);
+  padding-block: var(--ifx-space-2);
   vertical-align: bottom;
 }
 
+.ov-table :is(th,td):last-child { border-right:0; }
+.ov-table tbody tr:last-child :is(th,td) { border-bottom:0; }
 .ov-table tbody th { font-weight: var(--ifx-weight-semibold); }
 
 .ov-table td a,
@@ -760,7 +771,7 @@
   min-width: 44px;
 }
 
-.ov-table td a { color: var(--ifx-oem-accent-strong); }
+.ov-table td a { color: var(--blue-700); }
 
 /* Store plus six codes in half the page: narrow cells keep the table inside
    its section down to the two-column breakpoint. */
@@ -798,9 +809,8 @@
     grid-template-columns: minmax(0, 1fr) minmax(calc(var(--ifx-space-16) * 2.5), 0.55fr);
   }
   .ov-work-vehicle,
-  .ov-work-detail,
-  .ov-work-owner { grid-column: 1; }
-  .ov-work-actions { align-self: center; grid-column: 2; grid-row: 1 / 4; }
+  .ov-work-assignment { grid-column:1; }
+  .ov-work-actions { align-self: center; grid-column: 2; grid-row:1 / 3; }
   .ov-stores { background: transparent; border: 0; border-radius: 0; gap: var(--ifx-space-2); overflow: visible; }
   .ov-store-card {
     border: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
@@ -877,12 +887,11 @@
   }
   .ov-work-row > div { padding: 0 var(--ifx-space-2); }
   .ov-work-vehicle,
-  .ov-work-detail,
-  .ov-work-owner,
-  .ov-work-actions { grid-column: 1; grid-row: auto; }
+  .ov-work-assignment,
+  .ov-work-actions { grid-column:1; grid-row:auto; }
   .ov-work-owner { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--ifx-space-1) var(--ifx-space-2); }
   .ov-work-owner > span { display:none; }
-  .ov-work-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-work-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
   .ov-work-actions > :only-child { grid-column: 1 / -1; }
   .ov-work-photo {
     flex-basis: calc(var(--ifx-space-16) + var(--ifx-space-2));
@@ -921,6 +930,7 @@
   .ov-row-actions { flex-direction: column; flex-wrap: nowrap; }
 
   /* The service table becomes one stacked card per store. */
+  .ov-table-wrap { border:0; }
   .ov-table thead { display: none; }
   .ov-table,
   .ov-table tbody,
@@ -1041,6 +1051,6 @@
 .ov-presentation { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border-bottom:var(--ifx-stroke-hairline) solid var(--border); }
 .ov-presentation button { display:flex; align-items:center; justify-content:center; min-width:0; min-height:var(--ifx-control-height-md); gap:var(--ifx-space-2); padding:var(--ifx-space-1) var(--ifx-space-2); border:0; border-bottom:var(--ifx-stroke-emphasis) solid transparent; background:var(--surface); color:var(--ink-600); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
 .ov-presentation button svg { flex:none; width:var(--ifx-icon-action-size); height:var(--ifx-icon-action-size); stroke-width:2; }
-.ov-presentation button[aria-pressed="true"] { color:var(--blue-700); background:var(--blue-050); border-bottom-color:var(--blue-600); }
+.ov-presentation button[aria-pressed="true"] { color:var(--blue-700); background:var(--surface); border-bottom-color:var(--blue-600); }
 .ov-presentation button:hover { color:var(--blue-700); }
 .ov-presentation button:focus-visible { outline:var(--ifx-focus-width) solid var(--ifx-focus-color); outline-offset:calc(var(--ifx-focus-offset) * -1); }

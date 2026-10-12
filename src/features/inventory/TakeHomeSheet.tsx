@@ -1,7 +1,7 @@
 import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Download, Printer, Share2, X } from "lucide-react";
+import { Check, Download, Pencil, Printer, RotateCw, Share2, X } from "lucide-react";
 import { useContainedFocus } from "../../lib/useContainedFocus";
 import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolation";
 import { formatDate, formatMileage, formatMoney } from "./inventory-utils";
@@ -16,7 +16,9 @@ import "./TakeHomeSheet.css";
 import { downloadTakeHomePdf, shareTakeHomePdf } from '../../../extension/sidepanel/lib/takehome-export.mjs';
 
 export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeHomeModel; now?: Date }) {
-  const documentPhotos = [...new Set(model.photos)].slice(0, 3);
+  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
+  const markImageFailed = (url: string) => setFailedImages(current => current.has(url) ? current : new Set([...current, url]));
+  const documentPhotos = [...new Set(model.photos)].slice(0, 3).filter(url => !failedImages.has(url));
   const heroPhoto = documentPhotos[0] ?? null;
   const supportingPhotos = documentPhotos.slice(1);
   const railHighlights = supportingPhotos.length ? [] : model.highlights.slice(0, 4);
@@ -27,8 +29,8 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
   return (
     <article className="th">
       <header className="th-head">
-        {model.logo ? (
-          <img className={`th-logo${model.logo.wide ? "" : " is-square"}`} src={model.logo.src} alt={model.logo.alt} />
+        {model.logo && !failedImages.has(model.logo.src) ? (
+          <img className={`th-logo${model.logo.wide ? "" : " is-square"}`} src={model.logo.src} alt={model.logo.alt} onError={() => markImageFailed(model.logo!.src)} />
         ) : (
           <b className="th-logo-text">{model.storeName}</b>
         )}
@@ -46,7 +48,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
       </section>
       <section className="th-hero">
         <div className="th-photos">
-          {heroPhoto ? <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" /> : <div className="th-photo th-photo-empty"><span>Current photos are available from the store.</span></div>}
+          {heroPhoto ? <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" onError={() => markImageFailed(heroPhoto)} /> : <div className="th-photo th-photo-empty"><span>Current photos are available from the store.</span></div>}
         </div>
         <div className="th-hero-rail">
           <dl className="th-price">
@@ -54,7 +56,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
             {model.mileage !== null ? <div><dt>Mileage</dt><dd>{formatMileage(model.mileage)}</dd></div> : null}
             <div><dt>Stock</dt><dd className="th-mono">{model.stockNumber}</dd></div>
           </dl>
-          {supportingPhotos.length ? <div className={`th-thumbs${supportingPhotos.length === 1 ? " is-single" : ""}`}>{supportingPhotos.map((photo,index) => <img key={photo} src={photo} alt={`${model.name} view ${index + 2}`} referrerPolicy="no-referrer" />)}</div> : railHighlights.length ? <div className="th-quick"><b>Standout features</b><ul>{railHighlights.map((label) => <li key={label}>{label}</li>)}</ul></div> : null}
+          {supportingPhotos.length ? <div className={`th-thumbs${supportingPhotos.length === 1 ? " is-single" : ""}`}>{supportingPhotos.map((photo,index) => <img key={photo} src={photo} alt={`${model.name} view ${index + 2}`} referrerPolicy="no-referrer" onError={() => markImageFailed(photo)} />)}</div> : railHighlights.length ? <div className="th-quick"><b>Standout features</b><ul>{railHighlights.map((label) => <li key={label}>{label}</li>)}</ul></div> : null}
         </div>
       </section>
       <dl className="th-identity">
@@ -112,7 +114,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
   );
 }
 
-export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFocusRef }: { vehicle?: InventoryVehicle; vehicles?: InventoryVehicle[]; listLabel?: string; onClose: () => void; returnFocusRef?: React.RefObject<HTMLElement | null> }) {
+export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFocusRef, onRefresh, onEditList, refreshing = false, refreshError, refreshedAt, unavailableCount = 0 }: { vehicle?: InventoryVehicle; vehicles?: InventoryVehicle[]; listLabel?: string; onClose: () => void; returnFocusRef?: React.RefObject<HTMLElement | null>; onRefresh?: () => Promise<boolean>; onEditList?: () => void; refreshing?: boolean; refreshError?: string | null; refreshedAt?: number; unavailableCount?: number }) {
   const models = useMemo(() => {
     const selected = vehicles?.length ? vehicles : vehicle ? [vehicle] : [];
     return [...new Map(selected.map((item) => [item.vin, item])).values()].map(takeHomeModel);
@@ -146,28 +148,32 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
   }, []);
   if (!models.length) return null;
   return createPortal(
-    <div className="takehome-portal">
+    <div className="takehome-portal" data-refresh-blocked={refreshing || Boolean(refreshError) || undefined}>
       <div className="takehome-backdrop" onClick={onClose} aria-hidden="true" />
       <div className="takehome-dialog" role="dialog" aria-modal="true" aria-labelledby="takehome-title" ref={dialogRef}>
         <div className="takehome-toolbar">
           <span id="takehome-title" className="takehome-toolbar__title">Take-home page · {title}</span>
           <label className="takehome-format">Format<select value={layout} onChange={event => setLayout(event.target.value as 'detailed' | 'comparison')}><option value="detailed">Detailed vehicle sheets</option><option value="comparison">Vehicle comparison</option></select></label>
           <span className="takehome-toolbar__actions">
-            <button type="button" className="takehome-btn takehome-btn--primary" ref={printRef} disabled={layout === 'comparison' && !prepared?.comparison} onClick={() => window.print()}>
+            {onEditList ? <button type="button" className="takehome-btn" onClick={onEditList}><Pencil size={16} aria-hidden="true" />Edit list</button> : null}
+            {onRefresh ? <button type="button" className="takehome-btn" disabled={refreshing} onClick={() => { void onRefresh() }}><RotateCw size={16} aria-hidden="true" />{refreshing ? 'Refreshing…' : 'Refresh comparison'}</button> : null}
+            <button type="button" className="takehome-btn takehome-btn--primary" ref={printRef} disabled={refreshing || Boolean(refreshError) || layout === 'comparison' && !prepared?.comparison} onClick={() => window.print()}>
               <Printer size={16} strokeWidth={1.85} aria-hidden="true" /> Print / Save as PDF
             </button>
-            <button type="button" className="takehome-btn" disabled={!pdf} onClick={() => { if (pdf) { downloadTakeHomePdf(pdf, exportTitle); setActionStatus('Saved PDF document'); } }}>
+            <button type="button" className="takehome-btn" disabled={refreshing || Boolean(refreshError) || !pdf} onClick={() => { if (pdf) { downloadTakeHomePdf(pdf, exportTitle); setActionStatus('Saved PDF document'); } }}>
               <Download size={16} strokeWidth={1.85} aria-hidden="true" /> Save PDF
             </button>
-            <button type="button" className="takehome-btn" disabled={!pdf} onClick={() => { if (pdf) void shareTakeHomePdf({ pdf, title:exportTitle }).then(status => setActionStatus(status === 'saved' ? 'PDF saved. Share that file with your customer.' : status === 'shared' ? 'Shared PDF document' : null)).catch(() => setActionStatus('The PDF could not be shared. Use Save PDF and share the saved file.')); }}>
+            <button type="button" className="takehome-btn" disabled={refreshing || Boolean(refreshError) || !pdf} onClick={() => { if (pdf) void shareTakeHomePdf({ pdf, title:exportTitle }).then(status => setActionStatus(status === 'saved' ? 'PDF saved. Share that file with your customer.' : status === 'shared' ? 'Shared PDF document' : null)).catch(() => setActionStatus('The PDF could not be shared. Use Save PDF and share the saved file.')); }}>
               <Share2 size={16} strokeWidth={1.85} aria-hidden="true" /> Share
             </button>
             <button type="button" className="takehome-btn" onClick={onClose}>
               <X size={16} strokeWidth={1.85} aria-hidden="true" /> Close
             </button>
           </span>
-          {pdfError ? <span className="takehome-toolbar__status" role="alert">PDF could not be prepared: {pdfError} <button type="button" className="takehome-btn" onClick={() => setPdfAttempt(value => value + 1)}>Retry PDF</button></span> : <span className="takehome-toolbar__status" role="status">{actionStatus ?? (!pdf ? 'Preparing PDF…' : prepared?.comparison ? `Ready · ${prepared.comparison.pages.length} ${prepared.comparison.pages.length === 1 ? 'page' : 'pages'} · ${models.length} ${models.length === 1 ? 'vehicle' : 'vehicles'}` : '')}</span>}
+          {refreshError ? <span className="takehome-toolbar__status" role="alert">{refreshError}</span> : refreshedAt ? <span className="takehome-toolbar__status">Inventory checked {new Date(refreshedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}{unavailableCount ? ` · ${unavailableCount} unavailable ${unavailableCount === 1 ? 'vehicle remains' : 'vehicles remain'} saved in the list and ${unavailableCount === 1 ? 'is' : 'are'} excluded from this sheet` : ''}</span> : null}
+          {pdfError ? <span className="takehome-toolbar__status" role="alert">PDF could not be prepared: {pdfError} <button type="button" className="takehome-btn" onClick={() => setPdfAttempt(value => value + 1)}>Retry PDF</button></span> : <span className="takehome-toolbar__status" role="status">{refreshing ? 'Refreshing saved list and inventory…' : refreshError ? 'Last-loaded preview. Refresh successfully before exporting.' : actionStatus ?? (!pdf ? 'Preparing PDF…' : prepared?.comparison ? `Ready · ${prepared.comparison.pages.length} ${prepared.comparison.pages.length === 1 ? 'page' : 'pages'} · ${models.length} ${models.length === 1 ? 'vehicle' : 'vehicles'}` : '')}</span>}
         </div>
+        {refreshing || refreshError ? <p className="takehome-print-blocked">Customer sheet refresh required. Return to Inventory Flow and refresh this comparison successfully before printing or sharing.</p> : null}
         <div className="takehome-stage">
           {layout === 'comparison' ? prepared?.comparison ? <TakeHomeComparisonContent plan={prepared.comparison} /> : <p role="status">Preparing comparison sheet…</p> : <>
             {listLabel && models.length > 1 ? <h1 className="takehome-list-title">{listLabel}</h1> : null}

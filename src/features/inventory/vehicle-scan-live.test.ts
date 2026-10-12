@@ -140,6 +140,15 @@ describe('automatic live stock-tag reading', () => {
     expect(progress).toHaveBeenLastCalledWith('Stock-tag reader paused. Scan a barcode, choose a photo, or enter the number.')
   })
 
+  it('releases the owned reader exactly once on stop, including cancellation before any frame', () => {
+    const release = vi.fn()
+    const controller = new AbortController()
+    const stop = scanStockVideo(document.createElement('video'), vi.fn(), vi.fn(), controller.signal, vi.fn(), release)
+    controller.abort(); stop()
+    expect(release).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('does not start when already canceled', async () => {
     const video = document.createElement('video')
     const controller = new AbortController()

@@ -7,6 +7,7 @@ import { assertAdminOverviewAccess } from './admin-control-center.mjs'
 import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from './issue-photos.mjs'
 import { WorkflowError } from './workflow.mjs'
+import { isOperationDenial } from './api-error-scope.mjs'
 import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from './saved-vehicle-lists.mjs'
 
 const BODY_LIMIT = 64 * 1024
@@ -249,6 +250,7 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
   if (!identityResolver?.resolve) throw new Error('identityResolver is required')
   const issuePhotos = new Map()
   return async function handler(request, response) {
+    let employeeIdentityResolved = false
     try {
       const url = new URL(request.url || '/', 'http://127.0.0.1')
       const route = apiPath(url.pathname)
@@ -274,6 +276,7 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
         return sendJson(response,result.status,await result.json())
       }
       const context = identityResolver.resolve(request, url, { allowQuery: route === '/bootstrap' })
+      employeeIdentityResolved = true
       if (route === '/admin/overview') {
         if (request.method !== 'GET') {
           return sendJson(response, 405, { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' })
@@ -486,6 +489,7 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
       const isKnown = error instanceof WorkflowError || error instanceof HttpError || error instanceof IdentityError
       const status = isKnown ? error.status || 400 : 500
       const safeError = isKnown ? error : new HttpError('Unexpected server error', 500, 'INTERNAL_ERROR')
+      if (employeeIdentityResolved && isOperationDenial(error)) response.setHeader('X-Inventory-Error-Scope', 'operation')
       return sendJson(response, status, errorPayload(safeError))
     }
   }

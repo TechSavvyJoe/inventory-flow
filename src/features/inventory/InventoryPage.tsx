@@ -1,6 +1,6 @@
 import { useWorkspaceState } from '../../lib/workspace-memory'
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { groupStores, inventoryStore, toInventoryVehicle } from '../../app/adapters'
@@ -86,7 +86,7 @@ function retainedDetail(entry: VehicleDetailEntry | undefined, data: BootstrapDa
 
 
 export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
-  const { data, homeStore, role, currentUser, currentUserId, refresh } = useAppData()
+  const { data, homeStore, role, currentUser, currentUserId, refresh, refreshSnapshot } = useAppData()
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -102,6 +102,14 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const bootstrapRevision = bootstrapRevisionRef.current.revision
   const latestDetailContextRef = useRef({ accessContext, bootstrapRevision })
   latestDetailContextRef.current = { accessContext, bootstrapRevision }
+  const refreshSavedListVehicles = useCallback(async (): Promise<InventoryVehicle[] | null> => {
+    const next = await refreshSnapshot()
+    if (!next || latestDetailContextRef.current.accessContext !== accessContext || !currentUserId
+      || next.savedListsEnabled !== true || next.access?.userId !== currentUserId
+      || next.access.role !== role || next.access.store !== homeStore) return null
+    const transfers = transferByVin(next.transfers)
+    return next.vehicles.map(vehicle => toInventoryVehicle(vehicle, next, transfers.get(vehicle.vin)))
+  }, [accessContext, currentUserId, homeStore, refreshSnapshot, role])
   const requestedScope: InventoryScope = params.has('scope') ? params.get('scope') === 'group' ? 'group' : 'home' : scope
   const nextSelectionScope = useRef(requestedScope)
   nextSelectionScope.current = requestedScope
@@ -341,7 +349,8 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         filterRequestKey={filterRequest.requestKey}
         initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data', 'issues'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab') && (tab !== 'issues' || data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length))) ?? 'overview'}
         searchPersistenceKey={accessContext}
-        savedLists={{ enabled: data.savedListsEnabled === true && Boolean(currentUserId), ownerId: currentUserId, role, store: homeStore }}
+        openSavedListsRequest={location.state?.openSavedLists === true ? location.key : undefined}
+        savedLists={{ enabled: data.savedListsEnabled === true && Boolean(currentUserId), ownerId: currentUserId, role, store: homeStore, refreshVehicles: refreshSavedListVehicles }}
         selectedVehicleId={selectedVehicleId}
         onSelectedVehicleChange={selectVehicle}
         pageSize={50}

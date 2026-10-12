@@ -6,7 +6,7 @@ import { CustomerShortlistDrawer } from './CustomerShortlistDrawer'
 import type { InventoryVehicle } from './types'
 import type { ShortlistManagement } from './useCustomerShortlist'
 
-vi.mock('./TakeHomeSheet', () => ({ TakeHomeSheet: ({ vehicles, listLabel, returnFocusRef }: { vehicles: InventoryVehicle[]; listLabel?: string; returnFocusRef?: RefObject<HTMLElement | null> }) => <div role="dialog" aria-label="Customer sheet" data-return-focus={returnFocusRef?.current?.textContent}>Sheet {listLabel}: {vehicles.map(vehicle => vehicle.vin).join(',')}</div> }))
+vi.mock('./TakeHomeSheet', () => ({ TakeHomeSheet: ({ vehicles, listLabel, returnFocusRef, onRefresh, onEditList, onClose, refreshError }: { vehicles: InventoryVehicle[]; listLabel?: string; returnFocusRef?: RefObject<HTMLElement | null>; onRefresh?: () => Promise<boolean>; onEditList?: () => void; onClose: () => void; refreshError?: string | null }) => <div role="dialog" aria-label="Customer sheet" data-return-focus={returnFocusRef?.current?.textContent}>Sheet {listLabel}: {vehicles.map(vehicle => vehicle.vin).join(',')}<span>Prices: {vehicles.map(vehicle => vehicle.price).join(',')}</span>{onRefresh ? <button onClick={() => void onRefresh()}>Refresh comparison</button> : null}{onEditList ? <button onClick={onEditList}>Edit list</button> : null}<button onClick={onClose}>Close sheet</button>{refreshError ? <p role="alert">{refreshError}</p> : null}</div> }))
 
 afterEach(cleanup)
 const available = { id:'VIN1', vin:'VIN1', stockNumber:'H1', displayName:'2026 Ford F-150', price:50000, imageUrl:null, exteriorColor:null, addedAt:1, available:true }
@@ -17,6 +17,80 @@ function management(overrides: Partial<ShortlistManagement> = {}): ShortlistMana
 }
 
 describe('CustomerShortlistDrawer synced lists', () => {
+  it('returns focus after the sheet closes and a concurrent list read releases the disabled opener', async () => {
+    const user = userEvent.setup()
+    const manager = management()
+    const props = { entries:[available], onRemove:vi.fn(), onClear:vi.fn(), authorizedVehicles:[vehicle] }
+    const view = render(<CustomerShortlistDrawer {...props} management={manager} />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Customer sheet (1)' }))
+    view.rerender(<CustomerShortlistDrawer {...props} management={{ ...manager, loading:true }} />)
+    await user.click(screen.getByRole('button', { name:'Close sheet' }))
+    expect(screen.getByRole('button', { name:'Customer sheet (1)' })).toBeDisabled()
+    view.rerender(<CustomerShortlistDrawer {...props} management={manager} />)
+    await waitFor(() => expect(screen.getByRole('button', { name:'Customer sheet (1)' })).toHaveFocus())
+  })
+
+  it('opens the selected list on a navigation request and respects closing until another request arrives', async () => {
+    const user = userEvent.setup()
+    const props = { entries:[available], onRemove:vi.fn(), onClear:vi.fn(), management:management(), accessContext:'owner-a' }
+    const view = render(<CustomerShortlistDrawer {...props} openRequest="navigation-a" />)
+    expect(screen.getByRole('combobox', { name:'Customer list' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name:'Close customer shortlist' }))
+    view.rerender(<CustomerShortlistDrawer {...props} openRequest="navigation-a" />)
+    expect(screen.queryByRole('combobox', { name:'Customer list' })).not.toBeInTheDocument()
+    view.rerender(<CustomerShortlistDrawer {...props} openRequest="navigation-b" />)
+    expect(screen.getByRole('combobox', { name:'Customer list' })).toBeVisible()
+    view.rerender(<CustomerShortlistDrawer {...props} accessContext="owner-b" openRequest="navigation-b" />)
+    expect(screen.queryByRole('combobox', { name:'Customer list' })).not.toBeInTheDocument()
+  })
+
+  it('finds and adds vehicles to the selected saved list without offering existing members', async () => {
+    const user = userEvent.setup()
+    const addVehicleToActiveList = vi.fn(async () => true)
+    render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={vi.fn()} management={management({ addVehicleToActiveList })}
+      authorizedVehicles={[vehicle, { ...vehicle, vin:'VIN3', stockNumber:'H3', model:'Escape' }]} />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Add vehicles' }))
+    await user.type(screen.getByRole('searchbox', { name:'Find vehicles to add' }), 'Escape')
+    expect(screen.queryByRole('button', { name:'Add H1 to AB' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name:'Add H3 to AB' }))
+    expect(addVehicleToActiveList).toHaveBeenCalledWith('VIN3')
+    await waitFor(() => expect(screen.getByRole('searchbox', { name:'Find vehicles to add' })).toHaveFocus())
+  })
+
+  it('rebuilds a reopened list preview from confirmed fresh data and returns to editing', async () => {
+    const user = userEvent.setup()
+    const prepareCustomerSheet = vi.fn()
+      .mockResolvedValueOnce({ listId:'one', label:'AB', vehicles:[{ ...vehicle, price:47000 }], refreshedAt:1, unavailableCount:0 })
+      .mockResolvedValueOnce({ listId:'one', label:'AB revised', vehicles:[{ ...vehicle, vin:'VIN3', price:42000 }], refreshedAt:2, unavailableCount:0 })
+    render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={vi.fn()} management={management({ prepareCustomerSheet })} authorizedVehicles={[vehicle]} />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Customer sheet (1)' }))
+    expect(await screen.findByRole('dialog', { name:'Customer sheet' })).toHaveTextContent('Prices: 47000')
+    await user.click(screen.getByRole('button', { name:'Refresh comparison' }))
+    await waitFor(() => expect(screen.getByRole('dialog', { name:'Customer sheet' })).toHaveTextContent('Sheet AB revised: VIN3'))
+    expect(prepareCustomerSheet.mock.calls).toEqual([[undefined], ['one']])
+    expect(screen.getByRole('dialog', { name:'Customer sheet' })).toHaveTextContent('Prices: 42000')
+    await user.click(screen.getByRole('button', { name:'Edit list' }))
+    expect(screen.queryByRole('dialog', { name:'Customer sheet' })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name:'Customer list' })).toBeVisible()
+    expect(screen.getByRole('button', { name:'Remove H1 from list' })).toBeVisible()
+  })
+
+  it('keeps the last-loaded preview explicitly marked when refresh fails', async () => {
+    const user = userEvent.setup()
+    const prepareCustomerSheet = vi.fn()
+      .mockResolvedValueOnce({ listId:'one', label:'AB', vehicles:[{ ...vehicle, price:47000 }], refreshedAt:1, unavailableCount:0 })
+      .mockResolvedValueOnce(null)
+    render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={vi.fn()} management={management({ prepareCustomerSheet })} authorizedVehicles={[vehicle]} />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Customer sheet (1)' }))
+    await user.click(await screen.findByRole('button', { name:'Refresh comparison' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('last-loaded data')
+    expect(screen.getByRole('dialog', { name:'Customer sheet' })).toHaveTextContent('Prices: 47000')
+  })
+
   it('toggles the pop-up from the same launcher without changing saved vehicles', async () => {
     const user = userEvent.setup()
     const onRemove = vi.fn()

@@ -65,9 +65,16 @@ phrases are rejected in full, even when they contain a recognized service.
 Adapters must emit individual documented mechanical facts in the `services`
 array, never copy free-form comments or strip a narrative until it matches.
 New description vocabulary requires an explicit grammar addition and regression
-coverage. Strict import, Worker release validation and employee projection share
-this rule; optional publishing drops an unsafe service-history channel instead
-of retaining part of its narrative. Other unsupported fields remain rejected.
+coverage. Strict import and Worker release validation reject unsupported
+descriptions; optional publishing drops an unsafe service-history channel
+instead of retaining part of its narrative. Employee reads of previously stored
+history quarantine each complete unsupported description using the same grammar,
+while retaining validated dates, odometers, provenance and approved descriptions.
+A dated entry may therefore have an empty `services` array in the employee
+projection; no substitute service is inferred. A current report with quarantined
+descriptions becomes incomplete, while stale or unknown reports retain their
+freshness. Structural, identity, typed-value and bound violations still fail
+closed, and unsupported fields remain rejected.
 
 The Node importer and Worker share the optional-channel validators and retain
 provenance verification. `operationalEvidenceCount` and `serviceHistoryCount`

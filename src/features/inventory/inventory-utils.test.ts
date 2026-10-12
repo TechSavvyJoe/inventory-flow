@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_INVENTORY_FILTERS,
   activeFilterCount,
@@ -49,6 +49,17 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("inventory source-safe selectors", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("derives overdue movement from dueAt as the clock advances, ignoring a stale cached flag", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'));
+    const overdue = { ...DEFAULT_INVENTORY_FILTERS, movement: 'overdue' as const };
+    const movement = (dueAt: string, cachedOverdue: boolean) => vehicle({ movement: { dueAt, overdue: cachedOverdue } });
+    expect(vehicleMatchesFilters(movement('2026-10-10T12:01:00Z', true), overdue)).toBe(false);
+    expect(vehicleMatchesFilters(movement('2026-10-10T11:59:00Z', false), overdue)).toBe(true);
+  });
+
   it("sorts MSRP by usable original-document amounts instead of the listing discount anchor", () => {
     const records = [
       vehicle({ id: "sticker", msrp: 1, windowSticker: { dataState: "current", totalMsrp: 60000 } }),

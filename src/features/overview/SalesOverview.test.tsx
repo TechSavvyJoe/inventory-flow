@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { BootstrapData, OverviewSummary, StoreName, TransferRecord, VehicleIssue, VehicleRecord } from '../../types'
 import type { ShortlistContextValue } from '../inventory/useCustomerShortlist'
 import type { InventoryVehicle } from '../inventory/types'
@@ -11,7 +11,7 @@ import { vehicleMatchesOverviewView } from '../inventory/inventory-utils'
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 const { syncedListsMock } = vi.hoisted(() => ({ syncedListsMock: vi.fn() }))
 vi.mock('../inventory/useSyncedCustomerLists', () => ({ useSyncedCustomerLists: syncedListsMock }))
-vi.mock('../inventory/TakeHomeSheet', () => ({ TakeHomeSheet: ({ vehicles, listLabel, onClose }: { vehicles: InventoryVehicle[]; listLabel: string; onClose: () => void }) => <div role="dialog" aria-label="Customer sheet preview"><span>{listLabel}</span>{vehicles.map(vehicle => <span key={vehicle.vin}>{vehicle.vin}</span>)}<button onClick={onClose}>Close sheet</button></div> }))
+vi.mock('../inventory/TakeHomeSheet', () => ({ TakeHomeSheet: ({ vehicles, listLabel, onClose, onRefresh, onEditList, refreshError }: { vehicles: InventoryVehicle[]; listLabel: string; onClose: () => void; onRefresh?: () => Promise<boolean>; onEditList?: () => void; refreshError?: string | null }) => <div role="dialog" aria-label="Customer sheet preview"><span>{listLabel}</span>{vehicles.map(vehicle => <span key={vehicle.vin}>{vehicle.vin} Price {vehicle.price}</span>)}<button onClick={onClose}>Close sheet</button>{onRefresh ? <button onClick={() => void onRefresh()}>Refresh comparison</button> : null}{onEditList ? <button onClick={onEditList}>Edit list</button> : null}{refreshError ? <p role="alert">{refreshError}</p> : null}</div> }))
 
 const stores: StoreName[] = ['Howell']
 
@@ -96,8 +96,50 @@ function renderOverview(currentUserId: string | null = 'employee-1', source = da
 }
 
 describe('SalesOverview', () => {
-  beforeEach(() => syncedListsMock.mockReturnValue(shortlist()))
+  beforeEach(() => { syncedListsMock.mockReturnValue(shortlist()) })
   afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+  it('prepares fresh comparisons from Overview, retains marked failed previews, and links back to list editing', async () => {
+    const source = data()
+    const refreshVehicles = vi.fn()
+    const first = { ...toInventoryVehicle(source.vehicles[1], source), price:41000 }
+    const second = { ...toInventoryVehicle(source.vehicles[0], source), price:39000 }
+    const prepareCustomerSheet = vi.fn()
+      .mockResolvedValueOnce({ listId:'list-a', label:'AB current', vehicles:[first], refreshedAt:1, unavailableCount:1 })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ listId:'list-a', label:'AB revised', vehicles:[second], refreshedAt:2, unavailableCount:0 })
+    syncedListsMock.mockReturnValue(shortlist({ management:{ ...shortlist().management!, prepareCustomerSheet } }))
+    function Location() { const location = useLocation(); return <output aria-label="Current route">{location.pathname}{location.search}</output> }
+    render(<MemoryRouter><SalesOverview data={source} stores={stores} homeStore="Howell" role="sales" currentUserId="employee-1" refreshVehicles={refreshVehicles} /><Location /></MemoryRouter>)
+    expect(syncedListsMock).toHaveBeenCalledWith(expect.objectContaining({ refreshVehicles }))
+    fireEvent.click(screen.getByRole('button', { name:'Customer sheet' }))
+    expect(await screen.findByRole('dialog')).toHaveTextContent('AB current')
+    expect(screen.getByRole('dialog')).toHaveTextContent('Price 41000')
+    fireEvent.click(screen.getByRole('button', { name:'Refresh comparison' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('last-loaded data')
+    expect(screen.getByRole('dialog')).toHaveTextContent('Price 41000')
+    fireEvent.click(screen.getByRole('button', { name:'Refresh comparison' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('AB revised'))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Price 39000')
+    expect(prepareCustomerSheet.mock.calls).toEqual([['list-a'], ['list-a'], ['list-a']])
+    fireEvent.click(screen.getByRole('button', { name:'Edit list' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('status', { name:'Current route' })).toHaveTextContent('/inventory?scope=group')
+  })
+
+  it('does not open a late prepared comparison after the employee changes', async () => {
+    const source = data()
+    let finish!: (value: unknown) => void
+    const prepareCustomerSheet = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    syncedListsMock.mockReturnValue(shortlist({ management:{ ...shortlist().management!, prepareCustomerSheet:prepareCustomerSheet as NonNullable<NonNullable<ShortlistContextValue['management']>['prepareCustomerSheet']> } }))
+    const props = { data:source, stores, homeStore:'Howell' as const, role:'sales' as const }
+    const view = render(<MemoryRouter><SalesOverview {...props} currentUserId="employee-1" /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name:'Customer sheet' }))
+    view.rerender(<MemoryRouter><SalesOverview {...props} currentUserId="employee-2" /></MemoryRouter>)
+    await act(async () => finish({ listId:'list-a', label:'Private old list', vehicles:[toInventoryVehicle(source.vehicles[1], source)], refreshedAt:1, unavailableCount:0 }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('Private old list')).not.toBeInTheDocument()
+  })
 
   it('binds saved lists to the stable employee context and renders only current authorized vehicles', () => {
     renderOverview()

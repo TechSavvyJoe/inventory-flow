@@ -35,6 +35,7 @@ export interface TransferTrackerProps {
   onCreateRequest?: () => void;
   mode?: 'drawer' | 'page';
   vehicleLinks?: ReactNode;
+  viewerStore?: string;
 }
 
 const WORKFLOW_PHASES = [
@@ -113,6 +114,7 @@ export function TransferTracker({
   onClose,
   onCreateRequest,
   vehicleLinks,
+  viewerStore,
   mode = 'drawer',
 }: TransferTrackerProps) {
   if (!transfer) {
@@ -131,6 +133,7 @@ export function TransferTracker({
 
   const { vehicle } = transfer;
   const action = transfer.nextAction;
+  const actionStatus = slaStatus({ sla: action.sla, nextActionStore: action.ownerStore, nextActionOwner: action.ownerLabel, viewerStore });
   const latestConditionIssue = transfer.timeline.find((event) => event.kind === 'condition_issue');
   const directMoveEvent = [...transfer.timeline].reverse().find((event) => event.kind === 'direct_move_recorded');
   const directMove = Boolean(directMoveEvent);
@@ -208,7 +211,7 @@ export function TransferTracker({
         </div>
       ) : null}
 
-      <section className={`mif-action-console is-${action.sla}`} aria-label="Next step">
+      <section className={`mif-action-console is-${actionStatus.ownedByViewer === false && actionStatus.overdue ? 'none' : action.sla}`} aria-label="Next step">
         <div className="mif-action-console__copy">
           <span>Next step</span>
           <strong title={action.label}>{compactActionLabel(action.label, { homeStore: vehicle.homeStore, destination: transfer.destination ?? transfer.requestingStore })}</strong>
@@ -216,7 +219,7 @@ export function TransferTracker({
         </div>
         <div className="mif-action-console__due">
           <CalendarClock aria-hidden="true" size={18} strokeWidth={1.75} />
-          <span><strong>{formatDateTime(action.dueAt)}</strong><small>{slaStatus({ sla: action.sla }).label}</small></span>
+          <span><strong>{formatDateTime(action.dueAt)}</strong><small>{actionStatus.label}</small></span>
         </div>
 
         {transfer.allowedActions.length > 0 ? (

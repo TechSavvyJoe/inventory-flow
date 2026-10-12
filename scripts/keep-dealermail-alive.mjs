@@ -28,6 +28,18 @@ import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { sendSignInAlert, sendTestAlert } from './lib/signin-alert.mjs'
+import {
+  classifyDealerMailProbe,
+  classifyOasisProbe,
+  classifyKeeperProbe,
+  isRecognizedSignInRedirect,
+  KEEPER_CDP_TIMEOUT_MS,
+  KEEPER_FETCH_TIMEOUT_MS,
+  KEEPER_PROBE_BUDGET_MS,
+  KEEPER_TARGET_TIMEOUT_MS,
+  matchingPageTargets,
+  probeServiceTargets,
+} from './lib/keeper-probes.mjs'
 
 const PORT = 9222
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -52,18 +64,26 @@ const openSocket = (url, timeoutMs = 10000) => new Promise((res, rej) => {
   s.addEventListener('open', opened, { once: true })
   s.addEventListener('error', failed, { once: true })
 })
-const cdp = (sock, id, method, params, timeoutMs = 20000) => new Promise((res, rej) => {
-  const timer = setTimeout(() => { sock.removeEventListener('message', onMsg); rej(new Error(method + ': CDP_TIMEOUT')) }, timeoutMs)
+const cdp = (sock, id, method, params, timeoutMs = 20000, signal = null) => new Promise((res, rej) => {
+  const cleanup = () => {
+    clearTimeout(timer)
+    sock.removeEventListener('message', onMsg)
+    signal?.removeEventListener('abort', aborted)
+  }
+  const timer = setTimeout(() => { cleanup(); rej(new Error(method + ': CDP_TIMEOUT')) }, timeoutMs)
+  const aborted = () => { cleanup(); rej(new Error(method + ': PROBE_ABORTED')) }
   const onMsg = ev => {
     let m
     try { m = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString()) } catch { return }
     if (m.id !== id) return
-    clearTimeout(timer); sock.removeEventListener('message', onMsg)
+    cleanup()
     m.error ? rej(new Error(m.error.message)) : res(m.result)
   }
   sock.addEventListener('message', onMsg)
+  if (signal?.aborted) { aborted(); return }
+  signal?.addEventListener('abort', aborted, { once: true })
   try { sock.send(JSON.stringify({ id, method, params })) }
-  catch (error) { clearTimeout(timer); sock.removeEventListener('message', onMsg); rej(error) }
+  catch (error) { cleanup(); rej(error) }
 })
 
 const targets = async () => {
@@ -122,33 +142,33 @@ async function closeServiceTab(tab) {
   } catch {}
 }
 
-async function evaluateTab(tab, expression, opened = false) {
+async function evaluateTab(tab, expression, opened = false, signal = null) {
   const sock = await openSocket(tab.webSocketDebuggerUrl)
   try {
-    const result = await cdp(sock, 1, 'Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+    // In-page fetches abort before the target budget; this outer CDP deadline is longer.
+    const result = await cdp(sock, 1, 'Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, KEEPER_CDP_TIMEOUT_MS, signal)
     return { value: JSON.parse(result.result.value), tab: (tab.url || '').slice(0, 100), target: tab, opened }
   } finally { try { sock.close() } catch {} }
 }
 
 // Runs `expression` inside a tab on that origin, opening the read-only probe URL if needed.
-async function inTab(re, expression, openUrl) {
-  const candidates = (await targets()).filter(tab => tab.type === 'page' && re.test(tab.url || '')).slice(0, 3)
-  let lastError = null
-  for (const tab of candidates) {
-    try { return await evaluateTab(tab, expression) }
-    catch (error) { lastError = error }
-  }
-  if (!openUrl) {
-    if (lastError) throw lastError
-    return { noTab: true }
-  }
-  const tab = await openServiceTab(openUrl)
-  try {
-    return await evaluateTab(tab, expression, true)
-  } catch (error) {
-    await closeServiceTab(tab)
-    throw error
-  }
+async function inTab(re, expression, openUrl, classify) {
+  const candidates = matchingPageTargets(await targets(), re)
+  const selected = await probeServiceTargets(
+    candidates,
+    (tab, signal, opened) => evaluateTab(tab, expression, opened, signal),
+    result => classify(result?.value),
+    {
+      openTarget: openUrl ? () => openServiceTab(openUrl) : undefined,
+      closeTarget: closeServiceTab,
+      budgetMs: KEEPER_PROBE_BUDGET_MS,
+      timeoutMs: KEEPER_TARGET_TIMEOUT_MS,
+    },
+  )
+  if (!selected) return { noTab: true }
+  if (selected.result?.probeError) throw new Error(selected.result.probeError)
+  if (selected.result?.probeTimedOut) throw new Error('PROBE_TIMEOUT')
+  return selected.result
 }
 
 // A Ford VIN to probe FMCDealer / fordvisions with. Taken from the newest OASIS worklist so
@@ -175,18 +195,20 @@ const status = { checkedAt: new Date().toISOString(), automationBrowser: await e
 // ---- DealerMail: 200, no "Session Ended", and the grid's own function present -------------
 try {
   const r = await inTab(/dealermail\.com\/prospect_manager/i, `(async () => {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), ${KEEPER_FETCH_TIMEOUT_MS});
     try {
-      const r = await fetch(${JSON.stringify(GRID)}, { credentials: 'include', cache: 'no-store' });
+      const r = await fetch(${JSON.stringify(GRID)}, { credentials: 'include', cache: 'no-store', signal: ctl.signal });
       const t = await r.text();
       return JSON.stringify({ httpStatus: r.status, bytes: t.length,
-        sessionEnded: /Session Ended/i.test(t), hasGrid: /showModels/.test(t) });
+        finalUrl: r.url, sessionEnded: /Session Ended/i.test(t), hasGrid: /showModels/.test(t) });
     } catch (e) { return JSON.stringify({ httpStatus: 0, error: String(e).slice(0,120) }); }
-  })()`, GRID)
+    finally { clearTimeout(timer); }
+  })()`, GRID, classifyDealerMailProbe)
   if (r.noTab) status.dealermail = { status: 'NO_TAB' }
   else {
-    const v = r.value
-    status.dealermail = { ...v, tab: r.tab,
-      status: (v.httpStatus === 200 && !v.sessionEnded && v.hasGrid) ? 'OK' : 'SESSION_EXPIRED' }
+      const v = r.value
+      status.dealermail = { ...v, tab: r.tab,
+      status: classifyDealerMailProbe(v) }
   }
 } catch (e) { status.dealermail = { status: 'ERROR', error: String(e.message).slice(0, 160) } }
 
@@ -196,18 +218,20 @@ if (!fordVin) status.fmcdealer = { status: 'SKIPPED', reason: 'no OASIS worklist
 else {
   try {
     const r = await inTab(/fordtechservice\.dealerconnection\.com/i, `(async () => {
+      const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), ${KEEPER_FETCH_TIMEOUT_MS});
       try {
-        const r = await fetch(${JSON.stringify(OASIS(fordVin))}, { credentials: 'include', cache: 'no-store' });
+        const r = await fetch(${JSON.stringify(OASIS(fordVin))}, { credentials: 'include', cache: 'no-store', signal: ctl.signal });
         const t = await r.text();
-        return JSON.stringify({ httpStatus: r.status, oasis: /OASIS RESULT/i.test(t),
-          login: /login\\.microsoftonline\\.com/i.test(t) || /type=["']?password/i.test(t) });
+        return JSON.stringify({ httpStatus: r.status, oasis: /OASIS RESULT/i.test(t), finalUrl: r.url,
+          login: /type=["']?password/i.test(t) });
       } catch (e) { return JSON.stringify({ httpStatus: 0, threw: String(e).slice(0,120) }); }
-    })()`, OASIS(fordVin))
+      finally { clearTimeout(timer); }
+    })()`, OASIS(fordVin), classifyOasisProbe)
     if (r.noTab) status.fmcdealer = { status: 'NO_TAB' }
     else {
       const v = r.value
       status.fmcdealer = { ...v, tab: r.tab,
-        status: (v.httpStatus === 200 && v.oasis && !v.login) ? 'OK' : 'SESSION_EXPIRED' }
+        status: classifyOasisProbe(v) }
     }
   } catch (e) { status.fmcdealer = { status: 'ERROR', error: String(e.message).slice(0, 160) } }
 }
@@ -223,17 +247,22 @@ if (!fordVin) status.fordvisions = { status: 'SKIPPED', reason: 'no Ford VIN to 
 else {
   try {
     const probeInvoice = `(async () => {
+      const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), ${KEEPER_FETCH_TIMEOUT_MS});
       try {
-        const r = await fetch(${JSON.stringify(INVOICE(fordVin))}, { credentials: 'include', cache: 'no-store' });
+        const r = await fetch(${JSON.stringify(INVOICE(fordVin))}, { credentials: 'include', cache: 'no-store', signal: ctl.signal });
         const ct = r.headers.get('content-type') || '';
-        if (/pdf/i.test(ct)) return JSON.stringify({ httpStatus: r.status, pdf: true });
+        if (/pdf/i.test(ct)) return JSON.stringify({ httpStatus: r.status, pdf: true, finalUrl: r.url });
         const t = await r.text();
-        return JSON.stringify({ httpStatus: r.status, pdf: false,
+        return JSON.stringify({ httpStatus: r.status, pdf: false, finalUrl: r.url,
           msal: /msal-browser/i.test(t),
           fordRefusal: /not retail/i.test(t) || /not found in our system/i.test(t) });
       } catch (e) { return JSON.stringify({ httpStatus: 0, threw: String(e).slice(0,120) }); }
+      finally { clearTimeout(timer); }
     })()`
-    const r = await inTab(/fordvisions\.dealerconnection\.com/i, probeInvoice, INVOICE(fordVin))
+    const r = await inTab(/fordvisions\.dealerconnection\.com/i, probeInvoice, INVOICE(fordVin), v => classifyKeeperProbe({
+      authenticated: v?.httpStatus === 200 && (v.pdf || v.fordRefusal),
+      expired: [401, 403].includes(v?.httpStatus) || isRecognizedSignInRedirect(v?.finalUrl),
+    }))
     if (r.noTab) status.fordvisions = { status: 'NO_TAB' }
     else {
       let v = r.value
@@ -262,7 +291,10 @@ else {
         }
       }
       status.fordvisions = { ...v, tab: r.tab,
-        status: (v.pdf || v.fordRefusal) ? 'OK' : 'SESSION_EXPIRED' }
+        status: classifyKeeperProbe({
+        authenticated: v.httpStatus === 200 && (v.pdf || v.fordRefusal),
+        expired: [401, 403].includes(v.httpStatus) || isRecognizedSignInRedirect(v.finalUrl),
+        }) }
     }
   } catch (e) { status.fordvisions = { status: 'ERROR', error: String(e.message).slice(0, 160) } }
 }

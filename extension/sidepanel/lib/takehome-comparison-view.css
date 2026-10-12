@@ -23,7 +23,13 @@
 .comparison-photo img, .comparison-photo-empty { background:var(--surface-soft); }
 .comparison-photo-empty { text-align:center; color:var(--ink-600); font-size:var(--comparison-header-meta-size); }
 .comparison-foot { position:absolute; top:var(--comparison-footer-top); left:var(--comparison-margin); right:var(--comparison-margin); display:flex; flex-direction:column; gap:var(--comparison-footer-gap); border-top:var(--comparison-hairline) solid var(--border); padding-top:var(--comparison-footer-gap); color:var(--ink-600); font-size:var(--comparison-footer-size); line-height:var(--comparison-footer-line-height); }
-@media screen and (max-width:1100px) {
+/* Tablet landscape has room for the measured columns once paper margins yield.
+   Keep typography and the PDF's aligned fact rows at their original sizes. */
+@media screen and (min-width:1024px) and (max-width:1100px) {
+  .comparison-page { padding-inline:var(--comparison-footer-gap); }
+  .comparison-foot { left:var(--comparison-footer-gap); right:var(--comparison-footer-gap); }
+}
+@media screen and (max-width:1023px) {
   .comparison-page { min-height:0; padding:var(--comparison-mobile-padding); }
   .comparison-head { height:auto; min-height:var(--comparison-header-height); padding-bottom:var(--comparison-mobile-gap); margin-bottom:var(--comparison-mobile-cell-gap); }
   .comparison-head::before, .comparison-head::after { top:auto; bottom:0; }

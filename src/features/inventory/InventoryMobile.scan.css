@@ -1,9 +1,9 @@
 /* Compact comparison rows; full source reports are one Records action away. */
-.if-srp-mobile-list { gap:var(--ifx-space-1); padding:var(--ifx-space-0); background:var(--ifx-neutral-50); }
-.if-srp-mobile-list .if-srp-mobile-row--scan { padding:var(--ifx-space-0-5) var(--ifx-space-1); border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-radius:var(--ifx-radius-xs); box-shadow:none; scroll-margin-top:var(--ifx-space-16); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__open { grid-template-columns:calc(var(--ifx-space-16) + var(--ifx-space-6)) minmax(0,1fr); gap:var(--ifx-space-0-5) var(--ifx-space-2); align-items:start; }
+.if-srp-mobile-list { gap:var(--ifx-space-1); padding:var(--ifx-space-0); background:var(--ifx-canvas); }
+.if-srp-mobile-list .if-srp-mobile-row--scan { padding:var(--ifx-space-0-5) var(--ifx-space-1); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:var(--ifx-radius-xs); box-shadow:var(--ifx-panel-shadow); scroll-margin-top:var(--ifx-space-16); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__open { grid-template-columns:calc(var(--ifx-space-16) * 2) minmax(0,1fr); gap:var(--ifx-space-0-5) var(--ifx-space-2); align-items:start; }
 .if-srp-mobile-list .inventory-mobile-row__thumbnail { display:grid; gap:var(--ifx-space-0-5); min-width:0; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual { width:calc(var(--ifx-space-16) + var(--ifx-space-6)); height:var(--ifx-space-16); border-radius:var(--ifx-radius-xs); background:var(--surface-muted); box-shadow:none; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual { width:calc(var(--ifx-space-16) * 2); height:calc(var(--ifx-space-16) * 4 / 3); border-radius:var(--ifx-radius-xs); background:var(--surface-muted); box-shadow:none; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual img { object-fit:cover; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__main { display:flex; flex-direction:column; align-items:flex-start; gap:var(--ifx-space-0-5); min-width:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title { display:flex; align-items:start; gap:var(--ifx-space-1); overflow:visible; white-space:normal; }
@@ -11,12 +11,10 @@
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation { grid-column:auto; grid-row:auto; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:baseline; width:100%; gap:var(--ifx-space-1) var(--ifx-space-2); margin:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > b { color:var(--navy-900); font:var(--ifx-weight-semibold) var(--ifx-text-lg)/1.25 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > span { white-space:nowrap; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
-/* Certification stays with the photo, leaving the identity text on one rhythm. */
-.if-srp-mobile-list .inventory-mobile-row__photo-certification { position:absolute; left:var(--ifx-space-1); bottom:var(--ifx-space-1); max-width:calc(100% - var(--ifx-space-8)); }
-.if-srp-mobile-list .inventory-mobile-row__photo-certification .vehicle-certified-badge { background:var(--surface); padding:var(--ifx-space-0-5); max-width:100%; }
-.if-srp-mobile-list .inventory-mobile-row__photo-certification .vehicle-certified-badge > img { height:var(--ifx-space-6); max-width:100%; }
-.if-srp-mobile-list .inventory-mobile-row__photo-certification .vehicle-certified-badge--lincoln { background:var(--navy-900); }
-.if-srp-mobile-list .inventory-mobile-row__photo-certification .vehicle-certified-badge:has(> img) > span { display:none; }
+/* Certification remains visible beside identity without covering the photograph. */
+.if-srp-mobile-list .inventory-mobile-row__certification:empty { display:none; }
+.if-srp-mobile-list .inventory-mobile-row__certification .vehicle-certified-badge { font-size:var(--ifx-text-sm); }
+.if-srp-mobile-list .inventory-mobile-row__certification .vehicle-certified-badge > img { height:var(--ifx-space-5); max-width:calc(var(--ifx-space-16) + var(--ifx-space-8)); }
 /* VIN, economy and colors follow aligned fact rows rather than a run-on text block. */
 .if-srp-mobile-list .inventory-mobile-row__captured-facts { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--ifx-space-0-5); margin:0; padding:0; color:var(--ink-600); }
 .if-srp-mobile-list .inventory-mobile-row__captured-facts > div { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 var(--ifx-space-1); min-width:0; }
@@ -35,7 +33,7 @@
 .if-srp-mobile-list .inventory-mobile-row__factory-pricing > div { display:flex; align-items:baseline; gap:var(--ifx-space-1); min-width:0; }
 .if-srp-mobile-list .inventory-mobile-row__factory-pricing dt { font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
 .if-srp-mobile-list .inventory-mobile-row__factory-pricing dd { margin:0; color:var(--ink-900); font:var(--ifx-weight-semibold) var(--ifx-text-xs)/1.3 var(--font-app); font-variant-numeric:tabular-nums; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__signals { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); align-items:stretch; gap:0; margin:0; padding:0; border-block:1px solid var(--border); border-radius:0; background:var(--surface-soft); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__signals { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); align-items:stretch; gap:0; margin:0; padding:0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:var(--ifx-radius-xs); background:var(--ifx-evidence-surface); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; min-height:var(--ifx-control-height-md); gap:0; padding:0 var(--ifx-space-2); color:var(--ink-900); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.3 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > strong { font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.3 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > span { font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.3 var(--font-app); }
@@ -56,14 +54,6 @@
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-location > svg { flex-shrink:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-manager-disposition { grid-column:1 / -1; border-top:1px solid var(--border); }
 /* Document and workflow actions share one compact touch toolbar. */
-.if-srp-mobile-list .vehicle-resource-shortcuts.is-action-rail .inv-desk-actions { display:contents; }
-.if-srp-mobile-list .vehicle-resource-shortcuts.is-action-rail .vehicle-resource-shortcut { min-height:var(--ifx-control-height-md); padding-block:var(--ifx-space-0-5); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--ifx-space-0-5); min-width:0; min-height:var(--ifx-control-height-md); margin:0; padding:var(--ifx-space-0-5) var(--ifx-space-0); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-sm); color:var(--blue-700); background:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.3 var(--font-app); text-decoration:none; cursor:pointer; transition:transform var(--ifx-motion-instant) var(--ifx-ease-tactile), background-color var(--ifx-motion-fast) var(--ifx-ease-standard); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action > svg { flex-shrink:0; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action:hover { border-color:var(--blue-600); background:var(--blue-050); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action:active { transform:translateY(var(--ifx-space-0-5)); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records { background:var(--blue-600); border-color:var(--blue-600); color:var(--surface); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records:is(:hover,:focus-visible,:active,[aria-expanded="true"]) { background:var(--blue-700); border-color:var(--blue-700); color:var(--surface); }
 .if-srp-mobile-list .inventory-mobile-records { --records-toolbar-top:calc(var(--top-height, 56px) + var(--safe-top, 0px)); grid-column:1 / -1; min-width:0; margin-top:8px; border-top:1px solid var(--border-strong); }
 .if-srp-mobile-list .inventory-mobile-records > header {
   display:flex; justify-content:space-between; align-items:center; gap:8px; padding:4px 0;
@@ -74,17 +64,13 @@
 .if-srp-mobile-list .inventory-mobile-records > header > button { flex-shrink:0; max-width:115px; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-records__close { width:100%; margin-top:8px; border-color:var(--border-strong); background:var(--surface-soft); }
 
-@media (prefers-reduced-motion:reduce) {
-  .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action { transition:none; }
-  .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action:active { transform:none; }
-}
 
 .if-srp-mobile-list .inventory-mobile-imported-hold { grid-column: 1 / -1; margin: 0; padding: var(--ifx-space-1) var(--ifx-space-2); border-top: var(--ifx-stroke-hairline) solid var(--border); }
 .if-srp-mobile-list .inventory-mobile-imported-hold > div { display: flex; align-items: baseline; gap: var(--ifx-space-2); }
 .if-srp-mobile-list .inventory-mobile-imported-hold dt { color: var(--ink-600); font: var(--ifx-weight-regular) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
 .if-srp-mobile-list .inventory-mobile-imported-hold dd { display: grid; gap: var(--ifx-space-0-5); margin: 0; min-width: 0; color: var(--ink-900); font: var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); overflow-wrap: anywhere; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-imported-hold small { color: var(--ink-600); font-size: var(--ifx-text-xs); }
-.if-srp-mobile-list .inventory-mobile-row__supporting { display:grid; gap:var(--ifx-space-0); padding-block:var(--ifx-space-0); border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.if-srp-mobile-list .inventory-mobile-row__supporting { display:grid; gap:var(--ifx-space-0-5); padding:var(--ifx-space-1); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--ifx-evidence-surface); }
 .if-srp-mobile-list .inventory-mobile-row__equipment { grid-column:1 / -1; display:flex; align-items:baseline; min-width:0; gap:var(--ifx-space-2); }
 .if-srp-mobile-list .inventory-mobile-row__equipment > small { flex:none; color:var(--ink-600); font-size:var(--ifx-text-xs); }
 .if-srp-mobile-list .inventory-mobile-decision > span { display:grid; gap:var(--ifx-space-0-5); text-align:left; }
@@ -92,3 +78,38 @@
 .if-srp-mobile-list .inventory-mobile-decision strong { color:var(--ink-900); font:var(--ifx-weight-medium) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); overflow-wrap:anywhere; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__specification { display:flex; flex-wrap:wrap; gap:var(--ifx-space-1); margin:0; color:var(--ink-900); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); }
 .if-srp-mobile-list .inventory-mobile-row__specification > span { color:var(--ink-600); font-size:var(--ifx-text-xs); }
+
+.if-srp-mobile-list .inventory-mobile-row__copy-facts { grid-column:1 / -1; min-width:0; border-block:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts .inv-desk-vehicle__facts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:var(--ifx-space-1); margin:0; padding:0; }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts .inv-desk-vehicle__facts > div { position:relative; display:grid; grid-template-columns:minmax(0,1fr); align-content:center; gap:var(--ifx-space-0-5); min-width:0; min-height:var(--ifx-control-height-md); padding-right:var(--ifx-control-height-md); }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts dt { color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts dd { min-width:0; margin:0; color:var(--ink-900); font:var(--ifx-weight-medium) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts .inv-desk-vehicle__facts .copyable-value { display:block; position:static; width:100%; }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts .copyable-value__button { position:absolute; top:0; right:0; width:var(--ifx-control-height-md); height:var(--ifx-control-height-md); justify-content:center; }
+
+.if-srp-mobile-list .vehicle-resource-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+
+.if-srp-mobile-list .inventory-registration-facts { display:flex; gap:0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--ifx-evidence-surface); }
+.if-srp-mobile-list .inventory-registration-facts > div { position:relative; display:flex; flex:1; min-width:0; flex-direction:column; justify-content:center; padding:var(--ifx-space-1) calc(var(--ifx-control-height-md) + var(--ifx-space-2)) var(--ifx-space-1) var(--ifx-space-2); font-size:var(--ifx-text-xs); line-height:var(--ifx-leading-compact); }
+.if-srp-mobile-list .inventory-registration-facts .copyable-value { position:static; padding-right:0; }
+.if-srp-mobile-list .inventory-registration-facts .copyable-value__button { top:50%; right:var(--ifx-space-2); bottom:auto; transform:translateY(-50%); }
+.if-srp-mobile-list .inventory-registration-facts > div + div { border-left:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+.if-srp-mobile-list .inventory-mobile-row__supporting .inventory-mobile-row__captured-facts > div + div { padding-top:var(--ifx-space-0-5); border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+
+/* Narrow phones give price its own line and enough width to each identifier. */
+@media (max-width:360px) {
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation { grid-template-columns:minmax(0,1fr) auto; }
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > b { grid-column:1 / -1; }
+  .if-srp-mobile-list .inventory-mobile-row__copy-facts .inv-desk-vehicle__facts { grid-template-columns:minmax(0,max-content) minmax(max-content,1fr); }
+  .if-srp-mobile-list .inventory-mobile-row__copy-facts .inv-desk-vehicle__facts > div { padding-block:var(--ifx-space-1); font-size:var(--ifx-text-xs); line-height:var(--ifx-leading-compact); }
+}
+
+/* Phone records use the same joined source evidence after their direct actions. */
+.if-srp-mobile-list .inventory-source-band { display:block; border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+.if-srp-mobile-list .inventory-source-band__source.vehicle-resources { border-left:0; border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); padding:var(--ifx-space-2); }
+.if-srp-mobile-list .inventory-mobile-row__supporting { border:0; border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); padding:var(--ifx-space-2); background:var(--surface); }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts dd,
+.if-srp-mobile-list .inventory-registration-facts dd,
+.if-srp-mobile-list .inventory-mobile-row__captured-facts dd { font-size:var(--ifx-text-md); }
+.if-srp-mobile-list .inventory-mobile-row__copy-facts .copyable-value__content { overflow-wrap:anywhere; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual img { object-fit:contain; }

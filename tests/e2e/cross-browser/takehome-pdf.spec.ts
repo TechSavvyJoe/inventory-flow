@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { PDFDocument } from 'pdf-lib'
 import type { Server } from 'node:http'
+import type { BootstrapData } from '../../../src/types'
 // @ts-expect-error — the synthetic preview server is a plain JavaScript adapter.
 import { createExtensionPreviewServer } from '../../../scripts/preview-extension.mjs'
 
@@ -55,7 +56,11 @@ test('app saves and shares an actual PDF with recovery when file sharing is unav
   await verifyDownload(await fallback)
   await expect(sheet.getByRole('status')).toHaveText('PDF saved. Share that file with your customer.')
   await sheet.getByRole('combobox', { name:'Format' }).selectOption('comparison')
-  await expect(sheet.getByRole('img', { name:/Scan to open .* listing/ })).toBeVisible()
+  const comparison = sheet.getByRole('article', { name:'Vehicle comparison · Page 1 of 1' })
+  await expect(comparison).toBeVisible()
+  await expect(comparison.getByRole('img', { name:/Scan to open .* listing/ })).toHaveCount(0)
+  await expect(comparison.getByText('Ask dealership', { exact: true })).toHaveCount(1)
+  await expect(comparison.getByText('for details', { exact: true })).toHaveCount(1)
   const compared = page.waitForEvent('download')
   await save.click()
   expect((await verifyDownload(await compared, 1)).getPage(0).getSize()).toEqual({width:792,height:612})
@@ -73,6 +78,47 @@ test('app saves and shares an actual PDF with recovery when file sharing is unav
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
   await expect(workspace).toBeVisible()
+})
+
+test('app creates a listing QR for an explicitly listed nonreserved synthetic VIN', async ({ page }) => {
+  // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS: the route injects a valid
+  // synthetic identifier and URL into the isolated demo response only.
+  const fixtureVin = 'TESTDATAHWELL0001'
+  const syntheticVin = 'Z9ZTEST0000000001'
+  const listingUrl = 'https://example.com/synthetic-inventory/f150'
+  expect(syntheticVin).toHaveLength(17)
+  expect(syntheticVin).toMatch(/^[A-HJ-NPR-Z0-9]{17}$/)
+
+  await page.addInitScript(() => { localStorage.setItem('maxey-role','sales'); localStorage.setItem('maxey-home-store','Howell') })
+  let externalListingRequests = 0
+  await page.route('https://example.com/**', async route => {
+    externalListingRequests += 1
+    await route.abort()
+  })
+  await page.route('**/api/bootstrap?**', async route => {
+    expect(route.request().method()).toBe('GET')
+    const response = await route.fetch()
+    expect(response.ok()).toBe(true)
+    const payload = await response.json() as BootstrapData
+    expect(payload.vehicles.every(vehicle => vehicle.vin.startsWith('TESTDATA'))).toBe(true)
+    const vehicle = payload.vehicles.find(candidate => candidate.vin === fixtureVin)
+    expect(vehicle).toBeTruthy()
+    vehicle!.vin = syntheticVin
+    vehicle!.listingUrl = listingUrl
+    await route.fulfill({ response, json:payload })
+  })
+
+  await page.goto(`/inventory?scope=group&vin=${syntheticVin}`)
+  const workspace = page.getByRole('dialog', { name:/vehicle workspace/ })
+  await workspace.getByRole('button', { name:'Take-home page', exact:true }).click()
+  const sheet = page.getByRole('dialog', { name:/Take-home page/ })
+  await sheet.getByRole('combobox', { name:'Format' }).selectOption('comparison')
+  const comparison = sheet.getByRole('article', { name:'Vehicle comparison · Page 1 of 1' })
+  const qr = comparison.getByRole('img', { name:/Scan to open .* listing/ })
+  await expect(qr).toBeVisible()
+  await expect(qr).toHaveAttribute('src', /^data:image\/svg\+xml,/)
+  await expect(comparison.getByRole('link', { name:/Open .* listing/ })).toHaveAttribute('href', listingUrl)
+  expect(externalListingRequests).toBe(0)
 })
 
 test('companion exports one branded PDF containing both customer vehicles', async ({ page }) => {

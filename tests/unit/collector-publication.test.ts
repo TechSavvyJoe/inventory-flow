@@ -750,6 +750,9 @@ describe('Brokered publication and independent tenant receipt',()=>{
   const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish,later=new Date(now.getTime()+45000)
   const otherRequest=await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic independent queued work',expectedRevision:revision(f)},'proof-other-request')
   const history={...f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get(),id:'synthetic-historical-attempt',request_id:otherRequest.id,claim_key:'synthetic-historical-claim',stage:'expired',failure_code:'DURATION_EXCEEDED',completed_at:now.toISOString()}
+  // Independent history must retain its own request and configuration identity.
+  const historyConfig={...JSON.parse(history.config_json),requestIds:[otherRequest.id],targetConnectionId:f.dealers[1].connectionId}
+  history.config_json=JSON.stringify(historyConfig);history.config_sha256=await digest(historyConfig)
   const columns=Object.keys(history)
   f.sqlite.prepare(`INSERT INTO platform_collector_attempts (${columns.join(',')}) VALUES (${columns.map(()=>'?').join(',')})`).run(...Object.values(history))
   if(proof==='preflight')delete f.tenantEnv.RELEASE_ENCRYPTION_KEY_BASE64
@@ -868,6 +871,9 @@ describe('Brokered publication and independent tenant receipt',()=>{
   const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
   const otherRequest=await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic independently queued request',expectedRevision:revision(f)},'superseded-other-request')
   const historical={...f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get(),id:'synthetic-prior-receipt-attempt',request_id:otherRequest.id,claim_key:'synthetic-prior-receipt-claim',stage:'expired',failure_code:'DURATION_EXCEEDED',completed_at:now.toISOString()}
+  // Independent history must retain its own request and configuration identity.
+  const historicalConfig={...JSON.parse(historical.config_json),requestIds:[otherRequest.id],targetConnectionId:f.dealers[1].connectionId}
+  historical.config_json=JSON.stringify(historicalConfig);historical.config_sha256=await digest(historicalConfig)
   const historicalColumns=Object.keys(historical)
   f.sqlite.prepare(`INSERT INTO platform_collector_attempts (${historicalColumns.join(',')}) VALUES (${historicalColumns.map(()=>'?').join(',')})`).run(...Object.values(historical))
   const queued=f.sqlite.prepare('SELECT * FROM platform_pull_requests WHERE id=?').get(otherRequest.id)

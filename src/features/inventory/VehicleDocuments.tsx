@@ -35,6 +35,7 @@ import { WarrantyOutlook } from "./WarrantyOutlook";
 import { ServiceHistory } from "./ServiceHistory";
 import { calculatedWarrantyMiles } from "../../../extension/sidepanel/lib/vehicle-rules-core.mjs";
 import type { DealerMailHoldEvidence, InventoryVehicle, SourceDataState, WarrantyCheckCoverage } from "./types";
+import { SourceWordmark } from "../../components/SourceWordmark";
 
 export function compactSourcePrice(value: number | null | undefined, sticker?: InventoryVehicle["windowSticker"]): string {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -108,6 +109,11 @@ function oemThemeToken(make: string): "ford" | "lincoln" | "generic" {
   if (normalized === "ford") return "ford";
   if (normalized === "lincoln") return "lincoln";
   return "generic";
+}
+
+function oemWordmarkBrand(make: string) {
+  const normalized = make.trim().toLowerCase()
+  return normalized === 'ford' || normalized === 'lincoln' || normalized === 'chevrolet' ? normalized : null
 }
 
 function countLabel(count: number, singular: string, plural = `${singular}s`): string {
@@ -190,7 +196,7 @@ function WindowStickerWordmark({ make }: { make: string }) {
       role="img"
       aria-label={`${brand} factory window sticker`}
     >
-      {brand.toLowerCase() === "ford" ? <img src="/resource-brands/ford.svg" alt="" /> : <span aria-hidden="true">{brand}</span>}
+      <SourceWordmark brand={oemWordmarkBrand(brand)} label={brand} />
     </span>
   );
 }
@@ -765,7 +771,9 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             <span className="inventory-vehicle-document__title">
               <strong>Remaining factory warranty</strong>
               <small>
-                {warrantyPrimaryIsOasis ? "OASIS coverage record" : `${warrantyEstimateLabel} estimate`}
+                {warrantyPrimaryIsOasis
+                  ? <SourceWordmark brand="ford" label="OASIS coverage record" />
+                  : <SourceWordmark brand={warrantyEstimateIsCarfax ? 'carfax' : 'autocheck'} label={`${warrantyEstimateLabel} estimate`} />}
               </small>
             </span>
             <DataState state={warrantyCheck.dataState} />
@@ -800,8 +808,8 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               : `${warrantyEstimateLabel} estimates remaining factory coverage using the report’s date and mileage basis. Title, ownership and manufacturer restrictions may affect eligibility.`}
             {" "}Verify with the store before quoting coverage to a customer. Certification and service plans are separate.
           </p>
-          {[{ label: "AutoCheck", block: warrantyCheck.autoCheck }, { label: "CARFAX", block: warrantyCheck.carfax }].filter(source => source.block?.coverages.length && source.block !== warrantyPrimary).map(source => <details className="vdp-record-source-details" key={source.label}>
-            <summary>{source.label} warranty estimate · {source.block!.coverages.length} coverage types<ChevronDown size={14} aria-hidden="true" /></summary>
+          {[{ label: "AutoCheck", brand: 'autocheck' as const, block: warrantyCheck.autoCheck }, { label: "CARFAX", brand: 'carfax' as const, block: warrantyCheck.carfax }].filter(source => source.block?.coverages.length && source.block !== warrantyPrimary).map(source => <details className="vdp-record-source-details" key={source.label}>
+            <summary><SourceWordmark brand={source.brand} label={`${source.label} warranty estimate`} /> · {source.block!.coverages.length} coverage types<ChevronDown size={14} aria-hidden="true" /></summary>
             <div><p>Report estimate at {formatMileage(warrantyCheck.mileageEntered)}. Confirm manufacturer eligibility before quoting.</p><CapturedWarrantyTable coverages={source.block!.coverages} label={`${source.label} factory warranty estimate`} mileage={vehicle.mileage} /></div>
           </details>)}
         </article> : null) },

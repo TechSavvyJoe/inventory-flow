@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error Capture parser runs directly in Node ESM without frontend declarations.
-import { assessOasisCapture, compareOasisEnrichment, parseOasisFull } from '../../scripts/lib/oasis-parser.mjs'
+import { assessOasisCapture, compareOasisEnrichment, parseOasisFull, validateSavedOasisRecords } from '../../scripts/lib/oasis-parser.mjs'
 
 const report = (section: string) => `<html><body>OASIS RESULT: VEHICLE DESCRIPTION: SYNTHETIC TEST VEHICLE ${section}</body></html>`
 describe('OASIS captured action evidence', () => {
@@ -52,6 +52,20 @@ describe('OASIS captured action evidence', () => {
   })
   it('does not accept a non-OASIS page', () => {
     expect(parseOasisFull('<html>Sign in</html>')).toBeNull()
+  })
+  it('binds each parsed report to the requested VIN without retaining the source VIN', () => {
+    const html = report('VIN: TESTDATASYN000001 OUTSTANDING FIELD SERVICE ACTIONS: NO CAMPAIGN MESSAGE(S) FOUND GENERAL WARRANTY INFORMATION')
+    expect(parseOasisFull(html, 'TESTDATASYN000001')?.sourceVinStatus).toBe('matched')
+    expect(parseOasisFull(html, 'TESTDATASYN000002')?.sourceVinStatus).toBe('mismatch')
+    expect(parseOasisFull(report('OUTSTANDING FIELD SERVICE ACTIONS: NO CAMPAIGN MESSAGE(S) FOUND GENERAL WARRANTY INFORMATION'), 'TESTDATASYN000001')?.sourceVinStatus).toBe('missing')
+    expect(JSON.stringify(parseOasisFull(html, 'TESTDATASYN000001'))).not.toContain('TESTDATASYN000001')
+  })
+  it('warns past malformed entries in a valid saved records array', () => {
+    const record = { vin: 'TESTDATASYN000001', openActionsCaptured: true, openFieldServiceActionCount: 0, openFieldServiceActions: [] }
+    const invalidState = { ...record, openFieldServiceActionCount: '0' }
+    const invalidVin = { ...record, vin: 'NOT-A-VIN' }
+    expect(validateSavedOasisRecords([null, 17, [], invalidState, invalidVin, record])).toEqual({ records: [record], skipped: 5 })
+    expect(validateSavedOasisRecords({ records: [] })).toEqual({ records: [], skipped: 0 })
   })
   it('blocks a full capture with a missing or unverified action result', () => {
     const worklist = [{ vin: 'VIN1' }, { vin: 'VIN2' }]

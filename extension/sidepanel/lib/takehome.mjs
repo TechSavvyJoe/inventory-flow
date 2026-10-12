@@ -63,58 +63,76 @@ export function takeHomeModel(vehicle, photos = []) {
 const money = (value) => (value === null || value === undefined ? null : fmt.formatMoney(value))
 
 export function renderTakeHome(model, { now = new Date() } = {}) {
-  const documentPhotos = [...new Set(model.photos)].slice(0, 3)
-  const heroPhoto = documentPhotos[0] ?? null
-  const supportingPhotos = documentPhotos.slice(1)
-  const railHighlights = supportingPhotos.length ? [] : model.highlights.slice(0, 4)
-  const remainingHighlights = model.highlights.slice(railHighlights.length)
-  const equipmentCap = heroPhoto ? 24 : model.description ? 30 : 36
-  const additionalEquipment = model.equipment.filter(label => !model.highlights.includes(label))
-  const hidden = Math.max(0, additionalEquipment.length - equipmentCap)
-  const site = model.storeSite
-  const listing = safeListingUrl(model.listingUrl)
-  return el('article', { class: 'th' },
-    el('header', { class: 'th-head' },
-      model.brand ? el('img', { class: `th-logo ${model.brand.wide ? '' : 'is-square'}`.trim(), src: model.brand.src, alt: model.brand.alt }) : el('b', { class: 'th-logo-text', text: model.storeName }),
-      el('div', { class: 'th-store' }, el('b', { text: model.storeName }), site ? el('span', { text: site }) : null),
-    ),
-    el('section', { class: 'th-title' },
-      el('div', {}, el('h1', { text: model.name }), model.descriptor ? el('p', { text: model.descriptor }) : null),
-      model.certified ? el('span', { class: 'th-title-cert' }, icon('check', { size: 14 }), model.certified.name) : null,
-    ),
-    el('section', { class: 'th-hero' },
-      el('div', { class: 'th-photos' },
-        heroPhoto ? el('img', { class: 'th-photo', src: heroPhoto, alt: model.name, referrerpolicy: 'no-referrer' }) : el('div', { class: 'th-photo th-photo-empty' }, icon('image', { size: 22 }), el('span', { text: 'Photos available at the store' })),
+  // Each customer document owns its failures; model URLs remain unchanged.
+  const failedImages = new Set()
+  let sheet
+  function markImageFailed(url) {
+    if (failedImages.has(url)) return
+    failedImages.add(url)
+    const replacement = render()
+    // Keep the listing/footer DOM stable if an image fails while a customer
+    // is using its link. Photo, highlight and equipment sections stay aligned.
+    const currentSections = [...sheet.children], nextSections = [...replacement.children]
+    currentSections.forEach((section, index) => {
+      if (!section.classList.contains('th-foot')) section.replaceWith(nextSections[index])
+    })
+  }
+  function render() {
+    const documentPhotos = [...new Set(model.photos)].slice(0, 3).filter(url => !failedImages.has(url))
+    const heroPhoto = documentPhotos[0] ?? null
+    const supportingPhotos = documentPhotos.slice(1)
+    const railHighlights = supportingPhotos.length ? [] : model.highlights.slice(0, 4)
+    const remainingHighlights = model.highlights.slice(railHighlights.length)
+    const equipmentCap = heroPhoto ? 24 : model.description ? 30 : 36
+    const additionalEquipment = model.equipment.filter(label => !model.highlights.includes(label))
+    const hidden = Math.max(0, additionalEquipment.length - equipmentCap)
+    const site = model.storeSite
+    const listing = safeListingUrl(model.listingUrl)
+    return el('article', { class: 'th' },
+      el('header', { class: 'th-head' },
+        model.brand && !failedImages.has(model.brand.src) ? el('img', { class: `th-logo ${model.brand.wide ? '' : 'is-square'}`.trim(), src: model.brand.src, alt: model.brand.alt, onerror:() => markImageFailed(model.brand.src) }) : el('b', { class: 'th-logo-text', text: model.storeName }),
+        el('div', { class: 'th-store' }, el('b', { text: model.storeName }), site ? el('span', { text: site }) : null),
       ),
-      el('div', { class: 'th-hero-rail' },
-        el('dl', { class: 'th-price' },
-          el('div', { class: 'th-price-main' }, el('dt', { text: 'Price' }), el('dd', { text: money(model.price) ?? 'Call for price' })),
-          model.mileage !== null && model.mileage !== undefined ? el('div', {}, el('dt', { text: 'Mileage' }), el('dd', { text: fmt.formatMileage(model.mileage) })) : null,
-          el('div', {}, el('dt', { text: 'Stock' }), el('dd', { class: 'th-mono', text: model.stockNumber })),
+      el('section', { class: 'th-title' },
+        el('div', {}, el('h1', { text: model.name }), model.descriptor ? el('p', { text: model.descriptor }) : null),
+        model.certified ? el('span', { class: 'th-title-cert' }, icon('check', { size: 14 }), model.certified.name) : null,
+      ),
+      el('section', { class: 'th-hero' },
+        el('div', { class: 'th-photos' },
+          heroPhoto ? el('img', { class: 'th-photo', src: heroPhoto, alt: model.name, referrerpolicy: 'no-referrer', onerror:() => markImageFailed(heroPhoto) }) : el('div', { class: 'th-photo th-photo-empty' }, icon('image', { size: 22 }), el('span', { text: 'Photos available at the store' })),
         ),
-        supportingPhotos.length ? el('div', { class: `th-thumbs ${supportingPhotos.length === 1 ? 'is-single' : ''}`.trim() }, ...supportingPhotos.map((src, index) => el('img', { src, alt: `${model.name} view ${index + 2}`, referrerpolicy: 'no-referrer' }))) : railHighlights.length ? el('div', { class: 'th-quick' }, el('b', { text:'Standout features' }), el('ul', {}, ...railHighlights.map(label => el('li', { text:label })))) : null,
+        el('div', { class: 'th-hero-rail' },
+          el('dl', { class: 'th-price' },
+            el('div', { class: 'th-price-main' }, el('dt', { text: 'Price' }), el('dd', { text: money(model.price) ?? 'Call for price' })),
+            model.mileage !== null && model.mileage !== undefined ? el('div', {}, el('dt', { text: 'Mileage' }), el('dd', { text: fmt.formatMileage(model.mileage) })) : null,
+            el('div', {}, el('dt', { text: 'Stock' }), el('dd', { class: 'th-mono', text: model.stockNumber })),
+          ),
+          supportingPhotos.length ? el('div', { class: `th-thumbs ${supportingPhotos.length === 1 ? 'is-single' : ''}`.trim() }, ...supportingPhotos.map((src, index) => el('img', { src, alt: `${model.name} view ${index + 2}`, referrerpolicy: 'no-referrer', onerror:() => markImageFailed(src) }))) : railHighlights.length ? el('div', { class: 'th-quick' }, el('b', { text:'Standout features' }), el('ul', {}, ...railHighlights.map(label => el('li', { text:label })))) : null,
+        ),
       ),
-    ),
-    el('dl', { class: 'th-identity' },
-      el('div', {}, el('dt', { text: 'VIN' }), el('dd', { class: 'th-mono', text: model.vin })),
-      model.history ? el('div', {}, el('dt', { text: 'Vehicle history' }), el('dd', { text: model.history })) : null,
-    ),
-    el('section', { class: 'th-grid' },
-      el('div', { class: 'th-block' }, el('h2', { text: 'Specifications' }), el('dl', { class: 'th-specs' }, ...model.specs.map(([label, value]) => el('div', {}, el('dt', { text: label }), el('dd', { text: value }))))),
-      el('div', { class: 'th-block' }, el('h2', { text: 'Highlights' }), remainingHighlights.length ? el('ul', { class: 'th-chips' }, ...remainingHighlights.map((label) => el('li', { text: label }))) : el('p', { class: 'th-muted', text: 'Ask us about the equipment on this vehicle.' })),
-    ),
-    additionalEquipment.length ? el('section', { class: 'th-block' }, el('h2', { text: `Additional equipment · ${additionalEquipment.length}` }), el('ul', { class: 'th-equipment' }, ...additionalEquipment.slice(0, equipmentCap).map((label) => el('li', { text: label })), hidden ? el('li', { class: 'th-muted', text: `+ ${hidden} more captured items · ask the store for the complete list` }) : null)) : null,
-    model.description || model.certified ? el('section', { class: `th-bottom-grid ${model.description && model.certified ? '' : 'is-single'}`.trim() },
-      model.description ? el('div', { class: 'th-block' }, el('h2', { text: 'About this vehicle' }), el('p', { class: 'th-desc', text: model.description })) : null,
-      model.certified ? el('div', { class: 'th-block th-cert-block' },
-        el('span', { class: `th-cert th-cert-${model.certified.brand ?? 'generic'}` }, model.certified.brand ? el('img', { src: `../resource-brands/${model.certified.brand === 'ford' ? 'ford-blue-certified.svg' : 'lincoln-certified.png'}`, alt: model.certified.name }) : icon('badge-check', { size: 14 })),
-        el('div', {}, el('h2', { text: model.certified.name }), el('ul', { class: 'th-terms' }, ...model.certified.terms.map((term) => el('li', { text: term }))), model.certified.note ? el('p', { class: 'th-cert-note', text: model.certified.note }) : null),
+      el('dl', { class: 'th-identity' },
+        el('div', {}, el('dt', { text: 'VIN' }), el('dd', { class: 'th-mono', text: model.vin })),
+        model.history ? el('div', {}, el('dt', { text: 'Vehicle history' }), el('dd', { text: model.history })) : null,
+      ),
+      el('section', { class: 'th-grid' },
+        el('div', { class: 'th-block' }, el('h2', { text: 'Specifications' }), el('dl', { class: 'th-specs' }, ...model.specs.map(([label, value]) => el('div', {}, el('dt', { text: label }), el('dd', { text: value }))))),
+        el('div', { class: 'th-block' }, el('h2', { text: 'Highlights' }), remainingHighlights.length ? el('ul', { class: 'th-chips' }, ...remainingHighlights.map((label) => el('li', { text: label }))) : el('p', { class: 'th-muted', text: 'Ask us about the equipment on this vehicle.' })),
+      ),
+      additionalEquipment.length ? el('section', { class: 'th-block' }, el('h2', { text: `Additional equipment · ${additionalEquipment.length}` }), el('ul', { class: 'th-equipment' }, ...additionalEquipment.slice(0, equipmentCap).map((label) => el('li', { text: label })), hidden ? el('li', { class: 'th-muted', text: `+ ${hidden} more captured items · ask the store for the complete list` }) : null)) : null,
+      model.description || model.certified ? el('section', { class: `th-bottom-grid ${model.description && model.certified ? '' : 'is-single'}`.trim() },
+        model.description ? el('div', { class: 'th-block' }, el('h2', { text: 'About this vehicle' }), el('p', { class: 'th-desc', text: model.description })) : null,
+        model.certified ? el('div', { class: 'th-block th-cert-block' },
+          el('span', { class: `th-cert th-cert-${model.certified.brand ?? 'generic'}` }, model.certified.brand ? el('img', { src: `../resource-brands/${model.certified.brand === 'ford' ? 'ford-blue-certified.svg' : 'lincoln-certified.png'}`, alt: model.certified.name }) : icon('badge-check', { size: 14 })),
+          el('div', {}, el('h2', { text: model.certified.name }), el('ul', { class: 'th-terms' }, ...model.certified.terms.map((term) => el('li', { text: term }))), model.certified.note ? el('p', { class: 'th-cert-note', text: model.certified.note }) : null),
+        ) : null,
       ) : null,
-    ) : null,
-    el('footer', { class: 'th-foot' },
-      listing ? el('a', { class: 'th-listing-link', href: listing, target: '_blank', rel: 'noopener noreferrer' }, 'View vehicle listing', icon('external', { size: 14 })) : null,
-      el('span', { text: `Prepared ${fmt.formatDate(now)} · ${model.storeName}${site ? ` · ${site}` : ''}` }),
-      el('span', { text: 'Price excludes tax, title, license and dealer fees. Vehicle information is believed accurate but not guaranteed; confirm equipment, mileage and availability with the dealership before purchase.' }),
-    ),
-  )
+      el('footer', { class: 'th-foot' },
+        listing ? el('a', { class: 'th-listing-link', href: listing, target: '_blank', rel: 'noopener noreferrer' }, 'View vehicle listing', icon('external', { size: 14 })) : null,
+        el('span', { text: `Prepared ${fmt.formatDate(now)} · ${model.storeName}${site ? ` · ${site}` : ''}` }),
+        el('span', { text: 'Price excludes tax, title, license and dealer fees. Vehicle information is believed accurate but not guaranteed; confirm equipment, mileage and availability with the dealership before purchase.' }),
+      ),
+    )
+  }
+  sheet = render()
+  return sheet
 }

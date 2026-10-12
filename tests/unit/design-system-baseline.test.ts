@@ -54,4 +54,24 @@ describe('design baseline release checkout stability', () => {
     expect(result.stderr).toContain('rawColors increased from 1 to 2')
     expect(await readFile(f.path, 'utf8')).toBe(f.original)
   })
+
+  it.each([
+    ['important', '.surface { color: var(--text) !important; }'],
+    ['idSelectors', '#surface { color: var(--text); }'],
+  ])('cannot accept an increase in the absolute %s ban', async (metric, css) => {
+    const f = await fixture(0, 0)
+    await writeFile(join(f.root, 'src/theme.css'), css)
+    const result = spawnSync(process.execPath, ['scripts/check-design-system.mjs', '--accept'], { cwd: f.root, encoding: 'utf8' })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`${metric} increased from 0 to 1`)
+    expect(await readFile(f.path, 'utf8')).toBe(f.original)
+  })
+
+  it('accepts reviewable color debt without weakening absolute metrics', async () => {
+    const f = await fixture(0, 1)
+    const result = spawnSync(process.execPath, ['scripts/check-design-system.mjs', '--accept'], { cwd: f.root, encoding: 'utf8' })
+    expect(result.status).toBe(0)
+    const metrics = JSON.parse(await readFile(f.path, 'utf8')).files['src/theme.css']
+    expect(metrics).toMatchObject({ rawColors: 1, important: 0, idSelectors: 0 })
+  })
 })

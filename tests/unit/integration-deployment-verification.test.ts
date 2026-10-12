@@ -3,6 +3,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { oauthDiscovery, oauthReady, parseExpectedMetadata, reconcileExpectedMetadata, verificationPassed } from '../../scripts/verify-integration-deployment.mjs'
+import { integrationExpectedMetadata } from '../../scripts/publication-followup-metadata.mjs'
+// @ts-expect-error -- the canonical release hasher is plain ESM.
+import { cloudBundleSha256 } from '../../scripts/publish-cloud-release.mjs'
 
 const HOST = 'https://inventory-data.joegallant.me'
 const ISSUER = 'https://techsavvyjoe.cloudflareaccess.com/cdn-cgi/access/sso/oidc/test'
@@ -66,16 +69,47 @@ describe('integration deployment verification gates', () => {
 
   it('reconciles the public-only integration projection instead of the broader app inventory', () => {
     const publisher = readFileSync(new URL('../../scripts/daily-cloud-publish.ps1', import.meta.url), 'utf8')
-    const expectedMetadata = publisher.slice(
-      publisher.indexOf('function Update-IntegrationExpectedMetadata'),
-      publisher.indexOf('function Assert-IntegrationDeployment'),
-    )
-    expect(expectedMetadata).toContain('$Receipt.counts.publicStoreCounts')
-    expect(expectedMetadata).toContain('$Receipt.counts.publicRowCount')
-    expect(expectedMetadata).toContain('managerDispositionOverlay.records')
-    expect(expectedMetadata).toContain('deliveredManagerLog')
-    expect(expectedMetadata).not.toContain('activeStoreCounts')
-    expect(expectedMetadata).not.toContain('activeInventoryCount')
+    const bundle = {
+      complete: true,
+      reportDate: '2026-09-25',
+      release: {
+        reportDate: '2026-09-25',
+        vehicles: [
+          { publicRecord: { vin: '1FMCU9GDXRUA00001', store: 'Howell' } },
+          { publicRecord: { vin: '1FMCU9GDXRUA00002', store: 'Howell' } },
+          { publicRecord: { vin: '1FMCU9GDXRUA00003', store: 'Fowlerville' } },
+          { publicRecord: { vin: '1FMCU9GDXRUA00004', store: 'Ford Detroit' } },
+          { publicRecord: { vin: '1FMCU9GDXRUA00005', store: 'Lincoln' } },
+          { dealerMailRecord: { vin: '1FMCU9GDXRUA00006', store: 'Lincoln' } },
+        ],
+        managerDispositionOverlay: { records: [
+          { vin: '1FMCU9GDXRUA00002', deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched' },
+        ] },
+      },
+    }
+    const receipt = {
+      complete: true,
+      status: 'published_and_verified',
+      reportDate: '2026-09-25',
+      bundleSha256: cloudBundleSha256(bundle),
+      verifiedAt: '2026-09-25T14:00:00Z',
+      counts: { publicRowCount: 5, publicStoreCounts: { Howell: 2, Fowlerville: 1, 'Ford Detroit': 1, Lincoln: 1 } },
+    }
+
+    expect(integrationExpectedMetadata({ bundle, receipt, reportDate: receipt.reportDate })).toEqual({
+      bundleSha256: receipt.bundleSha256,
+      total: 4,
+      byStore: { Howell: 1, Fowlerville: 1, 'Ford Detroit': 1, Lincoln: 1 },
+    })
+    expect(() => integrationExpectedMetadata({ bundle, receipt: { ...receipt, bundleSha256: 'a'.repeat(64) }, reportDate: receipt.reportDate }))
+      .toThrow('RETAINED_RELEASE_RECEIPT_MISMATCH')
+    expect(() => integrationExpectedMetadata({ bundle, receipt: { ...receipt, counts: { ...receipt.counts, publicRowCount: 6 } }, reportDate: receipt.reportDate }))
+      .toThrow('VERIFIED_RECEIPT_STORE_COUNTS_INVALID')
+
+    // The PowerShell publisher delegates expected-count calculation to this
+    // receipt-bound helper, which emits only the fields the verifier accepts.
+    expect(publisher).toContain("'scripts\\publication-followup-metadata.mjs'")
+    expect(publisher).toContain('INVENTORY_OPS_FOLLOWUPS_ONLY_BUNDLE_SHA256')
   })
 
   it('follows synthetic OAuth discovery without logging metadata payloads', async () => {

@@ -1,7 +1,7 @@
 import { importJWK, SignJWT } from 'jose'
 import { platformOwner, tenantDatabase } from './platform-admin.mjs'
 import { collectorIdentity } from './collector-auth.mjs'
-import { currentAttempt, attemptGuard, scopeGuard, machineAudit } from './collector-execution.mjs'
+import { currentAttempt, attemptGuard, scopeGuard, machineAudit, attemptRequestIds, attemptRequestIdsSql, attemptRequestsGuardSql } from './collector-execution.mjs'
 import { canonical, collectorFail, digest, exactFields, executionEnabled, sha, text } from './collector-common.mjs'
 import { decryptEnvelope, publishRelease, readReleaseWithIdentity, releaseReadiness, validatedReleaseCounts } from './worker.mjs'
 import { verifyPublicationTicket, assertPublicationFence } from './collector-publication-guards.mjs'
@@ -26,9 +26,9 @@ export async function publicationTicket(env,attempt,operation,now=new Date()) {
  return new SignJWT({operation,groupId:attempt.group_id,collectorId:attempt.collector_id,attemptId:attempt.id,fence:attempt.fence,grantGeneration:attempt.grant_generation,configSha256:attempt.config_sha256,scopeSha256:attempt.scope_sha256,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date}).setProtectedHeader({alg:'EdDSA'}).setIssuer('inventory-flow-collector-control').setAudience(`tenant/${attempt.group_id}`).setJti(`${attempt.id}:${attempt.fence}:${operation}`).setIssuedAt(issued).setExpirationTime(issued+30).sign(key)
 }
 
-const unknown = (db,id,requestId,date)=>db.batch([
- db.prepare("UPDATE platform_collector_attempts SET stage='reconciliation_required',failure_code='COLLECTOR_PUBLICATION_UNKNOWN' WHERE id=? AND stage='publishing'").bind(id),
- db.prepare("UPDATE platform_pull_requests SET state='reconciliation_required',updated_at=? WHERE id=? AND state='running'").bind(date,requestId),
+const unknown = (db,attempt,date)=>db.batch([
+ db.prepare("UPDATE platform_collector_attempts SET stage='reconciliation_required',failure_code='COLLECTOR_PUBLICATION_UNKNOWN' WHERE id=? AND stage='publishing'").bind(attempt.id),
+ db.prepare("UPDATE platform_pull_requests SET state='reconciliation_required',updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND state='running'").bind(date,canonical(attemptRequestIds(attempt))),
  db.prepare('UPDATE platform_revision SET revision=revision+1 WHERE id=1'),
 ])
 async function verifiedReceipt(env,attempt,binding,now) {
@@ -42,7 +42,7 @@ async function verifiedReceipt(env,attempt,binding,now) {
  try{await db.batch([
  db.prepare('INSERT INTO platform_collector_receipts VALUES(?,1000000,\'publication\',?,?,?)').bind(attempt.id,hash,canonical(safe),date),
  db.prepare("UPDATE platform_collector_attempts SET stage='completed',completed_at=?,failure_code=NULL WHERE id=? AND expected_bundle_sha256=? AND stage IN ('publishing','reconciliation_required')").bind(date,attempt.id,result.bundleSha256),
- db.prepare("UPDATE platform_pull_requests SET state='completed',updated_at=? WHERE id=? AND state IN ('running','reconciliation_required')").bind(date,attempt.request_id),
+ db.prepare("UPDATE platform_pull_requests SET state='completed',updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND state IN ('running','reconciliation_required')").bind(date,canonical(attemptRequestIds(attempt))),
  db.prepare('UPDATE platform_revision SET revision=revision+1 WHERE id=1'),
  machineAudit(db,{id:attempt.collector_id,name:'Tenant publication verifier'},attempt,'publication_verified',{stage:'completed',bundleSha256:result.bundleSha256},`publication:${attempt.id}`,hash,date),
  ])}catch{const replay=await db.prepare("SELECT sanitized_json FROM platform_collector_receipts WHERE attempt_id=? AND kind='publication'").bind(attempt.id).first();if(replay)return JSON.parse(replay.sanitized_json);collectorFail('COLLECTOR_UNAVAILABLE',503)}
@@ -106,8 +106,8 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
    const args=[attempt.id,row.id,attempt.group_id,attempt.request_id,attempt.fence,attempt.grant_generation,attempt.config_sha256,attempt.scope_sha256,attempt.expected_bundle_sha256,attempt.report_date,attempt.config_json,attempt.source_sha256,attempt.capture_counts_json]
    const ownerStopped="failure_code IN ('CANCELLED_BY_OWNER','COLLECTOR_REVOKED')"
    await db.batch([
-    db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required')) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') AND NOT EXISTS(SELECT 1 FROM platform_collector_receipts WHERE attempt_id=? AND kind='publication') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash,attempt.id),
-    db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.${ownerStopped}) THEN 'cancelled' ELSE 'failed' END,updated_at=? WHERE id=? AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(...args,date,attempt.request_id,...args),
+    db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required') AND ${attemptRequestsGuardSql('a',"'running','reconciliation_required'")}) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') AND NOT EXISTS(SELECT 1 FROM platform_collector_receipts WHERE attempt_id=? AND kind='publication') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash,attempt.id),
+    db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.${ownerStopped}) THEN 'cancelled' ELSE 'failed' END,updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND platform_pull_requests.id IN (${attemptRequestIdsSql()}))`).bind(...args,date,canonical(attemptRequestIds(attempt)),...args),
     db.prepare(`UPDATE platform_collector_attempts AS a SET stage=CASE WHEN ${ownerStopped} THEN 'cancelled' ELSE 'expired' END,failure_code=CASE WHEN ${ownerStopped} THEN failure_code ELSE ? END,completed_at=? WHERE ${match}`).bind(dispatched.code,date,...args),
     machineAudit(db,row,attempt,'publication_fence_rejected',dispatched,`fence-rejected:${attempt.id}`,proofHash,date),
    ])
@@ -137,8 +137,8 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
     const guard=scopeGuard(row,scope),match="a.id=? AND a.collector_id=? AND a.group_id=? AND a.request_id=? AND a.fence=? AND a.expected_bundle_sha256=? AND a.stage IN ('publishing','reconciliation_required')",args=[attempt.id,row.id,attempt.group_id,attempt.request_id,attempt.fence,attempt.expected_bundle_sha256]
     const ownerStopped="failure_code IN ('CANCELLED_BY_OWNER','COLLECTOR_REVOKED')"
     await db.batch([
-     db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required')) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash),
-     db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.${ownerStopped}) THEN 'cancelled' WHEN ?=1 AND ?<3 AND ${guard.sql} THEN 'queued' ELSE 'failed' END,updated_at=? WHERE id=? AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(...args,executionEnabled(env)?1:0,attempt.fence,...guard.args,date,attempt.request_id,...args),
+     db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required') AND ${attemptRequestsGuardSql('a',"'running','reconciliation_required'")}) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash),
+     db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.${ownerStopped}) THEN 'cancelled' WHEN ?=1 AND ?<3 AND ${guard.sql} THEN 'queued' ELSE 'failed' END,updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND platform_pull_requests.id IN (${attemptRequestIdsSql()}))`).bind(...args,executionEnabled(env)?1:0,attempt.fence,...guard.args,date,canonical(attemptRequestIds(attempt)),...args),
      db.prepare(`UPDATE platform_collector_attempts SET stage=CASE WHEN ${ownerStopped} THEN 'cancelled' ELSE 'expired' END,failure_code=CASE WHEN ${ownerStopped} THEN failure_code ELSE 'DURATION_EXCEEDED' END,completed_at=? WHERE id=? AND collector_id=? AND group_id=? AND request_id=? AND fence=? AND expected_bundle_sha256=? AND stage IN ('publishing','reconciliation_required')`).bind(date,...args),
      ...proofAudit(),
     ])
@@ -154,9 +154,9 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
    const match="a.id=? AND a.collector_id=? AND a.group_id=? AND a.request_id=? AND a.fence=? AND a.expected_bundle_sha256=? AND a.stage IN ('publishing','reconciliation_required')"
    const args=[attempt.id,row.id,attempt.group_id,attempt.request_id,attempt.fence,attempt.expected_bundle_sha256]
    await db.batch([
-    db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required')) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash),
+    db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id AND p.group_id=a.group_id WHERE ${match} AND p.state IN ('running','reconciliation_required') AND ${attemptRequestsGuardSql('a',"'running','reconciliation_required'")}) AND EXISTS(SELECT 1 FROM platform_audit WHERE actor_id=? AND target_id=? AND request_key=? AND request_hash=? AND action='publication_started') THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args,`collector:${row.id}`,attempt.id,`publish:${key}`,hash),
     db.prepare("INSERT INTO platform_collector_receipts VALUES(?,1000001,'failure',?,?,?)").bind(attempt.id,receiptHash,canonical(receipt),date),
-    db.prepare(`UPDATE platform_pull_requests SET state='failed',updated_at=? WHERE id=? AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(date,attempt.request_id,...args),
+    db.prepare(`UPDATE platform_pull_requests SET state='failed',updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND state IN ('running','reconciliation_required') AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND platform_pull_requests.id IN (${attemptRequestIdsSql()}))`).bind(date,canonical(attemptRequestIds(attempt)),...args),
     db.prepare("UPDATE platform_collector_attempts SET stage='failed',failure_code='VALIDATION_FAILED',completed_at=? WHERE id=? AND collector_id=? AND group_id=? AND request_id=? AND fence=? AND expected_bundle_sha256=? AND stage IN ('publishing','reconciliation_required')").bind(date,...args),
     machineAudit(db,{id:attempt.collector_id,name:'Tenant candidate validator'},attempt,'publication_rejected',{stage:'failed',code:'VALIDATION_FAILED'},`publication-rejected:${attempt.id}`,receiptHash,date),
    ])
@@ -167,7 +167,7 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
   const verified=await verifiedReceipt(env,attempt,binding,currentTime())
   if(verified)return verified
  }catch(error){if(error?.code==='COLLECTOR_PUBLICATION_INVALID')throw error;/* Persist only the fixed uncertain outcome; never a provider error. */}
- await unknown(env.PLATFORM_DB,attempt.id,attempt.request_id,currentTime().toISOString())
+ await unknown(env.PLATFORM_DB,attempt,currentTime().toISOString())
  return {status:'reconciliation_required',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
 }
 

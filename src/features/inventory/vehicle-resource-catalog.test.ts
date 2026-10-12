@@ -11,6 +11,18 @@ function resource(fields: Partial<VehicleResourceVehicle>, id: VehicleResource['
 }
 
 describe('rich vehicle resource catalog', () => {
+  it('keeps captured synthetic OASIS facts while omitting a live source destination', () => {
+    const oasis = resource({
+      vin: 'TESTDATASYN000001',
+      make: 'Ford',
+      fordOasis: { dataState: 'current', sourceLabel: 'Synthetic fabricated record', warrantyCoverages: [{ type: 'Powertrain', description: 'Synthetic coverage' }] },
+    }, 'oasis');
+    expect(oasis.href).toBeNull();
+    expect(oasis.action).toBe('Open OASIS');
+    expect(oasis.hasCapturedData).toBe(true);
+    expect(oasis.facts).toContain('Coverage: Powertrain · Synthetic coverage');
+  });
+
   it('uses the private saved invoice when the daily exact-VIN copy is available', () => {
     const invoice = resource({ fordInvoice: {
       dataState: 'current', available: true, capturedAt: '2026-09-21T20:45:00Z', sourceLabel: 'Saved Ford factory invoice',
