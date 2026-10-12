@@ -40,6 +40,7 @@
   ],
   "vars": {
     "APP_ENV": "production",
+    "EMPLOYEE_WRITES_DISABLED": "true",
     "PRIVATE_HOSTNAME": "inventory-ops.joegallant.me",
     "ACCESS_ISSUER": "https://techsavvyjoe.cloudflareaccess.com",
     "ACCESS_AUDIENCE": "b243147ef0a8b935011b43ed34b5451e44c414c3a7bfe231f9a257039a398040",

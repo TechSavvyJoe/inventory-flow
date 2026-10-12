@@ -4,6 +4,8 @@ Use this before every production deploy of `inventory-ops-production` (app) and 
 
 **Production deployment and migration-ledger backfill require Joe's explicit, release-specific authorization.** By default, agents prepare and test changes without changing production. An agent may execute these steps only when Joe authorizes the exact release in the current session and every gate in this checklist is satisfied, including the controlled-host backup and rollback requirements. That authorization expires with the named release; see [`AGENTS.md`](../AGENTS.md#git-collaboration).
 
+**First manager-approval release:** follow [Approval release recovery](APPROVAL_RELEASE_RECOVERY.md) before any mutation. Establish a verified, approval-capable paused release A, then separately authorize activation B. The checked-in app configuration sets `EMPLOYEE_WRITES_DISABLED: "true"` for A. A merge does not change production; a deploy of this candidate pauses all employee saving. Legacy Workers that permit direct salesperson holds are not valid recovery targets after `0017`.
+
 Both `wrangler.jsonc` files configure the [`version_metadata`](https://developers.cloudflare.com/workers/runtime-apis/bindings/version-metadata/) binding (`CF_VERSION_METADATA`). **Run `pnpm cloud:release` once to release both Workers.** `pnpm cloud:deploy` and `pnpm integrations:deploy` are aliases for the same paired command, not separate steps; one run releases both. The wrapper runs pnpm's own launcher without a shell (its JavaScript entry through Node, or the standalone executable directly; `.cmd`/`.ps1` shims are refused), runs both validation gates, verifies the existing D1 migration ledger with a read-only query, then deploys app followed by integrations with one source tag. Every deployment therefore carries its source commit on the Cloudflare dashboard and in `/api/health` / `/api/v1/data-health`'s `version` field.
 
 **The default requires a clean checkout at `origin/main` after fetch.** `pnpm cloud:release --allow-branch` is the explicit hotfix override and uses `<sha>-branch`; `dist/build.json` and the local receipt also record whether the tree was dirty. Keep the checkout quiet throughout the run. The only supported option is `--allow-branch`: `--dry-run`, the old `app`/`integrations` positional targets, and `--allow-dirty` are rejected before any command runs. For offline validation use `pnpm check` and `pnpm cloud:validate`.
@@ -12,6 +14,7 @@ Both `wrangler.jsonc` files configure the [`version_metadata`](https://developer
 
 - [ ] `pnpm check` passes on a quiet machine (repo-safety guard, design-system ratchet, full test suite, production build). Do not skip it for a "small" change — the September 16 deploy history shows small unmerged changes are exactly what leak to production by accident.
 - [ ] CI is green **on the exact commit being deployed**, not just on an earlier pre-merge tip with byte-identical content claimed by inspection. If `main` has moved since CI last ran, re-run CI on the merged commit before deploying it.
+- [ ] Verify the intended employee-write mode in the reviewed config. Activation requires exact string `"false"`; missing preserves legacy behavior and any other configured value pauses. Confirm the named release authorization covers this mode. For tenant-enabled deployments, structural schema verification uses `--tenant-identity`; the separate tenant filename never belongs in the inventory migration ledger.
 - [ ] `git log` confirms the intended source commit. The paired command deploys both Workers from that one commit and rechecks the checkout before uploading either Worker.
 - [ ] The authorized release operator has verified the actual schema and backfilled the migration ledger using the [controlled production procedure](CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md#d1-migration-ledger-backfill). The wrapper requires every exact filename currently in `cloudflare/migrations/` (currently `0001` through `0017`) and refuses missing, duplicate, unexpected, or unreadable ledger entries. It performs only this read-only query; it never creates the ledger or applies migrations:
   ```sh
@@ -47,7 +50,7 @@ Both `wrangler.jsonc` files configure the [`version_metadata`](https://developer
   wrangler deployments list --config cloudflare/wrangler.jsonc
   wrangler deployments list --config cloudflare/integrations.wrangler.jsonc
   ```
-- [ ] Smoke test: `node scripts/verify-cloud-deployment.mjs readiness` (drives `/internal/readiness`, the publisher-authenticated deep readiness check - real D1/R2 read path, no browser claims). Require `ready: true` and all three write-storage capabilities: `dispositionStorage`, `savedListsStorage` and `manualHoldStorage`.
+- [ ] Smoke test: `node scripts/verify-cloud-deployment.mjs readiness` (drives `/internal/readiness`, the publisher-authenticated deep readiness check - real D1/R2 read path, no browser claims). Activation requires `ready: true`, `employeeWritesEnabled: true` and all four write-storage capabilities: `dispositionStorage`, `savedListsStorage`, `manualHoldStorage` and `manualHoldApprovalStorage`. The explicitly authorized paused release A has the different, fully specified acceptance criteria in [Approval release recovery](APPROVAL_RELEASE_RECOVERY.md#release-a-establish-the-paused-recovery-version); it is never reported as an active release.
 - [ ] Monitor both Workers for 15 minutes: `wrangler tail --config cloudflare/wrangler.jsonc` and `wrangler tail --config cloudflare/integrations.wrangler.jsonc`. Watch for elevated error rates or latency.
 - [ ] Verify key flows in the live app (see Post-deploy).
 
@@ -73,6 +76,8 @@ Both `wrangler.jsonc` files configure the [`version_metadata`](https://developer
 - [ ] Notify stakeholders if this deploy is user-visible; close related tickets.
 
 ## Rollback triggers
+
+For the first approval migration and every subsequent activation, the [compatible recovery procedure](APPROVAL_RELEASE_RECOVERY.md) takes precedence over the generic rollback instructions below. Use the verified paused A version pair, retain all D1 events and receipts, and re-verify employee-write denial. Before A exists, a failed initial release requires the pre-authorized containment and forward repair; the old pre-approval pair is not an acceptable substitute.
 
 Roll back immediately if any of the following happen and don't resolve within a few minutes:
 

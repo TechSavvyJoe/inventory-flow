@@ -35,6 +35,12 @@ export interface VerificationReport {
   extraLiveObjects: Array<{ type: string; name: string }>
   ignoredLiveObjects: Array<{ type: string; name: string }>
   liveObjectCount: number
+  tenantIdentity: {
+    requested: boolean
+    status: 'not-requested' | 'verified' | 'failed'
+    schemaOnly: true
+    differences: MigrationDifference[]
+  }
   ledger: {
     supplied: boolean
     liveTable: 'absent' | 'matches-wrangler' | 'differs'
@@ -65,6 +71,7 @@ export function verifyD1Schema(options: {
   migrationsDirectory?: string
   dataReviewed?: string[]
   printLedgerSql?: boolean
+  tenantIdentity?: boolean
 }): VerificationReport
 export function formatReport(report: VerificationReport): string
 export function runCli(

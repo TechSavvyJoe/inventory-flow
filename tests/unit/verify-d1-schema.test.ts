@@ -43,10 +43,11 @@ interface LiveOptions {
   edit?: Record<string, (sql: string) => string>
   after?: string
   ledgerTable?: boolean
+  tenantIdentity?: boolean
 }
 
 /** Apply the repository migrations to an in-memory database and export sqlite_master like Wrangler. */
-function syntheticLive({ skip = [], edit = {}, after = '', ledgerTable = false }: LiveOptions = {}) {
+function syntheticLive({ skip = [], edit = {}, after = '', ledgerTable = false, tenantIdentity = false }: LiveOptions = {}) {
   const database = new DatabaseSync(':memory:')
   try {
     // D1 keeps an internal table of its own; the verifier must ignore it.
@@ -58,6 +59,10 @@ function syntheticLive({ skip = [], edit = {}, after = '', ledgerTable = false }
       const sql = edit[file] ? edit[file](original) : original
       if (edit[file]) expect(sql, `edit of ${file} must change it`).not.toBe(original)
       database.exec(sql)
+    }
+    if (tenantIdentity) {
+      const tenantDdl = readFileSync(fileURLToPath(new URL('../../cloudflare/tenant-migrations/0001_tenant_identity.sql', import.meta.url)), 'utf8')
+      database.exec(tenantDdl)
     }
     if (after) database.exec(after)
     return wranglerJson(database.prepare(LIVE_SCHEMA_QUERY).all())
@@ -89,6 +94,71 @@ const statusesExcept = (report: VerificationReport, prefixes: string[]) =>
   new Set(report.migrations.filter((migration) => !prefixes.some((prefix) => migration.file.startsWith(prefix))).map((migration) => migration.status))
 
 describe('read-only D1 schema verifier', () => {
+  it('verifies the fixed tenant schema only when opted in and keeps its objects out of the migration ledger', () => {
+    const live = syntheticLive({ ledgerTable: true, tenantIdentity: true })
+    const ledger = ledgerJson(FILES)
+    const enabled = verifyD1Schema({ liveJson: live, ledgerJson: ledger, tenantIdentity: true })
+    expect(enabled).toMatchObject({
+      ok: true,
+      exitCode: 0,
+      tenantIdentity: { requested: true, status: 'verified', schemaOnly: true, differences: [] },
+      ledger: { unexpected: [], missing: [], duplicates: [] },
+    })
+    expect(enabled.migrations.map((migration) => migration.file)).toEqual(FILES)
+
+    const strict = verifyD1Schema({ liveJson: live, ledgerJson: ledger })
+    expect(strict.ok).toBe(false)
+    expect(strict.tenantIdentity.status).toBe('not-requested')
+    expect(strict.extraLiveObjects.map((object) => object.name)).toEqual(expect.arrayContaining([
+      'inventory_tenant_identity', 'inventory_tenant_identity_no_update', 'inventory_tenant_identity_no_delete',
+    ]))
+    expect(strict.ledger.unexpected).toEqual([])
+  })
+
+  it.each([
+    ['absent schema', { tenantIdentity: false }, 'inventory_tenant_identity'],
+    ['partial schema', { after: 'DROP TRIGGER inventory_tenant_identity_no_delete;' }, 'inventory_tenant_identity_no_delete'],
+    ['missing trigger', { after: 'DROP TRIGGER inventory_tenant_identity_no_update;' }, 'inventory_tenant_identity_no_update'],
+    ['changed table constraint', { after: "CREATE TABLE inventory_tenant_identity_changed(singleton INTEGER PRIMARY KEY CHECK(singleton=2), group_id TEXT NOT NULL UNIQUE); DROP TABLE inventory_tenant_identity; ALTER TABLE inventory_tenant_identity_changed RENAME TO inventory_tenant_identity;" }, 'inventory_tenant_identity'],
+    ['changed trigger', { after: "DROP TRIGGER inventory_tenant_identity_no_update; CREATE TRIGGER inventory_tenant_identity_no_update BEFORE UPDATE ON inventory_tenant_identity BEGIN SELECT 1; END;" }, 'inventory_tenant_identity_no_update'],
+  ])('fails opt-in tenant verification for %s', (_label, liveOptions, object) => {
+    const report = verifyD1Schema({ liveJson: syntheticLive({ tenantIdentity: true, ...liveOptions }), tenantIdentity: true })
+    expect(report.exitCode).toBe(1)
+    expect(report.tenantIdentity.status).toBe('failed')
+    expect(report.tenantIdentity.differences.map((difference) => difference.object).join('\n')).toContain(object)
+  })
+
+  it('still rejects unknown live objects with tenant identity enabled', () => {
+    const report = verifyD1Schema({
+      liveJson: syntheticLive({ tenantIdentity: true, after: 'CREATE TABLE synthetic_extra (id TEXT PRIMARY KEY);' }),
+      tenantIdentity: true,
+    })
+    expect(report.exitCode).toBe(1)
+    expect(report.tenantIdentity.status).toBe('verified')
+    expect(report.extraLiveObjects).toContainEqual({ type: 'table', name: 'synthetic_extra' })
+  })
+
+  it('does not accept the separate tenant DDL filename in the inventory migration ledger', () => {
+    const report = verifyD1Schema({
+      liveJson: syntheticLive({ ledgerTable: true }),
+      ledgerJson: ledgerJson([...FILES, '0001_tenant_identity.sql']),
+    })
+    expect(report.exitCode).toBe(1)
+    expect(report.ledger.unexpected).toEqual(['0001_tenant_identity.sql'])
+  })
+
+  it('parses --tenant-identity and reports schema-only validation in JSON and human output', () => {
+    const live = syntheticLive({ tenantIdentity: true })
+    const json = cli(['--live', 'live.json', '--tenant-identity', '--json'], { 'live.json': live })
+    expect(json.code).toBe(0)
+    expect(JSON.parse(json.stdout)).toMatchObject({ tenantIdentity: { requested: true, status: 'verified', schemaOnly: true } })
+    const human = cli(['--live', 'live.json', '--tenant-identity'], { 'live.json': live })
+    expect(human.code).toBe(0)
+    expect(human.stdout).toContain('Tenant identity schema: VERIFIED')
+    expect(human.stdout).toContain('singleton row and group identity were not verified')
+    expect(cli(['--live', 'live.json', '--tenant-identity=yes'], { 'live.json': live }).code).toBe(2)
+  })
+
   it('reports every migration APPLIED and exits 0 when the live schema has all of them', () => {
     expect(FILES.length).toBeGreaterThanOrEqual(12)
     const live = syntheticLive()

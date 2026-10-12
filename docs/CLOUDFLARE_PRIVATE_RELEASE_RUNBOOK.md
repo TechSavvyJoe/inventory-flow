@@ -332,6 +332,16 @@ shared ledger, build the bootstrap, and serialize it. It returns only aggregate
 counts and size, never inventory rows or customer evidence, and cannot commit
 workflow changes. It does not replace signed-in employee/browser acceptance.
 
+Readiness also reports `employeeWritesEnabled`. A deployment with
+`EMPLOYEE_WRITES_DISABLED: "true"` (or an invalid configured value) retains
+authorized reads but refuses employee POSTs with `503 EMPLOYEE_WRITES_DISABLED`;
+`ready` is false even when storage is healthy. Only the exact string `"false"`
+or an absent variable enables writes. The first approval release deliberately
+creates a paused recovery version before separately authorized activation; use
+[Approval release recovery](APPROVAL_RELEASE_RECOVERY.md) for its acceptance
+criteria and compatible rollback. Do not weaken the standard readiness script
+or restore an old Worker that permits salesperson self-approval.
+
 Test with production-sized synthetic payloads, not only the eight-vehicle
 fixture. Check actual Cloudflare CPU and memory outcomes after deployment:
 local timings do not prove that an account's runtime allowance is sufficient.
@@ -421,6 +431,17 @@ When ledger rows are supplied, every migration filename must be present exactly
 once. An empty or partial ledger fails even when all schema objects are applied;
 the read-only backfill plan can still be printed for review.
 
+For a tenant identity installed through the separate tenant setup procedure,
+append `--tenant-identity`. This validates the full table and both immutable
+triggers against the fixed file
+`cloudflare/tenant-migrations/0001_tenant_identity.sql`, independently of the
+inventory migrations. Missing, partial or modified tenant objects fail, as do
+any additional unexplained objects. Without the flag the original strict
+extra-object check remains. The report is explicitly schema-only: it does not
+verify the singleton row's group ID or the control-plane relationship. Perform
+that identity verification separately. Never add the tenant filename to
+`d1_migrations`; the verifier and paired release reject it there.
+
 Schema presence cannot prove data changes. Migrations that contain `INSERT`,
 `UPDATE`, or `DELETE` (currently `0002`, `0003`, `0005`, `0010`, `0015`, and `0017`) are
 flagged `DATA_REVIEW_REQUIRED`; `0005` also leaves the schema identical to
@@ -465,6 +486,14 @@ Current filenames (reference list, not an executable backfill):
 - `0012_attention_event_input_hash.sql`
 - `0013_vehicle_dispositions.sql`
 - `0014_customer_vehicle_lists.sql`
+- `0015_manual_inventory_controls.sql`
+- `0016_collector_publication_receipts.sql`
+- `0017_manual_hold_approval.sql`
+
+For the first `0016`/`0017` release, follow [Approval release recovery](APPROVAL_RELEASE_RECOVERY.md).
+Its maintenance containment, exact legacy-row preservation, compatible paused
+version and separate activation are additional gates. Schema presence and a
+ledger entry alone do not satisfy those gates or enable a collector.
 
 `0011`, `0012`, `0013` and `0014` postdate the reviewed backfill. Apply each one as its own
 single file (never `wrangler d1 migrations apply`), verify the objects it
