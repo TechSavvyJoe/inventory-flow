@@ -67,18 +67,25 @@ describe('session keeper probe classification', () => {
   })
 
   it('aborts a stalled probe before the outer target deadline and obeys an overall budget', async () => {
-    const signals: AbortSignal[] = []
-    const started = Date.now()
-    const selected = await probeMatchingTargets([{ id: 'stalled' }, { id: 'over-budget' }], (_target, signal) => {
-      signals.push(signal)
-      return new Promise(() => {})
-    }, () => 'ERROR', { timeoutMs: 200, budgetMs: 75 })
-    expect(Date.now() - started).toBeLessThan(250)
-    expect(signals).toHaveLength(1)
-    expect(signals[0].aborted).toBe(true)
-    expect(selected?.result).toEqual({ probeTimedOut: true })
-    expect(KEEPER_FETCH_TIMEOUT_MS).toBeLessThan(KEEPER_TARGET_TIMEOUT_MS)
-    expect(KEEPER_TARGET_TIMEOUT_MS).toBeLessThan(KEEPER_CDP_TIMEOUT_MS)
+    vi.useFakeTimers()
+    try {
+      const signals: AbortSignal[] = []
+      const started = Date.now()
+      const pending = probeMatchingTargets([{ id: 'stalled' }, { id: 'over-budget' }], (_target, signal) => {
+        signals.push(signal)
+        return new Promise(() => {})
+      }, () => 'ERROR', { timeoutMs: 200, budgetMs: 75 })
+      await vi.advanceTimersByTimeAsync(75)
+      const selected = await pending
+      expect(Date.now() - started).toBe(75)
+      expect(signals).toHaveLength(1)
+      expect(signals[0].aborted).toBe(true)
+      expect(selected?.result).toEqual({ probeTimedOut: true })
+      expect(KEEPER_FETCH_TIMEOUT_MS).toBeLessThan(KEEPER_TARGET_TIMEOUT_MS)
+      expect(KEEPER_TARGET_TIMEOUT_MS).toBeLessThan(KEEPER_CDP_TIMEOUT_MS)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('recognizes only a known identity host with a sign-in protocol path', () => {

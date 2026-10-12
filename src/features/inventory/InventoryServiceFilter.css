@@ -52,10 +52,12 @@
 .if-srp .inventory-other-location-match { display: flex; justify-content: space-between; gap: 12px; width: 100%; margin-top: 10px; padding: 12px; border: 1px solid var(--blue-100); border-radius: 6px; color: var(--blue-700); background: var(--blue-050); font: 400 14px/1.4 var(--font-app); }
 .if-srp :is(button,input,select,a):not(.inventory-primary-search input):focus-visible { outline: var(--ifx-focus-width) solid var(--ifx-focus-color); outline-offset: var(--ifx-focus-offset); }
 
-/* A saved shortlist uses a full-width utility row only while it has content. */
+/* Left-aligned phone and tablet tools use a viewport-bounded sort sheet. */
+@media (max-width:1100px) {
+  .if-srp .inventory-sort-composer__panel { position:fixed; inset:auto 10px calc(72px + var(--safe-bottom)); width:auto; max-height:calc(100dvh - 150px - var(--safe-top) - var(--safe-bottom)); z-index:200; }
+}
 
 @media (max-width:620px) {
-  .if-srp .inventory-sort-composer__panel { position:fixed; inset:auto 10px calc(72px + var(--safe-bottom)); width:auto; max-height:calc(100dvh - 150px - var(--safe-top) - var(--safe-bottom)); z-index:200; }
   .if-srp .inventory-sort-levels > li { display:flex; flex-wrap:wrap; gap:5px; }
   .if-srp .inventory-sort-levels__priority { flex:0 0 24px; }
   .if-srp .inventory-sort-levels > li > select { flex:1 1 calc(100% - 29px); width:0; font-size:16px; }
@@ -210,6 +212,13 @@
   .if-srp .if-srp-tools .inv-btn { padding-inline:var(--ifx-space-1); gap:var(--ifx-space-0-5); }
   .if-srp .if-srp-quickviews { gap:var(--ifx-space-0-5); }
   .if-srp .if-srp-quickviews > button { gap:var(--ifx-space-0-5); padding-inline:var(--ifx-space-0-5); }
+}
+
+/* At 320px the saved label wraps inside its track rather than covering Scan. */
+@media (max-width:320px) {
+  .if-srp .if-srp-tools { min-width:0; width:100%; }
+  .if-srp .if-srp-tools .inventory-shortlist-filter { flex:1 1 0; height:var(--ifx-control-height-md); padding-block:0; white-space:normal; }
+  .if-srp .if-srp-tools .inventory-shortlist-filter .inventory-tool-label { min-width:0; }
 }
 
 @media (prefers-reduced-motion:reduce) {

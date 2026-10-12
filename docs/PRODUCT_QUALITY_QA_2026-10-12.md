@@ -48,6 +48,22 @@ An independent GPT-6 Astra/high reviewer inspected all four compact inventory re
 
 The preceding PR head's ordinary browser suite passed 122 cases with four intentional skips. Its combined CI job then reached the 25-minute job limit during cross-browser acceptance. Three older acceptance cases referenced the pre-disclosure mobile source sections, four actions rather than five, or a CSS nowrap implementation detail. The updated contracts preserve reading order, complete facts, 44px actions, above-dock access, actual text bounds and Records-sheet focus behavior. Snapshot comparisons still use the earlier reviewed visual baseline; the deliberate redesign needs reviewed replacement baselines rather than relaxed thresholds.
 
+## CI repair and reviewed references
+
+The next complete run, [38318811679](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/38318811679), passed unit/build checks and 122 ordinary browser cases (four intentional skips). Cross-browser acceptance exposed two real responsive defects: Saved only overlapped Scan at 320px, and the left-aligned Sort control could position its panel outside tablet viewports. Saved only now wraps inside its own 44px-high track at 320px. Through 1100px, Sort uses the existing viewport-bounded sheet. Type sizes and minimum targets are unchanged.
+
+The focused reflow test passed in Chromium at 320, 390, 600, 720, 760, 761, 820, 1024, 1280, 1320, 1440, 1920 and 2560px, and in WebKit at 320, 390 and 430px. Two older joined-record contracts now deliberately open Details before inspecting configuration and source evidence. The ordinary-density and rich-source cases passed separately. Complete equipment wording is still checked in the Equipment workspace; copy values, provider links, readable fact bounds, action sizes, price-history growth and focus restoration remain covered.
+
+A duplicate CI run exposed a wall-clock race in the keeper probe test. Its 75ms total-budget assertion now uses a controlled clock, checks exactly 75ms elapsed, and still requires a single aborted probe and a timeout result. Runtime deadlines were unchanged. All 18 keeper probe tests passed.
+
+All 40 replacement reference images from [generation run 38322865641](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/38322865641) were inspected: ten phone views by the integrating agent, ten tablet views by GPT-6.1 Sol/high, and twenty desktop views by GPT-6 Astra/high. The scoped review found no blocking clipping, overlap or unreadable controls. Intentional magenta provider/image masks are part of the established deterministic capture process. The baseline is not a claim of production data or universal design acceptance.
+
+The exact reviewed bundle is retained in the private [CI-baseline prerelease](https://github.com/TechSavvyJoe/inventory-flow/releases/tag/ci-visual-baseline-20261012-27f78f9), asset `635321189`, with SHA-256 `fe1ad38590a1b8242808f97f64f749e0f746ede57064fe70404912518fb1840f`. Its source is `27f78f90c01e164f6fc5b76b446299a665507295`. The responsive repairs affect 320px controls and the open Sort sheet; neither state is in the four-viewport reference matrix. The pin therefore retains the exact originating source rather than claiming the later repair commit generated it. No image masks, comparison thresholds or repository-safety rules were relaxed. Normal CI comparison remains required after the pin update.
+
+The final local `pnpm check:repo-safety` and `pnpm check` passed: 257 files, 4,806 tests passed and three skipped, TypeScript, repository safety, design-system guard, production build and companion packaging. A fresh type check after the acceptance-test edits also passed.
+
+GPT-6 Astra/high independently reviewed the four-file repair patch with no blocking findings. Model mix for this repair: GPT-6 Luna/medium for CI diagnosis and the deterministic timer test, GPT-6.1 Sol/high for responsive fixes and tablet inspection, and GPT-6 Astra/high for the final independent review.
+
 ## Boundaries
 
 No production deployment, D1 migration, live inventory ingestion, authenticated OEM/DealerMail action or customer communication was performed. Public listing, hold evidence, physical location, movement and service states remain independent. Ford/OASIS and other provider facts shown here are captured synthetic evidence; no FMCDealer sign-in was attempted. Changes are proposed through a branch and pull request, not merged to production.
