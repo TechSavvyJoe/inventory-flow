@@ -2,11 +2,12 @@
 // @vitest-environment node
 // One vehicle's OASIS report must never stop the daily release (Joe, 2026-09-28).
 // Synthetic data only.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { diagnoseOasisActions, reviewOasisForPublish } from '../../scripts/lib/oasis-parser.mjs'
+import { diagnoseOasisActions, parseOasisFull, reviewOasisForPublish } from '../../scripts/lib/oasis-parser.mjs'
+import { oasisCaptureCompletion, readOasisWithRecovery } from '../../scripts/lib/oasis-capture-outcome.mjs'
 
 let workspaceRoot
 let previousRoot
@@ -28,8 +29,143 @@ afterAll(() => {
 
 const vin = (n) => `TESTDATAOASIS${String(n).padStart(4, '0')}`
 const captured = (v) => ({ vin: v, openActionsCaptured: true, openFieldServiceActionCount: 0, openFieldServiceActions: [] })
+const resolved = (v) => ({ status: 200, text: `OASIS RESULT: VEHICLE DESCRIPTION: SYNTHETIC TEST VEHICLE VIN: ${v} OUTSTANDING FIELD SERVICE ACTIONS: NO CAMPAIGN MESSAGE(S) FOUND GENERAL WARRANTY INFORMATION` })
+const recover = (requestedVin, read, options = {}) => readOasisWithRecovery(requestedVin, {
+  read, wait: vi.fn(async () => {}), budgetExhausted: () => false, ...options,
+})
+
+describe('OASIS transport recovery and actual capture completion policy', () => {
+  it.each([1, 2, 8].flatMap(size => ['status zero', 'exception'].map(failure => [size, failure])))('stops a persistently unavailable %i-VIN queue after bounded reads (%s)', async (size, failure) => {
+    const queue = Array.from({ length: size }, (_, index) => vin(index))
+    const read = vi.fn(async () => {
+      if (failure === 'exception') throw new Error('synthetic transport failure')
+      return { status: 0, error: 'synthetic CORS failure' }
+    })
+    const wait = vi.fn(async () => {})
+    const outcome = await recover(queue[0], read, { alternateVin: queue[1], wait })
+
+    expect(read.mock.calls.map(([v]) => v)).toEqual(size === 1 ? [queue[0], queue[0]] : [queue[0], queue[0], queue[1]])
+    expect(wait.mock.calls).toEqual([[2000]])
+    expect(outcome).toEqual({ response: null, transportFailures: size === 1 ? 2 : 3, stoppedReason: 'TRANSPORT_UNAVAILABLE' })
+    // Prior successful/saved records cannot turn the current failure into success.
+    expect(oasisCaptureCompletion('ok', outcome.stoppedReason)).toEqual({ sessionStatus: 'incomplete', stoppedReason: 'TRANSPORT_UNAVAILABLE', exitCode: 1 })
+  })
+
+  it('recovers a transient status zero with one same-VIN retry and no diagnostic read', async () => {
+    const response = resolved(vin(1))
+    const read = vi.fn().mockResolvedValueOnce({ status: 0 }).mockResolvedValueOnce(response)
+    const outcome = await recover(vin(1), read, { alternateVin: vin(2) })
+    expect(read.mock.calls).toEqual([[vin(1)], [vin(1)]])
+    expect(outcome).toEqual({ response, transportFailures: 1, stoppedReason: null })
+    expect(parseOasisFull(outcome.response.text, vin(1))).toMatchObject({ sourceVinStatus: 'matched', openActionsCaptured: true })
+    expect(oasisCaptureCompletion('ok', outcome.stoppedReason)).toEqual({ sessionStatus: 'ok', stoppedReason: null, exitCode: 0 })
+  })
+
+  it('keeps an isolated first-VIN failure non-blocking when a fresh alternate read resolves, without skipping its normal capture', async () => {
+    const read = vi.fn(async v => v === vin(1) ? { status: 0 } : resolved(v))
+    const failed = await recover(vin(1), read, { alternateVin: vin(2) })
+    expect(failed).toEqual({ response: null, transportFailures: 2, stoppedReason: null })
+    const next = await recover(vin(2), read, { alternateVin: vin(1) })
+    expect(read.mock.calls).toEqual([[vin(1)], [vin(1)], [vin(2)], [vin(2)]])
+    expect(parseOasisFull(next.response.text, vin(2))).toMatchObject({ sourceVinStatus: 'matched', openActionsCaptured: true })
+  })
+
+  it.each([true, false])('freshly rechecks a previously resolved VIN instead of trusting earlier evidence (still responds: %s)', async stillResponds => {
+    const read = vi.fn().mockResolvedValueOnce(resolved(vin(1)))
+      .mockResolvedValueOnce({ status: 0 }).mockResolvedValueOnce({ status: 0 })
+      .mockResolvedValueOnce(stillResponds ? resolved(vin(1)) : { status: 0 })
+    await recover(vin(1), read)
+    const outcome = await recover(vin(2), read, { alternateVin: vin(1) })
+    expect(read.mock.calls).toEqual([[vin(1)], [vin(2)], [vin(2)], [vin(1)]])
+    expect(outcome.stoppedReason).toBe(stillResponds ? null : 'TRANSPORT_UNAVAILABLE')
+    expect(oasisCaptureCompletion('ok', outcome.stoppedReason).exitCode).toBe(stillResponds ? 0 : 1)
+  })
+
+  const expiredResponses = [
+    ['401', { status: 401 }],
+    ['403', { status: 403 }],
+    ['password form', { status: 200, text: '<input type="password">' }],
+    ['Microsoft page', { status: 200, text: 'login.microsoftonline.com' }],
+    ['sign-in URL', { status: 200, finalUrl: 'https://login.microsoftonline.com/synthetic' }],
+  ]
+  it.each(expiredResponses.flatMap(([label, response]) => ['initial', 'alternate'].map(stage => [label, response, stage])))('stops immediately for recognized %s evidence on the %s response', async (_label, response, stage) => {
+    const read = vi.fn()
+    if (stage === 'alternate') read.mockResolvedValueOnce({ status: 0 }).mockResolvedValueOnce({ status: 0 })
+    read.mockResolvedValueOnce(response)
+    const outcome = await recover(vin(1), read, { alternateVin: vin(2) })
+    expect(read).toHaveBeenCalledTimes(stage === 'initial' ? 1 : 3)
+    expect(oasisCaptureCompletion('ok', outcome.stoppedReason)).toEqual({ sessionStatus: 'session_expired', stoppedReason: 'SESSION_EXPIRED', exitCode: 1 })
+  })
+
+  it.each([
+    ['404', { status: 404, text: 'Not found' }],
+    ['empty report', { status: 200, text: '' }],
+    ['unrecognized report', { status: 200, text: '<html>Unavailable report</html>' }],
+    ['wrong VIN', resolved(vin(2))],
+    ['unverified VIN', { status: 200, text: 'OASIS RESULT: VEHICLE DESCRIPTION: SYNTHETIC TEST VEHICLE' }],
+  ])('leaves a genuine %s response to the existing per-VIN parser/retry path', async (_label, response) => {
+    const read = vi.fn().mockResolvedValue(response)
+    const wait = vi.fn(async () => {})
+    expect(await recover(vin(1), read, { alternateVin: vin(2), wait })).toEqual({ response, transportFailures: 0, stoppedReason: null })
+    expect(read).toHaveBeenCalledOnce()
+    expect(wait).not.toHaveBeenCalled()
+    const parsed = parseOasisFull(response.text, vin(1))
+    expect(parsed?.sourceVinStatus).not.toBe('matched')
+  })
+
+  it.each(['initial', 'before wait', 'after wait', 'before alternate'])('honors budget exhaustion %s without another read or wait', async stage => {
+    let exhausted = stage === 'initial'
+    const read = vi.fn(async () => {
+      if (stage === 'before wait' || (stage === 'before alternate' && read.mock.calls.length === 2)) exhausted = true
+      return { status: 0 }
+    })
+    const wait = vi.fn(async () => { if (stage === 'after wait') exhausted = true })
+    const outcome = await recover(vin(1), read, { alternateVin: vin(2), wait, budgetExhausted: () => exhausted })
+    expect(read).toHaveBeenCalledTimes(stage === 'initial' ? 0 : stage === 'before alternate' ? 2 : 1)
+    expect(wait).toHaveBeenCalledTimes(stage === 'initial' || stage === 'before wait' ? 0 : 1)
+    expect(oasisCaptureCompletion('ok', outcome.stoppedReason)).toEqual({ sessionStatus: 'incomplete', stoppedReason: 'BUDGET_EXHAUSTED', exitCode: 1 })
+  })
+})
 
 describe('OASIS never blocks the daily release', () => {
+  it.each([0, 1])('classifies a transport stop as systemic even with %i missing records, while later optional sources continue', async missingVinCount => {
+    const recovery = await recover(vin(1), vi.fn().mockResolvedValue({ status: 0 }))
+    const completion = oasisCaptureCompletion('ok', recovery.stoppedReason)
+    const { exitCode, ...summary } = completion
+    const previousRun = internals.runtime.run
+    internals.runtime.run = vi.fn((_command, _args, options) => options.label === 'oasis'
+      ? { ok: exitCode === 0, output: JSON.stringify({ ...summary, complete: missingVinCount === 0, missingVinCount, incompleteActionResults: 0 }) }
+      : { ok: true, output: '{}' })
+    try {
+      const steps = []
+      const warnings = []
+      const outcome = internals.runOptionalAuthenticatedSources('2026-10-12', true, warnings, steps)
+      expect(outcome).toMatchObject({ validated: false, systemic: true, missingVehicles: missingVinCount })
+      expect(steps.find(step => step.name === 'oasis')).toMatchObject({ status: 'failed_non_blocking' })
+      expect(steps.find(step => step.name === 'oasis').detail).toContain('TRANSPORT_UNAVAILABLE')
+      expect(steps.find(step => step.name === 'oasis').detail).not.toContain('session_expired')
+      expect(warnings.some(warning => warning.startsWith('Ford OASIS was not captured'))).toBe(true)
+      expect(steps.at(-1)).toMatchObject({ name: 'warranty', status: 'complete' })
+      expect(internals.runtime.run).toHaveBeenCalledTimes(9)
+    } finally { internals.runtime.run = previousRun }
+  })
+
+  it('keeps a per-VIN gap with fresh alternate proof as a non-systemic warning in the daily runner', async () => {
+    const recovery = await recover(vin(1), vi.fn(async v => v === vin(1) ? { status: 0 } : resolved(v)), { alternateVin: vin(2) })
+    const { exitCode, ...summary } = oasisCaptureCompletion('ok', recovery.stoppedReason)
+    const previousRun = internals.runtime.run
+    internals.runtime.run = vi.fn((_command, _args, options) => options.label === 'oasis'
+      ? { ok: exitCode === 0, output: JSON.stringify({ ...summary, complete: false, missingVinCount: 1, incompleteActionResults: 0 }) }
+      : { ok: true, output: '{}' })
+    try {
+      const steps = []
+      const outcome = internals.runOptionalAuthenticatedSources('2026-10-12', true, [], steps)
+      expect(outcome).toMatchObject({ validated: false, systemic: false, missingVehicles: 1 })
+      expect(steps.find(step => step.name === 'oasis')).toMatchObject({ status: 'completed_with_warning' })
+      expect(steps.at(-1)).toMatchObject({ name: 'warranty', status: 'complete' })
+    } finally { internals.runtime.run = previousRun }
+  })
+
   it('reuses a capture with one unconfirmed vehicle as a warning, keeping that vehicle unconfirmed', () => {
     const date = '2026-09-28'
     const worklist = Array.from({ length: 174 }, (_, i) => ({ vin: vin(i) }))

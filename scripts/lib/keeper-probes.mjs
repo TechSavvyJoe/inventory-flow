@@ -78,3 +78,32 @@ export async function probeMatchingTargets(targets, probe, classify, {
   }
   return expiredFallback ?? lastResult ?? (targets.length ? { status: 'ERROR', result: { probeTimedOut: true } } : null)
 }
+
+/** Retry inconclusive existing targets once in a fresh, keeper-owned tab. */
+export async function probeServiceTargets(targets, probe, classify, {
+  openTarget,
+  closeTarget,
+  ...limits
+} = {}) {
+  const run = (tabs, opened = false) => probeMatchingTargets(
+    tabs,
+    (target, signal) => probe(target, signal, opened),
+    classify,
+    limits,
+  )
+  const existing = await run(targets)
+  if (!openTarget || existing?.status === 'OK' || existing?.status === 'SESSION_EXPIRED') return existing
+
+  const target = await openTarget()
+  let selected
+  try {
+    selected = await run([target], true)
+  } catch (error) {
+    await closeTarget?.(target)
+    throw error
+  }
+  // Structured responses retain their target for service-specific renewal.
+  // Only failed probes close the tab this attempt owns; existing tabs stay open.
+  if (selected?.result?.probeError || selected?.result?.probeTimedOut) await closeTarget?.(target)
+  return selected
+}

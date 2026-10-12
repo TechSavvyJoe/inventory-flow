@@ -40,3 +40,15 @@ export function probeMatchingTargets<T, R>(
   classify: (result: R) => KeeperProbeStatus,
   options?: { budgetMs?: number; timeoutMs?: number },
 ): Promise<KeeperProbeResult<T, R> | null>
+
+export function probeServiceTargets<T, R>(
+  targets: T[],
+  probe: (target: T, signal: AbortSignal, opened: boolean) => Promise<R>,
+  classify: (result: R) => KeeperProbeStatus,
+  options?: {
+    budgetMs?: number
+    timeoutMs?: number
+    openTarget?: () => Promise<T>
+    closeTarget?: (target: T) => Promise<unknown>
+  },
+): Promise<KeeperProbeResult<T, R> | null>

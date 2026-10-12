@@ -38,7 +38,7 @@ import {
   KEEPER_PROBE_BUDGET_MS,
   KEEPER_TARGET_TIMEOUT_MS,
   matchingPageTargets,
-  probeMatchingTargets,
+  probeServiceTargets,
 } from './lib/keeper-probes.mjs'
 
 const PORT = 9222
@@ -154,33 +154,21 @@ async function evaluateTab(tab, expression, opened = false, signal = null) {
 // Runs `expression` inside a tab on that origin, opening the read-only probe URL if needed.
 async function inTab(re, expression, openUrl, classify) {
   const candidates = matchingPageTargets(await targets(), re)
-  const run = async (tabs, opened = false) => probeMatchingTargets(
-    tabs,
-    (tab, signal) => evaluateTab(tab, expression, opened, signal),
+  const selected = await probeServiceTargets(
+    candidates,
+    (tab, signal, opened) => evaluateTab(tab, expression, opened, signal),
     result => classify(result?.value),
-    { budgetMs: KEEPER_PROBE_BUDGET_MS, timeoutMs: KEEPER_TARGET_TIMEOUT_MS },
+    {
+      openTarget: openUrl ? () => openServiceTab(openUrl) : undefined,
+      closeTarget: closeServiceTab,
+      budgetMs: KEEPER_PROBE_BUDGET_MS,
+      timeoutMs: KEEPER_TARGET_TIMEOUT_MS,
+    },
   )
-  if (candidates.length) {
-    const selected = await run(candidates)
-    return selected?.result?.probeError
-      ? Promise.reject(new Error(selected.result.probeError))
-      : selected?.result?.probeTimedOut
-        ? Promise.reject(new Error('PROBE_TIMEOUT'))
-        : selected?.result
-  }
-  if (!openUrl) {
-    return { noTab: true }
-  }
-  const tab = await openServiceTab(openUrl)
-  try {
-    const selected = await run([tab], true)
-    if (selected?.result?.probeError) throw new Error(selected.result.probeError)
-    if (selected?.result?.probeTimedOut) throw new Error('PROBE_TIMEOUT')
-    return selected?.result
-  } catch (error) {
-    await closeServiceTab(tab)
-    throw error
-  }
+  if (!selected) return { noTab: true }
+  if (selected.result?.probeError) throw new Error(selected.result.probeError)
+  if (selected.result?.probeTimedOut) throw new Error('PROBE_TIMEOUT')
+  return selected.result
 }
 
 // A Ford VIN to probe FMCDealer / fordvisions with. Taken from the newest OASIS worklist so
