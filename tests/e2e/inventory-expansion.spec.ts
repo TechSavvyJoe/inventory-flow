@@ -87,6 +87,37 @@ for (const [width, height] of [[390, 844], [1024, 768], [1320, 820], [1440, 900]
   })
 }
 
+for (const [width, height] of [[390, 844], [1024, 768], [1320, 820], [1440, 900]]) {
+  test(`inventory filters keep results close and actions usable at ${width}x${height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height })
+    await openInventory(page)
+    const toggle = page.getByRole('button', { name: 'Filters', exact: true })
+    await toggle.click()
+    const panel = page.getByRole('region', { name: 'Inventory filters', exact: true })
+    await expect(panel).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    if (width >= 1024) {
+      expect((await panel.boundingBox())!.height, 'Refine panel leaves room for vehicle results').toBeLessThan(340)
+    }
+    for (const field of ['Minimum price', 'Maximum price', 'Maximum mileage']) {
+      const input = panel.getByRole('spinbutton', { name: field, exact: true })
+      expect((await input.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+    await panel.getByRole('spinbutton', { name: 'Maximum price', exact: true }).fill('30000')
+    const show = panel.getByRole('button', { name: 'Show 1 vehicle', exact: true })
+    await expect(show).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath(`inventory-filters-${width}.png`), scale: 'css' })
+    await show.click()
+    await expect(panel).not.toBeVisible()
+    await expect(page.getByRole('button', { name: 'Filters 1', exact: true })).toBeFocused()
+    await expect(page.getByRole('button', { name: `Open vehicle records for ${name}`, exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: `Open vehicle records for ${secondName}`, exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Clear maximum price filter: $30,000', exact: true }).click()
+    await expect(page.getByRole('button', { name: `Open vehicle records for ${secondName}`, exact: true })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false)
+  })
+}
+
 test('reduced motion and Records navigation keep disclosure state predictable', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await openInventory(page)

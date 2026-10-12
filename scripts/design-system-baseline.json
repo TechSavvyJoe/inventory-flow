@@ -15,7 +15,7 @@
   "files": {
     "src/styles/shell.css": {
       "smallText": 0,
-      "rawColors": 17,
+      "rawColors": 14,
       "rgbHslColors": 16,
       "important": 2,
       "idSelectors": 0

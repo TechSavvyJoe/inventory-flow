@@ -96,12 +96,9 @@
 .if-srp-mobile-list .inventory-registration-facts > div + div { border-left:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
 .if-srp-mobile-list .inventory-mobile-row__supporting .inventory-mobile-row__captured-facts > div + div { padding-top:var(--ifx-space-0-5); border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
 
-/* Narrow phones give price its own line and enough width to each identifier. */
+/* Narrow phones reserve enough width for each identifier without adding row height. */
 @media (max-width:360px) {
-  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation { grid-template-columns:minmax(0,1fr) auto; }
-  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > b { grid-column:1 / -1; }
   .if-srp-mobile-list .inventory-mobile-row__copy-facts .inv-desk-vehicle__facts { grid-template-columns:minmax(0,max-content) minmax(max-content,1fr); }
-  .if-srp-mobile-list .inventory-mobile-row__copy-facts .inv-desk-vehicle__facts > div { padding-block:var(--ifx-space-1); font-size:var(--ifx-text-xs); line-height:var(--ifx-leading-compact); }
 }
 
 /* Phone records use the same joined source evidence after their direct actions. */

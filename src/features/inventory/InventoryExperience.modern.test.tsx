@@ -297,11 +297,14 @@ describe('modern inventory scope and paging', () => {
     const service = screen.getByRole('combobox', { name: 'Inventory service status' });
     expect(service).toHaveValue('all');
     expect(within(service).getAllByRole('option').map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent }))).toEqual([
-      { value: 'all', label: 'All service: 1 vehicle' },
-      { value: 'needs_service', label: 'Waiting for service: 1 vehicle' },
-      { value: 'in_service', label: 'In service: 0 vehicles' },
-      { value: 'serviced', label: 'Ready: 0 vehicles' },
+      { value: 'all', label: 'All service · 1' },
+      { value: 'needs_service', label: 'Waiting · 1' },
+      { value: 'in_service', label: 'In service · 0' },
+      { value: 'serviced', label: 'Ready · 0' },
     ]);
+    for (const label of ['All service: 1 vehicle', 'Waiting for service: 1 vehicle', 'In service: 0 vehicles', 'Ready: 0 vehicles']) {
+      expect(within(service).getByRole('option', { name: label })).toBeInTheDocument();
+    }
     expect(container.querySelector('.inventory-quick-filter-label--compact')).toHaveTextContent('No hold');
     expect(container.querySelectorAll('.inventory-quick-filter-label--compact')).toHaveLength(4);
   });

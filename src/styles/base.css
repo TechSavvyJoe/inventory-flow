@@ -207,7 +207,6 @@ textarea:focus-visible {
 
 .button-secondary {
   background: var(--ifx-panel-surface);
-  background-image:var(--ifx-control-fill);
   color: var(--blue-600);
   border-color: var(--border-strong);
   box-shadow: var(--ifx-control-shadow);
@@ -215,7 +214,6 @@ textarea:focus-visible {
 
 .button-secondary:hover:not(:disabled) {
   background: var(--blue-050);
-  background-image:var(--ifx-control-fill-hover);
   border-color: var(--ifx-control-border-hover);
 }
 

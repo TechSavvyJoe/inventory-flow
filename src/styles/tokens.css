@@ -9,8 +9,8 @@
 :root {
   /* The approved navigation blue anchors every operational app surface.
      OEM colours remain reserved for dealership identity and assets. */
-  --ifx-brand-blue: #062b50;
-  --ifx-brand-blue-strong: var(--navy-950);
+  --ifx-brand-blue: #07356a;
+  --ifx-brand-blue-strong: #052951;
   --ifx-brand-blue-tint: color-mix(in srgb, var(--ifx-brand-blue) 6%, white);
   --blue-700: var(--ifx-brand-blue-strong);
   --blue-600: var(--ifx-brand-blue);
@@ -22,6 +22,7 @@
   --store-accent-strong: var(--ifx-brand-blue-strong);
   --store-accent-soft: var(--ifx-brand-blue-tint);
 
+  --ifx-layer-toolbar: 10;
   --ifx-layer-modal: 100;
   /* Vehicle workspace portals sit above list overlays; nested issue dialogs
      must remain above the workspace while its content is inert. */
@@ -201,40 +202,34 @@
 
   --ifx-border-subtle: var(--ifx-neutral-200);
   --ifx-border-control: var(--ifx-neutral-300);
-  /* Raised working surfaces and tactile controls keep the existing density.
-     A cool recessed canvas, white highlight and firm base edge reveal depth. */
-  --ifx-canvas: #d7e2ed;
+  /* Solid brand surfaces and neutral ledgers. A small cast shadow separates
+     controls from data without gradients, bevels or coloured base edges. */
+  --ifx-canvas: #f0f3f7;
   --ifx-panel-surface: #ffffff;
-  --ifx-panel-header: #dfe8f1;
-  --ifx-panel-border: #91a8bd;
+  --ifx-panel-header: #edf1f6;
+  --ifx-panel-border: #aebdce;
   --ifx-ledger-line: #d5e0eb;
-  --ifx-evidence-surface: #e9f0f6;
-  --ifx-action-well: #e0e9f2;
-  --ifx-panel-shadow: inset 0 2px 0 rgb(255 255 255 / 98%), 0 3px 0 #b0c1d1, 0 7px 12px rgb(6 43 80 / 18%), 0 16px 24px rgb(6 43 80 / 12%);
-  --ifx-ledger-shadow: inset 0 2px 5px rgb(6 43 80 / 14%), inset 0 -1px 0 rgb(255 255 255 / 95%);
-  --ifx-control-shadow: inset 0 2px 0 rgb(255 255 255 / 98%), inset 0 -1px 0 rgb(6 43 80 / 8%), 0 2px 0 #8aa2b8, 0 5px 8px rgb(6 43 80 / 18%);
-  --ifx-control-shadow-hover: inset 0 2px 0 rgb(255 255 255 / 98%), 0 3px 0 #7893ac, 0 7px 12px rgb(6 43 80 / 22%);
-  --ifx-primary-shadow: inset 0 2px 0 rgb(255 255 255 / 32%), inset 0 -2px 0 rgb(0 15 31 / 22%), 0 3px 0 #031b32, 0 6px 10px rgb(6 43 80 / 28%);
-  --ifx-primary-shadow-hover: inset 0 2px 0 rgb(255 255 255 / 40%), 0 4px 0 #031b32, 0 8px 14px rgb(6 43 80 / 30%);
-  --ifx-control-shadow-pressed: inset 0 3px 6px rgb(0 25 47 / 32%), inset 0 -1px 0 rgb(255 255 255 / 55%), 0 1px 0 rgb(255 255 255 / 70%);
-  --ifx-panel-header-fill: linear-gradient(180deg, #f8fbfd 0%, #dbe6f0 100%);
+  --ifx-evidence-surface: #f4f6f9;
+  --ifx-action-well: #edf1f6;
+  --ifx-panel-shadow: 0 2px 8px rgb(7 28 52 / 8%);
+  --ifx-ledger-shadow: none;
+  --ifx-control-shadow: 0 1px 2px rgb(7 28 52 / 10%);
+  --ifx-control-shadow-hover: 0 2px 4px rgb(7 28 52 / 14%);
+  --ifx-primary-shadow: 0 1px 3px rgb(7 28 52 / 18%);
+  --ifx-primary-shadow-hover: 0 2px 5px rgb(7 28 52 / 22%);
+  --ifx-control-shadow-pressed: none;
   --ifx-masthead-ink: #ffffff;
-  --ifx-masthead-muted: #d9e5f0;
-  --ifx-masthead-hover: rgb(255 255 255 / 14%);
-  --ifx-masthead-bevel: inset 0 2px 0 rgb(255 255 255 / 24%), inset 0 -2px 0 rgb(0 15 31 / 32%);
-  --ifx-header-bevel: inset 0 2px 0 rgb(255 255 255 / 98%), inset 0 -2px 0 rgb(6 43 80 / 12%);
-  --ifx-control-fill: linear-gradient(180deg, #ffffff 0%, #e5edf5 100%);
-  --ifx-control-fill-hover: linear-gradient(180deg, #ffffff 0%, #d7e5f1 100%);
-  --ifx-primary-fill: linear-gradient(180deg, #17537f 0%, #062b50 100%);
-  --ifx-primary-fill-hover: linear-gradient(180deg, #1b5c89 0%, #08365e 100%);
-  --ifx-shell-nav-fill: linear-gradient(160deg, #16486e 0%, #062b50 42%, #041e38 100%);
-  --ifx-shell-nav-active-fill: linear-gradient(180deg, #456b8b 0%, #294d6c 100%);
+  --ifx-masthead-muted: #cadcf0;
+  --ifx-masthead-hover: #104781;
+  --ifx-masthead-border: #416995;
+  --ifx-masthead-current: #50d992;
+  --ifx-masthead-stale: #ffc35a;
+  --ifx-masthead-incomplete: #ff8d99;
   --ifx-hover-distance: -1px;
-  --ifx-shell-header-shadow: inset 0 2px 0 rgb(255 255 255 / 98%), 0 2px 0 #a6bbcd, 0 6px 12px rgb(6 43 80 / 18%);
-  --ifx-shell-nav-shadow: inset -2px 0 0 rgb(255 255 255 / 18%), 3px 0 0 rgb(0 15 31 / 16%), 8px 0 18px rgb(6 43 80 / 24%);
-  --ifx-shell-nav-active-shadow: inset 0 2px 0 rgb(255 255 255 / 25%), 0 2px 0 #031b32, 0 5px 8px rgb(0 15 31 / 30%);
-  --ifx-shell-nav-active-surface: color-mix(in srgb, var(--ifx-brand-blue) 80%, white);
-  --ifx-shell-footer-shadow: inset 0 2px 0 rgb(255 255 255 / 98%), 0 -2px 0 #a6bbcd, 0 -6px 12px rgb(6 43 80 / 18%);
+  --ifx-shell-header-shadow: 0 1px 3px rgb(7 28 52 / 12%);
+  --ifx-shell-nav-shadow: none;
+  --ifx-shell-nav-active-surface: #14538f;
+  --ifx-shell-footer-shadow: 0 -1px 4px rgb(7 28 52 / 8%);
   --ifx-control-height-sm: 36px;
   --ifx-control-height-md: 44px;
   --ifx-control-height-lg: 48px;
@@ -243,7 +238,7 @@
   --ifx-control-border-hover: #8fa6b9;
 
   --ifx-elevation-1: var(--ifx-panel-shadow);
-  --ifx-elevation-2: inset 0 1px 0 rgb(255 255 255 / 95%), 0 2px 0 rgb(6 43 80 / 14%), 0 8px 24px rgb(6 43 80 / 16%);
+  --ifx-elevation-2: 0 4px 16px rgb(7 28 52 / 12%);
   --ifx-elevation-3: 0 16px 42px rgb(7 23 34 / 12%), 0 4px 10px rgb(7 23 34 / 6%);
   --ifx-elevation-4: 0 24px 72px rgb(7 23 34 / 18%), 0 8px 20px rgb(7 23 34 / 8%);
   --ifx-elevation-action: var(--ifx-primary-shadow);
@@ -335,15 +330,6 @@
 /* Paper and high-contrast mode preserve boundaries without cast shadows. */
 @media print, (forced-colors:active) {
   :root {
-    --ifx-panel-header-fill:none;
-    --ifx-header-bevel:none;
-    --ifx-masthead-bevel:none;
-    --ifx-control-fill:none;
-    --ifx-control-fill-hover:none;
-    --ifx-primary-fill:none;
-    --ifx-primary-fill-hover:none;
-    --ifx-shell-nav-fill:none;
-    --ifx-shell-nav-active-fill:none;
     --ifx-panel-shadow:none;
     --ifx-ledger-shadow:none;
     --ifx-control-shadow:none;
@@ -353,7 +339,6 @@
     --ifx-control-shadow-pressed:none;
     --ifx-shell-header-shadow:none;
     --ifx-shell-nav-shadow:none;
-    --ifx-shell-nav-active-shadow:none;
     --ifx-shell-footer-shadow:none;
     --ifx-elevation-1:none;
     --ifx-elevation-2:none;

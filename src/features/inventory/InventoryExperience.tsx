@@ -281,6 +281,8 @@ function FiltersPanel({
   onHoldChange,
   onMovementChange,
   onClear,
+  resultCount,
+  onShowResults,
 }: {
   id: string;
   filters: InventoryFilters;
@@ -294,13 +296,14 @@ function FiltersPanel({
   onHoldChange: (value: InventoryFilters["dealerMail"]) => void;
   onMovementChange: (value: InventoryFilters["movement"]) => void;
   onClear: () => void;
+  resultCount: number;
+  onShowResults: () => void;
 }) {
   const update = <Key extends keyof InventoryFilters>(key: Key, value: InventoryFilters[Key]) => onChange({ ...filters, [key]: value });
   return (
     <section className="inventory-filter-panel inventory-filter-panel--modern" id={id} aria-label="Inventory filters">
       <div className="inventory-filter-panel__heading">
         <span><SlidersHorizontal size={17} strokeWidth={1.8} aria-hidden="true" /> Refine vehicles</span>
-        <button type="button" onClick={onClear}>Clear all</button>
       </div>
       <div className="inventory-filter-grid inventory-filter-grid--primary">
         {scope === "home" ? (
@@ -320,29 +323,29 @@ function FiltersPanel({
         <label>
           <span>Hold</span>
           <select value={holdValue} onChange={(event) => onHoldChange(event.target.value as InventoryFilters["dealerMail"])}>
-            <option value="all">Any hold status</option>
+            <option value="all" aria-label="Any hold status">Any status</option>
             <option value="held">Held</option>
             <option value="not-held">No current hold</option>
-            <option value="unverified">Hold status unverified</option>
+            <option value="unverified" aria-label="Hold status unverified">Unverified</option>
           </select>
         </label>
         <label>
           <span>Inventory decision</span>
           <select value={filters.disposition ?? "all"} onChange={event => update("disposition", event.target.value as InventoryFilters["disposition"])}>
-            <option value="all">Any decision</option><option value="none">No disposition recorded</option>
+            <option value="all">Any decision</option><option value="none" aria-label="No disposition recorded">None recorded</option>
             <option value="sold_pending">Sold pending</option><option value="delivered">Delivered</option>
             <option value="other">Other</option><option value="keep">Keep</option>
             <option value="wholesale">Wholesale</option><option value="transfer_out">Transfer out</option>
-            <option value="conflict">Conflicting records</option>
+            <option value="conflict" aria-label="Conflicting records">Conflicting</option>
           </select>
         </label>
         <label>
           <span>Vehicle movement</span>
           <select value={movementValue} onChange={(event) => onMovementChange(event.target.value as InventoryFilters["movement"])}>
-            <option value="all">Any movement status</option>
+            <option value="all" aria-label="Any movement status">Any status</option>
             <option value="active">Being moved</option>
-            <option value="overdue">Needs movement attention</option>
-            <option value="none">No move in progress</option>
+            <option value="overdue" aria-label="Needs movement attention">Needs attention</option>
+            <option value="none" aria-label="No move in progress">No active move</option>
           </select>
         </label>
         <label>
@@ -358,6 +361,7 @@ function FiltersPanel({
           <input type="number" min="0" step="1000" inputMode="numeric" value={filters.maximumMileage ?? ""} onChange={(event) => update("maximumMileage", numericInputValue(event.target.value))} placeholder="No maximum" />
         </label>
       </div>
+      <div className="inventory-filter-panel__footer">
       <details className="inventory-filter-technical">
         <summary>Record-status filters</summary>
         <div className="inventory-filter-grid">
@@ -382,6 +386,11 @@ function FiltersPanel({
           </label>
         </div>
       </details>
+      <div className="inventory-filter-panel__actions">
+        <button type="button" className="inventory-filter-clear inv-btn" onClick={onClear}>Clear all</button>
+        <button type="button" className="if-srp-show-results inv-btn" onClick={onShowResults}>Show {resultCount} {resultCount === 1 ? "vehicle" : "vehicles"}</button>
+      </div>
+      </div>
     </section>
   );
 }
@@ -584,10 +593,8 @@ export function InventoryExperience({
     [hasQuery, queryMatchIds, vehicles],
   );
   const baseMatches = useMemo(
-    () => vehicles.filter((vehicle) =>
-      vehicleMatchesFilters(vehicle, filters, { ignoreStore: true }) && (!hasQuery || queryMatchIds.has(vehicle.id)),
-    ),
-    [filters, hasQuery, queryMatchIds, vehicles],
+    () => hasQuery ? searchableVehicles.filter((vehicle) => queryMatchIds.has(vehicle.id)) : searchableVehicles,
+    [hasQuery, queryMatchIds, searchableVehicles],
   );
   const scopedVehicles = useMemo(() => {
     const scoped = baseMatches.filter((vehicle) => inventoryInLocationScope(vehicle, locationScope, scopedStore) && matchesInventoryQuickView(vehicle, quickView, quickViewContext));
@@ -772,7 +779,7 @@ export function InventoryExperience({
                 <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
               </button>)}
               <select className="if-srp-service-select" aria-label="Inventory service status" value={filters.serviceReadiness ?? "all"} onChange={event => setFilters(current => ({ ...current, serviceReadiness: event.target.value as ServiceFilter }))}>
-                {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value}>{label}: {serviceCounts[value]} {serviceCounts[value] === 1 ? "vehicle" : "vehicles"}</option>)}
+                {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value} aria-label={`${label}: ${serviceCounts[value]} ${serviceCounts[value] === 1 ? "vehicle" : "vehicles"}`}>{value === "needs_service" ? "Waiting" : label} · {serviceCounts[value]}</option>)}
               </select>
             </div>
             {filtersOpen ? <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
@@ -782,7 +789,7 @@ export function InventoryExperience({
 
           <div className="if-srp-tools">
             <div className="inventory-toolbar__left">
-              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} title="Filters" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
+              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen || filterCount > 0 ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} title="Filters" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
                 <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
               </button>
             </div>
@@ -817,8 +824,8 @@ export function InventoryExperience({
           <FiltersPanel id={`${filterPanelId}-details`} filters={filters} stores={stores} homeStore={homeStore} scope={scope}
             holdValue={filterPanelHoldValue(viewState)} movementValue={filterPanelMovementValue(viewState)}
             onChange={setFilters} onHoldChange={value => applyViewState(selectHoldFilter(viewState, value))}
-            onMovementChange={value => applyViewState(selectMovementFilter(viewState, value))} onClear={clearFilters} />
-          <button type="button" className="if-srp-show-results inv-btn" onClick={closeFilters}>Show {scopedVehicles.length} {scopedVehicles.length === 1 ? "vehicle" : "vehicles"}</button>
+            onMovementChange={value => applyViewState(selectMovementFilter(viewState, value))} onClear={clearFilters}
+            resultCount={scopedVehicles.length} onShowResults={closeFilters} />
         </> : null}
         </div>
 

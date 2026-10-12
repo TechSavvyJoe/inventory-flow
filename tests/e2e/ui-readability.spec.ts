@@ -66,11 +66,11 @@ async function collectReadabilityViolations(page: Page) {
   })
 }
 
-async function collectContrastViolations(page: Page) {
-  return page.evaluate<ContrastViolation[]>(() => {
+async function collectContrastViolations(page: Page, rootSelector = 'main') {
+  return page.evaluate<ContrastViolation[], string>((rootSelector) => {
     type Rgba = [number, number, number, number]
-    const main = document.querySelector('main')
-    if (!main) return [{ contrast: 0, foreground: 'unknown', background: 'unknown', selector: 'main', text: 'Missing main landmark' }]
+    const main = document.querySelector(rootSelector)
+    if (!main) return [{ contrast: 0, foreground: 'unknown', background: 'unknown', selector: rootSelector, text: 'Missing readability scope' }]
 
     function parseColor(value: string): Rgba | null {
       if (value === 'transparent') return [0, 0, 0, 0]
@@ -208,7 +208,7 @@ async function collectContrastViolations(page: Page) {
     }
 
     return Array.from(violations.values()).slice(0, 25)
-  })
+  }, rootSelector)
 }
 
 // A route with nothing to render passes these checks vacuously. Seed the one
@@ -272,4 +272,23 @@ test('selected service scope remains readable while hovered', async ({ page }) =
   await expect(allStores).toHaveAttribute('aria-pressed', 'true')
   await allStores.hover()
   expect(await collectContrastViolations(page)).toEqual([])
+})
+
+// The solid dark shell must remain readable without leaking inverse colours
+// into the light account dialog, including hover and keyboard return states.
+test('shell header and account controls retain readable contrast', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/inventory')
+  const account = page.getByRole('button', { name: 'Open account and app controls', exact: true })
+  await expect(account).toBeEnabled()
+  await page.waitForLoadState('networkidle')
+  expect(await collectContrastViolations(page, 'header.top-bar')).toEqual([])
+  await account.hover()
+  expect(await collectContrastViolations(page, 'header.top-bar')).toEqual([])
+  await account.click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  expect(await collectContrastViolations(page, '[role="dialog"]')).toEqual([])
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(account).toBeFocused()
 })

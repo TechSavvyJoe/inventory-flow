@@ -113,7 +113,7 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
   const serviceControls = [serviceSelect]
   await expect(serviceSelect).toBeVisible()
   await expect(serviceSelect.getByRole('option')).toHaveText([
-    /^All service: \d+ vehicles?$/, /^Waiting for service: \d+ vehicles?$/, /^In service: \d+ vehicles?$/, /^Ready: \d+ vehicles?$/,
+    /^All service · \d+$/, /^Waiting · \d+$/, /^In service · \d+$/, /^Ready · \d+$/,
   ])
   const sections = [
     page.getByRole('combobox', { name: 'Search inventory' }),
@@ -879,6 +879,18 @@ test('phone cards show exact equipment and document facts with direct detail act
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     await expect(card).toBeVisible()
+    const expansion = card.getByRole('button', { name: /^(?:Expand|Collapse) details for 2024 Ford F-150 Lariat$/ })
+    if (await expansion.getAttribute('aria-expanded') === 'true') await expansion.click()
+    await expect(expansion).toHaveAttribute('aria-expanded', 'false')
+    await expect(reportShortcuts).toBeHidden()
+    await expansion.click()
+    await expect(expansion).toHaveAttribute('aria-expanded', 'true')
+    const additionalDetails = card.getByRole('region', { name: 'Additional details for 2024 Ford F-150 Lariat', exact: true })
+    await expect(additionalDetails).toBeVisible()
+    await expect.poll(() => additionalDetails.evaluate(element => {
+      const clip = element.parentElement!
+      return clip.scrollHeight - clip.clientHeight
+    }), { message: 'Expanded details finish revealing their complete contents' }).toBeLessThanOrEqual(1)
     // Complete record ledgers stay in Records; the joined source summaries
     // remain after status and workflow controls in the same vehicle record.
     await expect(reportShortcuts.getByRole('region')).toHaveCount(3)
@@ -908,7 +920,7 @@ test('phone cards show exact equipment and document facts with direct detail act
       expect(box!.width, `${width}px copy control has a 44px touch target`).toBeGreaterThanOrEqual(44)
     }
     const actionControls = workflowActions.locator(':scope > button, :scope > a')
-    await expect(actionControls).toHaveCount(4)
+    await expect(actionControls).toHaveCount(5)
     const actionBoxes = await Promise.all((await actionControls.all()).map(async target => {
       await expect(target).toBeVisible()
       const box = await target.boundingBox()
@@ -918,8 +930,10 @@ test('phone cards show exact equipment and document facts with direct detail act
     }))
     expect(Math.abs(actionBoxes[0].y - actionBoxes[1].y), `${width}px first workflow row is aligned`).toBeLessThanOrEqual(2)
     expect(Math.abs(actionBoxes[2].y - actionBoxes[3].y), `${width}px second workflow row is aligned`).toBeLessThanOrEqual(2)
+    expect(Math.abs(actionBoxes[3].y - actionBoxes[4].y), `${width}px Details aligns with Save and Listing`).toBeLessThanOrEqual(2)
     expect(actionBoxes[0].x).toBeLessThan(actionBoxes[1].x)
     expect(actionBoxes[2].x).toBeLessThan(actionBoxes[3].x)
+    expect(actionBoxes[3].x).toBeLessThan(actionBoxes[4].x)
     expect(actionBoxes[0].y).toBeLessThan(actionBoxes[2].y)
     const clipping = await card.evaluate(element => {
       const nodes = Array.from(element.querySelectorAll<HTMLElement>('*'))
