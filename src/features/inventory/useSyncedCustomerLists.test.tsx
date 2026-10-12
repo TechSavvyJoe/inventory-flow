@@ -20,6 +20,49 @@ beforeEach(() => { api.get.mockReset(); api.mutate.mockReset(); window.localStor
 afterEach(cleanup)
 
 describe('useSyncedCustomerLists', () => {
+  it('finishes an interrupted clear on retry without removing later-added vehicles', async () => {
+    const originalVins = [vehicle.vin, '1FTFW1E84RKF00002', '1FTFW1E84RKF00003']
+    const laterVin = '1FTFW1E84RKF00004'
+    const snapshot = (revision: number, vins: string[]) => ({ ...list(revision), items:vins.map(vin => ({ vin, addedAt:list().createdAt, available:true })) })
+    api.get.mockResolvedValue({ lists:[snapshot(1, originalVins)] })
+    api.mutate.mockResolvedValueOnce(snapshot(2, originalVins.slice(1)))
+      .mockRejectedValueOnce(new TypeError('clear response interrupted'))
+      .mockResolvedValueOnce(snapshot(4, [originalVins[2], laterVin]))
+      .mockResolvedValueOnce(snapshot(5, [laterVin]))
+    const { result } = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(result.current.count).toBe(3))
+    act(() => result.current.clear())
+    await waitFor(() => expect(result.current.management?.pendingAction).toBe(true))
+    expect(api.mutate).toHaveBeenCalledTimes(2)
+    act(() => result.current.management?.retry())
+    await waitFor(() => expect(result.current.count).toBe(1))
+    expect(api.mutate.mock.calls[2][0]).toEqual(api.mutate.mock.calls[1][0])
+    expect(api.mutate.mock.calls[3][0]).toEqual({ action:'remove', listId:'list-1', expectedRevision:4, vin:originalVins[2] })
+    expect(api.mutate.mock.calls.map(([input]) => input.vin)).not.toContain(laterVin)
+    expect(result.current.ids).toEqual(new Set([laterVin]))
+    expect(result.current.management?.pendingAction).toBe(false)
+  })
+
+  it.each(['owner change', 'access revocation'] as const)('does not continue an interrupted clear after %s during retry', async change => {
+    const secondVin = '1FTFW1E84RKF00002'
+    const original = { ...list(), items:[...list().items, { vin:secondVin, addedAt:list().createdAt, available:true }] }
+    let finishReplay!: (value: ReturnType<typeof list>) => void
+    api.get.mockResolvedValueOnce({ lists:[original] }).mockResolvedValue({ lists:[] })
+    api.mutate.mockRejectedValueOnce(new TypeError('clear response interrupted'))
+      .mockImplementationOnce(() => new Promise(resolve => { finishReplay = resolve }))
+    const { result, rerender } = renderHook(({ ownerId }) => useSyncedCustomerLists({ ...options, ownerId }), { initialProps:{ ownerId:'synthetic-owner-a' } })
+    await waitFor(() => expect(result.current.count).toBe(2))
+    act(() => result.current.clear())
+    await waitFor(() => expect(result.current.management?.pendingAction).toBe(true))
+    act(() => result.current.management?.retry())
+    if (change === 'owner change') rerender({ ownerId:'synthetic-owner-b' })
+    else act(() => reportAccessFailure({ status:403, role:'sales', store:'Howell', message:'access revoked' }))
+    await act(async () => finishReplay({ ...original, revision:2, items:original.items.slice(1) }))
+    expect(api.mutate).toHaveBeenCalledTimes(2)
+    expect(result.current.management?.pendingAction).toBe(false)
+    expect(result.current.management?.lists).toEqual([])
+  })
+
   it('does not let a late ordinary list read overwrite a freshly prepared comparison', async () => {
     let finishPoll!: (value: { lists: ReturnType<typeof list>[] }) => void
     api.get.mockResolvedValueOnce({ lists:[list()] })

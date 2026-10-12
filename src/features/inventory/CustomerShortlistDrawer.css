@@ -9,7 +9,12 @@
 .shortlist-drawer button, .shortlist-drawer__dialog button { min-height:var(--ifx-control-height-md); border:1px solid transparent; border-radius:var(--radius-control); background:transparent; color:var(--blue-700); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
 .shortlist-drawer button:disabled, .shortlist-drawer__dialog button:disabled { cursor:not-allowed; color:var(--ink-500); }
 .shortlist-drawer__toggle, .shortlist-drawer__clear, .shortlist-drawer__close, .shortlist-drawer__remove, .shortlist-manager button, .shortlist-drawer__intro button { display:inline-flex; align-items:center; justify-content:center; gap:var(--ifx-space-1-5); padding:var(--ifx-space-1) var(--ifx-space-2); }
-.shortlist-drawer .shortlist-drawer__toggle { min-width:var(--ifx-control-height-md); justify-content:flex-start; border-color:var(--ifx-panel-border); background:var(--surface); box-shadow:none; font:var(--ifx-weight-medium) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); }
+.shortlist-drawer .shortlist-drawer__toggle { min-width:var(--ifx-control-height-md); justify-content:flex-start; border-color:var(--ifx-panel-border); background:var(--surface); box-shadow:var(--ifx-control-shadow); font:var(--ifx-weight-medium) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); transition:box-shadow var(--ifx-motion-fast) var(--ifx-ease-standard), background-color var(--ifx-motion-fast) var(--ifx-ease-standard), border-color var(--ifx-motion-fast) var(--ifx-ease-standard); }
+.shortlist-drawer .shortlist-drawer__toggle:hover:not(:disabled) { border-color:var(--blue-600); background:var(--ifx-evidence-surface); box-shadow:var(--ifx-control-shadow-hover); }
+.shortlist-drawer .shortlist-drawer__toggle:active:not(:disabled) { box-shadow:var(--ifx-control-shadow-pressed); }
+.shortlist-drawer .shortlist-drawer__toggle:focus-visible { outline:var(--ifx-focus-width) solid var(--ifx-focus-color); outline-offset:var(--ifx-focus-offset); box-shadow:var(--ifx-focus-ring),var(--ifx-control-shadow); }
+.shortlist-drawer .shortlist-drawer__toggle:focus-visible:active:not(:disabled) { box-shadow:var(--ifx-focus-ring),var(--ifx-control-shadow-pressed); }
+.shortlist-drawer .shortlist-drawer__toggle:disabled { background:var(--ifx-neutral-100); box-shadow:none; transform:none; }
 .shortlist-drawer__toggle > span { max-width:calc(var(--ifx-space-16) * 2.5); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .shortlist-drawer__toggle strong { display:inline-flex; align-items:center; justify-content:center; min-width:0; color:var(--ink-600); background:transparent; font:inherit; }
 .shortlist-drawer__toggle > svg:last-child { transition:transform var(--ifx-motion-fast) var(--ifx-ease-standard); }
@@ -86,7 +91,17 @@
   .shortlist-manager__chevron { display:none; }
 }
 @media (max-width:760px) {
-  .shortlist-drawer .shortlist-drawer__toggle { width:var(--ifx-space-16); height:var(--ifx-control-height-md); padding:var(--ifx-space-1); justify-content:center; }
-  .shortlist-drawer__toggle > span, .shortlist-drawer__toggle > svg:last-child { display:none; }
+  .shortlist-drawer .shortlist-drawer__toggle { display:grid; grid-template-columns:auto minmax(0,1fr) auto; width:calc(var(--ifx-control-height-md) * 2 + var(--ifx-space-1)); height:var(--ifx-control-height-md); padding:var(--ifx-space-0-5); gap:var(--ifx-space-0-5); font-size:var(--ifx-text-sm); }
+  .shortlist-drawer__toggle > span { overflow:visible; white-space:normal; }
+  .shortlist-drawer__toggle > svg:first-child { width:var(--ifx-space-4); height:var(--ifx-space-4); }
+  .shortlist-drawer__toggle > svg:last-child { display:none; }
+  .shortlist-drawer__toggle strong { font-size:var(--ifx-text-xs); font-variant-numeric:tabular-nums; }
 }
-@media (prefers-reduced-motion:reduce) { .shortlist-drawer__dialog { animation:none; } }
+@media (prefers-reduced-motion:reduce) {
+ .shortlist-drawer__dialog { animation:none; }
+ .shortlist-drawer .shortlist-drawer__toggle:is(:hover,:active):not(:disabled) { transform:none; transition:none; }
+ .shortlist-drawer__toggle > svg:last-child { transition:none; }
+}
+@media (forced-colors:active) {
+ .shortlist-drawer .shortlist-drawer__toggle { border-color:CanvasText; }
+}

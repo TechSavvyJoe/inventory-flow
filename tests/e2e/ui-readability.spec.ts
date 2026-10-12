@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const coreRoutes = ['/inventory', '/transfers', '/attention', '/overview'] as const
+const coreRoutes = ['/inventory', '/transfers', '/attention', '/overview', '/service', '/updates'] as const
 
 type ReadabilityViolation = {
   fontSize: number
@@ -262,3 +262,14 @@ for (const route of coreRoutes) {
     expect(pageOverflow, `Document-level horizontal overflow on ${route}`).toBe(false)
   })
 }
+
+// A generic hover used to replace the selected navy fill but leave white text.
+test('selected service scope remains readable while hovered', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/service')
+  const allStores = page.getByRole('button', { name: 'All stores', exact: true })
+  await allStores.click()
+  await expect(allStores).toHaveAttribute('aria-pressed', 'true')
+  await allStores.hover()
+  expect(await collectContrastViolations(page)).toEqual([])
+})

@@ -56,8 +56,8 @@ function ServicePhoto({ vehicle }: { vehicle: VehicleRecord }) {
     : <CarFront aria-hidden="true" size={30} />}</span>
 }
 
-export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate, onSaved, onBack, backLabel = 'Back to service list' }: {
-  vehicle: VehicleRecord; role: UserRole; store: StoreName; initialAction: ServiceWorkflowStatus | null; defaultDate: string; onSaved: (status: ServiceReadinessStatus) => Promise<void>; onBack: () => void; backLabel?: string
+export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate, onSaved, onBack, backLabel = 'Back to service list', returnPath }: {
+  vehicle: VehicleRecord; role: UserRole; store: StoreName; initialAction: ServiceWorkflowStatus | null; defaultDate: string; onSaved: (status: ServiceReadinessStatus) => Promise<void>; onBack: () => void; backLabel?: string; returnPath?: string
 }) {
   const location = useLocation()
   const [detail, setDetail] = useState<ServiceReadinessDetail | null>(null)
@@ -77,7 +77,8 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
   const captureWorkspace = useWorkspaceLifetime(`${role}:${store}:${vehicle.vin}`)
   const { confirmDiscard, markSaved } = useUnsavedChanges(editing && JSON.stringify([status, date, notes]) !== initialEdit.current, { saving: busy })
   const newerRecordAvailable = detail !== null && (vehicle.serviceReadiness?.version ?? 0) > detail.version
-  const recordsHref = vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })
+  const workspaceReturnPath = returnPath ?? currentWorkspaceReturnPath(location)
+  const recordsHref = vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: workspaceReturnPath })
   const configuration = [
     ['Engine / drive', [vehicle.engine, vehicle.drivetrain].filter(Boolean).join(' · ')],
     ['Transmission', vehicle.transmission],
@@ -230,7 +231,7 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
         {vehicle.manualHold?.state === 'active' || vehicle.manualHold?.state === 'requested' ? <div><dt>Inventory Flow hold</dt><dd>{vehicle.manualHold.state === 'active' ? 'Approved hold' : 'Pending approval · not a confirmed hold'}</dd></div> : null}
         <div><dt>Location</dt><dd>{vehicle.movement?.currentLocation || vehicle.sourceReportedLocation || 'Not confirmed'}<small>{vehicle.movement?.currentLocation && vehicle.movement.locationConfidence === 'verified' ? 'Confirmed location' : 'Confirm with the store'}</small></dd></div>
       </dl>
-      <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>
+      <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: workspaceReturnPath })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: workspaceReturnPath })}>Records</Link></nav>
     </>}
       {!loading && detail && <>
         <section className="service-history" aria-labelledby="service-history-title"><h3 id="service-history-title">Status updates</h3>
@@ -319,6 +320,6 @@ export function ServicePage() {
           <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-records" })} aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={18} aria-hidden="true" />Records</Link>
         </nav><div className="service-row-supporting"><VehicleQuickFacts vehicle={vehicle} /></div></li>
       })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
-    </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
+    </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} returnPath={returnPath} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
   </section>
 }

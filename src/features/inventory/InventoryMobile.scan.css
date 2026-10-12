@@ -8,7 +8,7 @@
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__main { display:flex; flex-direction:column; align-items:flex-start; gap:var(--ifx-space-0-5); min-width:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title { display:flex; align-items:start; gap:var(--ifx-space-1); overflow:visible; white-space:normal; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title strong { color:var(--navy-900); font:var(--ifx-weight-semibold) var(--ifx-text-body)/1.25 var(--font-app); overflow:visible; white-space:normal; overflow-wrap:anywhere; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation { grid-column:auto; grid-row:auto; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:baseline; width:100%; gap:var(--ifx-space-1) var(--ifx-space-2); margin:0; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation { grid-column:auto; grid-row:auto; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; width:100%; gap:var(--ifx-space-1) var(--ifx-space-2); margin:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > b { color:var(--navy-900); font:var(--ifx-weight-semibold) var(--ifx-text-lg)/1.25 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > span { white-space:nowrap; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
 /* Certification remains visible beside identity without covering the photograph. */
@@ -113,3 +113,6 @@
 .if-srp-mobile-list .inventory-mobile-row__captured-facts dd { font-size:var(--ifx-text-md); }
 .if-srp-mobile-list .inventory-mobile-row__copy-facts .copyable-value__content { overflow-wrap:anywhere; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual img { object-fit:contain; }
+
+.if-srp-mobile-list .inventory-detail-disclosure { grid-column:1 / -1; min-width:0; }
+.if-srp-mobile-list .inventory-source-qualifications { grid-column:1 / -1; padding:var(--ifx-space-1); }

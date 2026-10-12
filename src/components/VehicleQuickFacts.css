@@ -7,3 +7,10 @@
 .vehicle-quick-facts__item:nth-child(2):not(.vehicle-quick-facts__item--colors):not(.vehicle-quick-facts__item--equipment),
 .vehicle-quick-facts__color + .vehicle-quick-facts__color { border-left:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
 .vehicle-quick-facts__item--equipment { grid-column:1 / -1; border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
+
+/* Wide operational rows keep all four facts in one joined strip. */
+@container vehicle-fact-strip (min-width:700px) {
+  .vehicle-quick-facts { grid-template-columns:minmax(0,1.2fr) minmax(0,1.5fr) repeat(2,minmax(0,1fr)); }
+  .vehicle-quick-facts__item--colors { display:contents; }
+  .vehicle-quick-facts__color { border-left:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
+}

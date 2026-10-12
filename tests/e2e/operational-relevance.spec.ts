@@ -69,7 +69,8 @@ test('service actions appear before secondary facts without sales provider panel
   expect(button!.height).toBeGreaterThanOrEqual(44)
   expect(button!.y).toBeGreaterThanOrEqual(header!.y + header!.height)
   expect(button!.y + button!.height).toBeLessThanOrEqual(mobileNavigation?.y ?? page.viewportSize()!.height)
-  await expect(page.getByRole('link', { name: 'Records', exact: true })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0002')
+  // Explicit scope keeps the service return independent of later scope changes.
+  await expect(page.getByRole('link', { name: 'Records', exact: true })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0002%26scope%3Dmy_store')
   await actions.getByRole('button', { name: 'In service', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Start service', exact: true })).toBeVisible()
   await expect(page.getByLabel('Date entered service')).toBeVisible()

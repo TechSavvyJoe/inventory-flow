@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BootstrapData, TransferRecord, VehicleRecord } from '../../types';
 import { clearWorkspaceMemory } from '../../lib/workspace-memory';
@@ -189,6 +189,11 @@ function detail(allowedActions: TransferDetail['allowedActions']): TransferDetai
 function LocationProbe() {
   const location = useLocation();
   return <output data-testid="router-location">{`${location.pathname}${location.search}`}</output>;
+}
+
+function VehicleReturnLink() {
+  const location = useLocation();
+  return <Link to={new URLSearchParams(location.search).get('returnTo')!}>Back to move workspace</Link>;
 }
 
 function renderPage(data: BootstrapData, initialEntry = '/transfers', contextOverrides: Record<string, unknown> = {}, withLocation = false) {
@@ -1312,6 +1317,76 @@ describe('transfer workspace v3 layout', () => {
       cleanup();
     }
     vi.useRealTimers();
+  });
+
+  it.each([
+    ['store', 'Vehicle details'], ['store', 'Records'],
+    ['route', 'Vehicle details'], ['route', 'Records'],
+  ])('restores the selected move and %s queue filter after a %s round trip', async (filter, action) => {
+    const data = bootstrap(3);
+    data.transfers[0] = { ...data.transfers[0], homeStore: 'Howell', currentLocation: 'Ford Detroit', requestStatus: 'arrived', movementStatus: 'at_requesting_store' };
+    data.transfers[1] = { ...data.transfers[1], homeStore: 'Howell', currentLocation: 'Howell' };
+    data.transfers[2] = { ...data.transfers[2], homeStore: 'Fowlerville' };
+    data.vehicles = [inventoryVehicle('Howell', data.transfers[0].vin, 'MOVE1')];
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Lincoln', role: 'manager', currentUser: 'Joe Manager', submitTransfer: vi.fn() });
+    mocks.getTransfer.mockImplementation((id: string) => Promise.resolve(data.transfers.find(record => record.id === id)));
+    const initial = filter === 'store' ? '/transfers?store=Howell' : '/transfers?from=Howell&to=Ford+Detroit&leg=outbound';
+    render(<MemoryRouter initialEntries={[initial]}><Routes>
+      <Route path="/transfers" element={<TransfersPage />} />
+      <Route path="/inventory" element={<VehicleReturnLink />} />
+    </Routes><LocationProbe /></MemoryRouter>);
+    const filterName = filter === 'store' ? 'Clear home store filter: Howell' : 'Clear route filter: Howell to Ford Detroit, outbound';
+    await screen.findByRole('button', { name: filterName });
+    fireEvent.click(screen.getByRole('button', { name: /MOVE1/ }));
+    const reference = screen.getByRole('navigation', { name: 'Vehicle reference' });
+    const link = within(reference).getByRole('link', { name: action });
+    const target = new URL(link.getAttribute('href')!, 'https://inventory.invalid');
+    const returnUrl = new URL(target.searchParams.get('returnTo')!, 'https://inventory.invalid');
+    expect(returnUrl.searchParams.get('id')).toBe('transfer-1');
+    expect(returnUrl.searchParams.get(filter === 'store' ? 'store' : 'from')).toBe('Howell');
+    fireEvent.click(link);
+    fireEvent.click(screen.getByRole('link', { name: 'Back to move workspace' }));
+    await screen.findByRole('button', { name: filterName });
+    expect(screen.getByRole('button', { name: /MOVE1/ })).toHaveAttribute('aria-current', 'true');
+    expect(screen.queryByRole('button', { name: /MOVE3/ })).not.toBeInTheDocument();
+    if (filter === 'route') expect(screen.queryByRole('button', { name: /MOVE2/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('link', { name: 'Back to vehicle moves' })[0]);
+    await screen.findByRole('button', { name: filterName });
+    expect(screen.getByTestId('router-location')).not.toHaveTextContent('id=transfer-1');
+    expect(screen.queryByRole('button', { name: /MOVE3/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['store', 'history', 'Completed', 'all'],
+    ['store', 'needs-action', 'Your next steps', 'return-due'],
+    ['route', 'history', 'Completed', 'all'],
+    ['route', 'needs-action', 'Your next steps', 'return-due'],
+  ])('preserves the chosen %s queue %s view and filter through Records', async (hint, view, label, filter) => {
+    const data = bootstrap(2);
+    data.transfers[0] = { ...data.transfers[0], currentLocation: 'Ford Detroit', requestStatus: view === 'history' ? 'closed' : 'arrived', movementStatus: 'at_requesting_store' };
+    data.vehicles = [inventoryVehicle('Howell', data.transfers[0].vin, 'MOVE1')];
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Lincoln', role: 'manager', currentUser: 'Joe Manager', submitTransfer: vi.fn() });
+    mocks.getTransfer.mockImplementation((id: string) => Promise.resolve(data.transfers.find(record => record.id === id)));
+    const initial = hint === 'store' ? '/transfers?store=Howell&id=transfer-1' : '/transfers?from=Howell&to=Ford+Detroit&leg=outbound&id=transfer-1';
+    render(<MemoryRouter initialEntries={[initial]}><Routes>
+      <Route path="/transfers" element={<TransfersPage />} />
+      <Route path="/inventory" element={<VehicleReturnLink />} />
+    </Routes></MemoryRouter>);
+    const filterName = hint === 'store' ? 'Clear home store filter: Howell' : 'Clear route filter: Howell to Ford Detroit, outbound';
+    await screen.findByRole('button', { name: filterName });
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), { target: { value: filter } });
+    const records = within(screen.getByRole('navigation', { name: 'Vehicle reference' })).getByRole('link', { name: 'Records' });
+    const target = new URL(records.getAttribute('href')!, 'https://inventory.invalid');
+    const returnUrl = new URL(target.searchParams.get('returnTo')!, 'https://inventory.invalid');
+    expect(returnUrl.searchParams.get('queueView')).toBe(view);
+    expect(returnUrl.searchParams.get('queueFilter')).toBe(filter);
+    fireEvent.click(records);
+    fireEvent.click(screen.getByRole('link', { name: 'Back to move workspace' }));
+    await screen.findByRole('button', { name: filterName });
+    expect(screen.getByRole('button', { name: new RegExp(`^${label}`) })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toHaveValue(filter);
+    expect(screen.getByRole('navigation', { name: 'Vehicle reference' })).toBeInTheDocument();
   });
 
   it('opens a store-board arrow as exactly that leg\'s moves across all stores, once', () => {

@@ -70,7 +70,7 @@ test('phone pagination and row size remain clear of the saved-vehicle launcher',
   const pages = page.getByRole('navigation', { name: 'Inventory pages' })
   await expect(pages).toContainText('Showing 1–1 of 1')
   const launcher = page.getByRole('button', { name: /^Saved vehicles:/ })
-  await expect(launcher).toHaveAccessibleName('Saved vehicles: Synthetic pager choices (4)')
+  await expect(launcher).toHaveAccessibleName('Saved vehicles: Synthetic pager choices (4) — Saved lists')
   const launcherBounds = await launcher.boundingBox()
   expect(launcherBounds).not.toBeNull()
   for (const control of [

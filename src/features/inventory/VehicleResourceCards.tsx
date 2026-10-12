@@ -215,6 +215,81 @@ function scanRows(resource: VehicleResource, vehicle: VehicleResourceVehicle, ex
   return rows.slice(0, 3);
 }
 
+/** Inventory keeps ordinary facts concise, while every qualified result can grow. */
+function inventorySummaryRows(resource: VehicleResource, vehicle: VehicleResourceVehicle & { mileage?: number | null }): VehicleResourceSummaryRow[] {
+  const rows = resource.summaryRows ?? [];
+  if (resource.id === 'autocheck') {
+    const report = vehicle.autoCheckReport;
+    const review = historyReviewLabels(vehicle);
+    const primaryLabels = ['Score', 'Owners / use', 'Reported use'];
+    const primary = rows.filter(row => primaryLabels.includes(row.label) || /title|accident|damage/i.test(row.label));
+    const exceptions = rows.filter(row => !primary.includes(row) && (review.has(historyLabel(row.label))
+      || /\b(?:lien reported|corrected title|not captured|not available|no cpo info available|unavailable|unknown|incomplete|unconfirmed)\b/i.test([...row.values, row.detail].filter(Boolean).join(' '))));
+    const odometer = rows.find(row => row.label === 'Last odometer');
+    // A date or any other qualification makes this historical evidence distinct.
+    const repeatsMileage = typeof vehicle.mileage === 'number' && vehicle.mileage === report?.lastReportedOdometer && !odometer?.detail;
+    const selected = [...primary, ...exceptions, ...(!repeatsMileage && odometer && !exceptions.includes(odometer) ? [odometer] : [])];
+    if (!primary.some(row => row.label === 'Score')) selected.unshift({ label:'Score', values:['Not captured'] });
+    if (!primary.some(row => /owners|use/i.test(row.label))) selected.push({ label:'Owners', values:['Not captured'] });
+    if (!primary.some(row => /title/i.test(row.label))) selected.push({ label:'Title', values:['Not captured'] });
+    if (!primary.some(row => /accident|damage/i.test(row.label))) selected.push({ label:'Accidents', values:['Not captured'] });
+    return selected.map(row => row.label === 'Owners / use' ? { ...row, label:'Owners' } : row);
+  }
+  if (resource.id === 'oasis') {
+    const actionRow = rows.find(row => /actions/i.test(row.label));
+    return [
+      { label:'Actions', values:[resource.scanFacts?.[0] === 'No open Ford actions' ? 'No open actions' : resource.scanFacts?.[0] ?? 'Action status unconfirmed'] },
+      ...(actionRow && actionRow.values.some(value => !/^no open ford actions$/i.test(value)) ? [{ ...actionRow, label:'Service' }] : []),
+      rows.find(row => row.label === 'Warranty start') ?? { label:'Warranty start', values:['Not captured'] },
+    ];
+  }
+  const sticker = resource.stickerDetails;
+  if (sticker) {
+    const options = sticker.optionLines.map(stickerLineParts);
+    const highlight = sticker.equipmentGroup && stickerLineParts(sticker.equipmentGroup).label || options.find(line => !line.child)?.label || sticker.equipmentGroupContents?.[0];
+    const counts = [
+      sticker.equipmentGroupContents?.length ? `${sticker.equipmentGroupContents.length} included` : null,
+      options.length ? `${options.length} ${sticker.equipmentGroupContents !== undefined ? 'optional' : 'captured'} ${options.length === 1 ? 'entry' : 'entries'}` : null,
+    ].filter(Boolean);
+    return [
+      { label:'Captured', values:[counts.join(' · ') || 'Equipment details not captured'] },
+      ...(highlight ? [{ label:'Highlight', values:[highlight] }] : []),
+    ];
+  }
+  return scanRows(resource, vehicle, true);
+}
+
+function inventorySourceNote(resource: VehicleResource, vehicle: VehicleResourceVehicle): string | null {
+  const source = resource.id === 'autocheck' ? vehicle.autoCheckReport : resource.id === 'oasis' ? vehicle.fordOasis : resource.id === 'vauto' ? vehicle.factoryEquipment : vehicle.windowSticker;
+  const state = source?.dataState;
+  const qualification = state === 'stale' || state === 'stale_unverified' ? 'Saved report · refresh at source'
+    : state === 'incomplete' ? 'Partial captured record' : state === 'unavailable' ? 'Source currently unavailable' : state === 'unknown' ? 'Source status unknown' : null;
+  const notes = [decisionSourceNote(resource.sourceNote), qualification, resource.id === 'vauto' ? 'Informational profile · not an original sticker' : null];
+  return [...new Set(notes.filter((note): note is string => Boolean(note)))].join(' · ') || null;
+}
+
+/** A collapsed ledger never hides material or missing source evidence. */
+export function VehicleResourceInventoryWarnings({ vehicle }: { vehicle: VehicleResourceVehicle & { mileage?: number | null } }) {
+  const resources = vehicleOverviewResources(vehicle);
+  const warnings = resources.filter(resource => resource.id !== 'invoice').flatMap(resource => {
+    const review = historyReviewLabels(vehicle);
+    const rows = inventorySummaryRows(resource, vehicle).filter(row => {
+      if (row.values.some(value => /not captured|unconfirmed|incomplete/i.test(value))) return true;
+      if (resource.id === 'oasis') return row.label === 'Service' || row.label === 'Actions' && row.values[0] !== 'No open actions';
+      if (resource.id !== 'autocheck' || /^(score|owners|use|last odometer)$/i.test(row.label)) return false;
+      return review.has(historyLabel(row.label)) || /lien reported|corrected title|not available|no cpo info available/i.test([...row.values, row.detail].filter(Boolean).join(' '));
+    });
+    const synthetic = Boolean(getDemoWindowSticker(vehicle));
+    const note = inventorySourceNote(resource, vehicle)?.replace(/^Captured through vAuto for this VIN(?: · )?/, '');
+    const facts = [...rows.map(row => `${HISTORY_LABELS[row.label.toLowerCase()] ?? row.label}: ${historyExceptionText(row, synthetic)}`), note].filter(Boolean);
+    return facts.length ? [`${resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : 'Equipment'} · ${facts.join(' · ')}`] : [];
+  });
+  if (!resources.some(resource => ['window-sticker','vauto'].includes(resource.id))) warnings.push('Equipment not captured');
+  if (!resources.some(resource => resource.id === 'autocheck')) warnings.push('History not captured');
+  if (/^(ford|lincoln)$/i.test(vehicle.make?.trim() ?? '') && !resources.some(resource => resource.id === 'oasis')) warnings.push('OASIS not captured');
+  return warnings.length ? <div className="inventory-source-qualifications" role="note" aria-label={`Source qualifications for ${vehicle.vin}`}>{warnings.map((warning, index) => <span key={index}>{warning}</span>)}</div> : null;
+}
+
 function ScanFields({ rows, resource, synthetic }: { rows: VehicleResourceSummaryRow[]; resource: VehicleResource; synthetic: boolean }) {
   return <dl className="vehicle-resource-scan__fields">{rows.map((row, index) => {
     const label = resource.id === 'autocheck' ? HISTORY_LABELS[row.label.toLowerCase()] ?? row.label : row.label === 'Warranty start' ? 'In service' : row.label;
@@ -322,26 +397,29 @@ function ResourceSnapshot({ resource, vehicle, rows, facts, synthetic, detailed 
 }
 
 /** The same captured ledger can occupy its decision column without copying source logic. */
-export function VehicleResourceScan({ resource, vehicle, onOpenSection, onSelectResource, selectedId, explicitDestination = false }: {
+export function VehicleResourceScan({ resource, vehicle, onOpenSection, onSelectResource, selectedId, explicitDestination = false, presentation = 'full' }: {
   explicitDestination?: boolean;
-  resource: VehicleResource; vehicle: VehicleResourceVehicle;
+  presentation?: 'full' | 'inventory-summary';
+  resource: VehicleResource; vehicle: VehicleResourceVehicle & { mileage?: number | null };
   onOpenSection?: (target: VehicleWorkspaceTab) => void;
   onSelectResource?: (id: string | null) => void;
   selectedId?: string | null;
 }) {
   const syntheticPreview = Boolean(getDemoWindowSticker(vehicle));
-  const rows = scanRows(resource, vehicle, explicitDestination);
+  const inventorySummary = presentation === 'inventory-summary';
+  const rows = inventorySummary ? inventorySummaryRows(resource, vehicle) : scanRows(resource, vehicle, explicitDestination);
+  const sourceNote = inventorySummary ? inventorySourceNote(resource, vehicle) : decisionSourceNote(resource.sourceNote);
   const wideRows = explicitDestination && resource.id === 'oasis' ? rows.filter(row => row.label === 'Service') : [];
   const compactRows = wideRows.length ? rows.filter(row => !wideRows.includes(row)) : rows;
   const label = resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker';
   const sourceContent = <><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}</span>{onSelectResource ? <ChevronDown size={13} aria-hidden="true"/> : null}</>;
-  return <div data-resource-kind={resource.id} className="vehicle-resource-scan">
+  return <div data-resource-kind={resource.id} className={`vehicle-resource-scan${inventorySummary ? ' vehicle-resource-scan--inventory-summary' : ''}`}>
     {onSelectResource && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" aria-label={`Show ${label === 'Sticker' ? 'sticker' : label === 'Equipment' ? 'equipment' : label} records`} aria-expanded={selectedId === resource.id} onClick={event => { event.currentTarget.focus({preventScroll:true}); onSelectResource?.(resource.id); }}>{sourceContent}</button>
       : resource.href ? <a className={`vehicle-resource-scan__source${explicitDestination ? ' vehicle-resource-scan__source--destination' : ''}`} title={`Open ${label === 'Equipment' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`}><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}{explicitDestination ? <small className="vehicle-resource-destination">New tab</small> : null}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
         : onOpenSection && resource.hasCapturedData ? <button type="button" className={`vehicle-resource-scan__source${explicitDestination ? ' vehicle-resource-scan__source--destination' : ''}`} title={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} aria-label={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} onClick={() => onOpenSection(resource.target)}>{explicitDestination ? <><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}<small className="vehicle-resource-destination">In app</small></span><ChevronRight size={13} aria-hidden="true"/></> : <>{sourceContent}<ArrowRight size={13} aria-hidden="true"/></>}</button>
           : <strong className="vehicle-resource-scan__source vehicle-resource-scan__source--static">{sourceContent}</strong>}
     <div className="vehicle-resource-scan__findings">{compactRows.length ? <ScanFields rows={compactRows} resource={resource} synthetic={syntheticPreview}/> : <p className="vehicle-resource-scan__missing">{resource.hasCapturedData ? 'Captured details in Records' : resource.id === 'vauto' && resource.href ? 'VIN equipment profile available' : 'No captured report'}</p>}</div>
-    {decisionSourceNote(resource.sourceNote) ? <p className="vehicle-resource-scan__caption">{decisionSourceNote(resource.sourceNote)}</p> : null}
+    {sourceNote ? <p className="vehicle-resource-scan__caption">{sourceNote}</p> : null}
     {wideRows.length ? <div className="vehicle-resource-scan__wide-findings"><ScanFields rows={wideRows} resource={resource} synthetic={syntheticPreview}/></div> : null}
   </div>;
 }

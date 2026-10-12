@@ -26,6 +26,7 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
   const [managementMode, setManagementMode] = useState<'create' | 'manage' | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [renameLabel, setRenameLabel] = useState(management?.activeLabel ?? '')
+  const renameDirty = useRef(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [addingVehicles, setAddingVehicles] = useState(false)
@@ -50,6 +51,10 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
   const restoreManagementFocus = (mode: 'create' | 'manage') => window.requestAnimationFrame(() => (mode === 'create' ? newListRef : manageRef).current?.focus({ preventScroll: true }))
   const closeManagement = (mode: 'create' | 'manage', clearNewLabel = false) => {
     setManagementMode(null)
+    if (mode === 'manage') {
+      renameDirty.current = false
+      setRenameLabel(management?.activeLabel ?? '')
+    }
     setConfirmDelete(false)
     setConfirmClear(false)
     if (clearNewLabel) setNewLabel('')
@@ -125,14 +130,17 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
       document.removeEventListener('pointerdown', handlePointerDown, true)
     }
   }, [expanded])
-  useEffect(() => { setRenameLabel(management?.activeLabel ?? ''); setConfirmDelete(false); setConfirmClear(false); setAddingVehicles(false); setVehicleQuery('') }, [management?.activeListId, management?.activeLabel])
+  useEffect(() => { renameDirty.current = false; setConfirmDelete(false); setConfirmClear(false); setAddingVehicles(false); setVehicleQuery('') }, [management?.activeListId])
+  useEffect(() => {
+    if (!renameDirty.current) setRenameLabel(management?.activeLabel ?? '')
+  }, [management?.activeListId, management?.activeLabel])
   useEffect(() => {
     if (managementMode) closeManagement(managementMode)
   // Closing on a server-selected list change is deliberate; managementMode
   // would make this effect re-run while the user is typing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [management?.activeListId])
-  useLayoutEffect(() => { sheetRequest.current += 1; setExpanded(false); setManagementMode(null); setConfirmClear(false); setAddingVehicles(false); setVehicleQuery(''); setSheetSnapshot(null); setSheetError(null); setRestoreSheetFocus(false) }, [accessContext, management?.accessRevoked])
+  useLayoutEffect(() => { sheetRequest.current += 1; renameDirty.current = false; setExpanded(false); setManagementMode(null); setConfirmClear(false); setAddingVehicles(false); setVehicleQuery(''); setSheetSnapshot(null); setSheetError(null); setRestoreSheetFocus(false) }, [accessContext, management?.accessRevoked])
   useEffect(() => { if (openRequest) setExpanded(true) }, [openRequest])
   useEffect(() => {
     if (!restoreSheetFocus || covered || !expanded || writesBlocked || management?.loading) return
@@ -188,7 +196,7 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
             {management.lists.map(list => <option key={list.id} value={list.id}>{list.label} ({list.count})</option>)}
           </select></label>
           <button ref={newListRef} type="button" aria-label="New list" aria-expanded={managementMode === 'create'} aria-controls={managementPanelId} disabled={writesBlocked} onClick={() => { if (managementMode === 'create') closeManagement('create', true); else { setManagementMode('create'); setConfirmDelete(false) } }}><Plus size={16} aria-hidden="true" /><span>New list</span></button>
-          {management.activeListId ? <button ref={manageRef} type="button" aria-label="Manage" aria-expanded={managementMode === 'manage'} aria-controls={managementPanelId} onClick={() => { if (managementMode === 'manage') closeManagement('manage'); else { setManagementMode('manage'); setConfirmDelete(false) } }}><Pencil size={16} aria-hidden="true" /><span>Manage</span><ChevronDown className="shortlist-manager__chevron" size={15} aria-hidden="true" /></button> : null}
+          {management.activeListId ? <button ref={manageRef} type="button" aria-label="Manage" aria-expanded={managementMode === 'manage'} aria-controls={managementPanelId} onClick={() => { if (managementMode === 'manage') closeManagement('manage'); else { renameDirty.current = false; setRenameLabel(management.activeLabel); setManagementMode('manage'); setConfirmDelete(false) } }}><Pencil size={16} aria-hidden="true" /><span>Manage</span><ChevronDown className="shortlist-manager__chevron" size={15} aria-hidden="true" /></button> : null}
         </div>
         {management.activeListId && management.addVehicleToActiveList ? <div className="shortlist-manager__add">
           <button type="button" aria-expanded={addingVehicles} aria-controls={`${managementPanelId}-vehicles`} disabled={writesBlocked} onClick={() => setAddingVehicles(value => !value)}><Plus size={16} aria-hidden="true" />Add vehicles</button>
@@ -209,7 +217,7 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
             <p>Use initials or a nickname only. No contact information.</p>
             <div className="shortlist-manager__actions"><button type="submit" disabled={writesBlocked || !newLabel.trim()}><Plus size={16} aria-hidden="true" />Create</button><button type="button" onClick={() => closeManagement('create', true)}>Cancel</button></div>
           </form> : management.activeListId ? <form className="shortlist-manager__form" onSubmit={async event => { event.preventDefault(); if (await management.renameActiveList(renameLabel)) closeManagement('manage') }}>
-            <label><span>Customer list name</span><input value={renameLabel} onChange={event => setRenameLabel(event.target.value)} maxLength={80} /></label>
+            <label><span>Customer list name</span><input value={renameLabel} onChange={event => { renameDirty.current = true; setRenameLabel(event.target.value) }} maxLength={80} /></label>
             <p>Use initials or a nickname only. No contact information.</p>
             <div className="shortlist-manager__actions"><button type="submit" disabled={writesBlocked || !renameLabel.trim()}>Save name</button>{confirmDelete ? <><button type="button" className="is-danger" disabled={writesBlocked} onClick={() => { void management.deleteActiveList(); setConfirmDelete(false) }}>Confirm delete</button><button type="button" onClick={() => setConfirmDelete(false)}>Cancel delete</button></> : <button type="button" className="is-danger" disabled={writesBlocked} onClick={() => setConfirmDelete(true)}><Trash2 size={16} aria-hidden="true" />Delete list</button>}</div>
             <div className="shortlist-manager__actions">{clearControls}</div>
@@ -237,8 +245,8 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
     </section> : null
   const launcher =
     <section className="shortlist-drawer" aria-label="Customer shortlist launcher" data-covered={covered || undefined} inert={covered} aria-hidden={covered ? true : undefined}>
-      <button ref={toggleRef} type="button" className="shortlist-drawer__toggle" aria-label={`Saved vehicles: ${management?.activeLabel ?? 'Shortlist'} (${entries.length})`} aria-expanded={expanded} aria-controls={panelId} onClick={() => expanded ? closeShortlist(true) : setExpanded(true)}>
-        <Heart size={18} aria-hidden="true" /><span>Saved</span><strong>{entries.length}</strong><ChevronDown size={18} aria-hidden="true" />
+      <button ref={toggleRef} type="button" className="shortlist-drawer__toggle" aria-label={`Saved vehicles: ${management?.activeLabel ?? 'Shortlist'} (${entries.length}) — Saved lists`} aria-expanded={expanded} aria-controls={panelId} onClick={() => expanded ? closeShortlist(true) : setExpanded(true)}>
+        <Heart size={18} aria-hidden="true" /><span>Saved lists</span><strong>{entries.length}</strong><ChevronDown size={18} aria-hidden="true" />
       </button>
     </section>
   return <>

@@ -10,7 +10,7 @@ const dealerMailVehicleUrl = (stock: string) =>
   dealerMailInteractiveVehicleUrl(stock)!
 
 function openDealerMailTools() {
-  fireEvent.click(screen.getByRole('button', { name: 'Hold status' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Hold evidence' }))
   return screen.getByRole('region', { name: 'DealerMail vehicle tools' })
 }
 

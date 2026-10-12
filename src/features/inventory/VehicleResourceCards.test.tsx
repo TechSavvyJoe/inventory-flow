@@ -2,8 +2,8 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InventoryVehicle } from './types';
 import type { VehicleRecord } from '../../types';
-import { VehicleResourceCards, type VehicleResourceVehicle } from './VehicleResourceCards';
-import { vehicleResourceCatalog } from './vehicle-resource-catalog';
+import { VehicleResourceCards, VehicleResourceScan, type VehicleResourceVehicle } from './VehicleResourceCards';
+import { vehicleResourceCatalog, vehicleOverviewResources } from './vehicle-resource-catalog';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function sources(): VehicleResourceVehicle {
@@ -814,4 +814,67 @@ describe('source-backed vehicle resource cards', () => {
     expect(vehicleResourceCatalog(adapted)).toHaveLength(5);
   });
 
+});
+
+
+describe('inventory-only source summaries', () => {
+  it('retains every qualified history result and suppresses only an unqualified duplicate odometer', () => {
+    const vehicle: VehicleResourceVehicle & { mileage: number } = { ...sources(), mileage: 12000 };
+    vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, accessMethod:'vauto', dataState:'stale', lastReportedOdometer:12000, checks:[
+      { label:'State Title Brand', status:'No issues' },
+      { label:'Accident / Damage', status:'No accidents reported' },
+      { label:'Open Recall Check', status:'Recall found', detail:'2 unrepaired recalls' },
+      { label:'Insurance Loss / Transfer', status:'Loss reported' },
+      { label:'Odometer Check', status:'No issues', detail:'Mileage discrepancy reported' },
+      { label:'Additional History', status:'Events reported', detail:'Corrected title' },
+      { label:'Certified Pre-Owned', status:'No CPO info available' },
+    ] };
+    const original = JSON.stringify(vehicle);
+    const renderScan = () => <section aria-label="Inventory history"><VehicleResourceScan resource={vehicleOverviewResources(vehicle).find(resource => resource.id === 'autocheck')!} vehicle={vehicle} presentation="inventory-summary" explicitDestination onOpenSection={vi.fn()}/></section>;
+    const page = render(renderScan());
+    const history = within(screen.getByRole('region', { name:'Inventory history' }));
+    for (const fact of ['2 unrepaired recalls', 'Loss reported', 'Mileage discrepancy reported', 'Corrected title', 'No CPO info available']) expect(history.getByText(fact)).toBeVisible();
+    expect(history.getByText(/Saved report · refresh at source/)).toBeVisible();
+    expect(history.queryByText('12,000 mi')).not.toBeInTheDocument();
+    expect(history.getByRole('link', { name:'Open AutoCheck report in a new tab' })).toHaveAttribute('href', vehicle.autoCheckReport.url);
+    expect(JSON.stringify(vehicle)).toBe(original);
+    vehicle.autoCheckReport.lastReportedOdometerDate = '2026-08-20';
+    page.rerender(renderScan());
+    expect(history.getByText('12,000 mi')).toBeVisible();
+    expect(history.getByText('08/20/2026')).toBeVisible();
+    vehicle.autoCheckReport.lastReportedOdometerDate = null;
+    vehicle.autoCheckReport.lastReportedOdometer = 11500;
+    page.rerender(renderScan());
+    expect(history.getByText('11,500 mi')).toBeVisible();
+  });
+
+  it('keeps all incomplete OASIS actions, their instructions and the missing in-service qualification visible', () => {
+    const vehicle = sources();
+    vehicle.fordOasis = { dataState:'incomplete', openActionsCaptured:false, openFieldServiceActions:[
+      { code:'SYNTH-01', description:'Inspect connector before replacing' },
+      { code:'SYNTH-02', description:'Contact the dealer for remedy availability' },
+    ], warrantyCoverages:[] };
+    const onOpenSection = vi.fn();
+    render(<section aria-label="Inventory OASIS"><VehicleResourceScan resource={vehicleOverviewResources(vehicle).find(resource => resource.id === 'oasis')!} vehicle={vehicle} presentation="inventory-summary" explicitDestination onOpenSection={onOpenSection}/></section>);
+    const oasis = within(screen.getByRole('region', { name:'Inventory OASIS' }));
+    expect(oasis.getByText('At least 2 captured service actions · result incomplete')).toBeVisible();
+    expect(oasis.getByText(/SYNTH-01.*Inspect connector before replacing/)).toBeVisible();
+    expect(oasis.getByText(/SYNTH-02.*Contact the dealer for remedy availability/)).toBeVisible();
+    expect(oasis.getByText('Partial captured record')).toBeVisible();
+    expect(oasis.getByText('In service')).toBeVisible();
+    expect(oasis.getByText('Not captured')).toBeVisible();
+    expect(oasis.getByRole('link', { name:'Open OASIS report in a new tab' })).toBeVisible();
+  });
+
+  it('counts captured equipment entries and preserves its incomplete and informational source qualifications', () => {
+    const vehicle = sources();
+    vehicle.windowSticker = null;
+    vehicle.factoryEquipment = { ...vehicle.factoryEquipment!, dataState:'incomplete' };
+    render(<section aria-label="Inventory equipment"><VehicleResourceScan resource={vehicleOverviewResources(vehicle).find(resource => resource.id === 'vauto')!} vehicle={vehicle} presentation="inventory-summary" explicitDestination onOpenSection={vi.fn()}/></section>);
+    const equipment = within(screen.getByRole('region', { name:'Inventory equipment' }));
+    expect(equipment.getByText('4 captured entries')).toBeVisible();
+    expect(equipment.getByText('Synthetic Tow Package')).toBeVisible();
+    expect(equipment.getByText(/Partial captured record.*Informational profile · not an original sticker/)).toBeVisible();
+    expect(equipment.getByRole('link', { name:'Open vAuto equipment report in a new tab' })).toHaveAttribute('href', vehicle.factoryEquipment.url);
+  });
 });

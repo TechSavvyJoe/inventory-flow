@@ -978,13 +978,17 @@ export function VehicleWorkspace({
                     : <strong>{dispositionSummary(appDisposition)}</strong>}</Fact> : null}
                 </dl>
                 <div className="vdp-focus-actions" role="group" aria-label="Vehicle operations">
+                  <div className="vdp-focus-workflow-actions" role="group" aria-label="Service and movement actions">
                   {serviceStatus === "needs_service" ? <WorkspaceLink className={flowButtonClassName({ variant: "primary" })} to={serviceHref + "&action=in_service"} preserveOrigin><Wrench size={18} aria-hidden="true" />Start service</WorkspaceLink> : null}
                   {movementAction}
-                  <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
                   {serviceStatus !== "serviced" ? <WorkspaceLink className={flowButtonClassName({ variant: serviceStatus === "needs_service" ? "secondary" : "primary" })} to={serviceHref + "&action=serviced"} preserveOrigin><Check size={18} aria-hidden="true" />Mark Ready</WorkspaceLink> : null}
+                  </div>
+                  <div className="vdp-focus-evidence-actions" role="group" aria-label="Hold evidence and Inventory Flow controls">
                   {serviceStatus === "serviced" ? <WorkspaceLink className={flowButtonClassName({ variant: "secondary" })} to={serviceHref} preserveOrigin>Service history</WorkspaceLink> : null}
-                  {dispositionContext && vehicle.manualHold?.enabled ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" ref={manualHoldOpenerRef} onClick={() => setManualHoldOpen(true)}><Tag size={18} aria-hidden="true" />{holdActionLabel(vehicle.manualHold, dispositionContext.role)}</button> : null}
+                  <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold evidence</button>
+                  {dispositionContext && vehicle.manualHold?.enabled ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" ref={manualHoldOpenerRef} onClick={() => setManualHoldOpen(true)}><Tag size={18} aria-hidden="true" />{vehicle.manualHold.canManage ? holdActionLabel(vehicle.manualHold, dispositionContext.role) : "Inventory Flow hold"}</button> : null}
                   {dispositionAction ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
+                  </div>
                 </div>
                 {dispositionStatus ? <p className="vdp-focus-next-action" role="status">{dispositionStatus}</p> : null}
                 {vehicle.inventoryDecision?.comparison === 'conflict' ? <p className="vdp-focus-next-action" role="status"><strong>Records disagree</strong> · Review Inventory Flow and reported hold / disposition evidence.</p> : null}
@@ -1074,7 +1078,7 @@ export function VehicleWorkspace({
           </WorkspacePanel>
           <WorkspacePanel id="hold" label="Holds & moves" active={activePage === "hold"}>
             <FlowLedgerHeading level={3} variant="plain" className="vdp-focus-ledger-heading" title="Holds & moves" actions={<div className="vdp-focus-actions">{movementAction}</div>} />
-            {vehicle.manualHold ? <section className="vdp-focus-manual-summary" aria-label="Hold and disposition controls"><div><strong>{unifiedHoldLabel}</strong><span>Inventory Flow: <span>{holdStateLabel(vehicle.manualHold.state)}</span> · {dispositionSummary(appDisposition)}</span></div><div className="vdp-focus-actions">{dispositionContext && vehicle.manualHold.enabled ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={event => { manualHoldOpenerRef.current = event.currentTarget; setManualHoldOpen(true); }}>{holdActionLabel(vehicle.manualHold, dispositionContext.role)}</button> : null}{dispositionAction ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={event => { dispositionOpenerRef.current = event.currentTarget; setDispositionOpen(true); }}>{dispositionAction}</button> : null}</div></section> : null}
+            {vehicle.manualHold ? <section className="vdp-focus-manual-summary" aria-label="Hold and disposition controls"><div><strong>{unifiedHoldLabel}</strong><span>Inventory Flow: <span>{holdStateLabel(vehicle.manualHold.state)}</span> · {dispositionSummary(appDisposition)}</span></div><div className="vdp-focus-actions">{dispositionContext && vehicle.manualHold.enabled ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={event => { manualHoldOpenerRef.current = event.currentTarget; setManualHoldOpen(true); }}>{vehicle.manualHold.canManage ? holdActionLabel(vehicle.manualHold, dispositionContext.role) : "Inventory Flow hold"}</button> : null}{dispositionAction ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={event => { dispositionOpenerRef.current = event.currentTarget; setDispositionOpen(true); }}>{dispositionAction}</button> : null}</div></section> : null}
             <ProviderEvidence vehicle={vehicle} />
             <div className="vdp-focus-hold-grid inventory-workspace-hold-center" data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}>
               <div className="vdp-focus-hold-evidence"><HoldDetails vehicle={vehicle} /></div>

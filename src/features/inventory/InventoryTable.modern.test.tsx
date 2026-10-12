@@ -4,13 +4,15 @@ import { equipmentFinderItems } from "./vehicle-equipment";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InventoryMobileList, InventoryTable, VehiclePhoto, vehicleOperationalStatus } from './InventoryTable';
 import type { InventoryVehicle } from './types';
 import type { ServiceReadinessStatus } from '../../types';
 import { dealerMailInteractiveVehicleUrl } from './vehicle-document-utils';
 
-afterEach(cleanup);
+// Existing source-detail cases exercise the user's persisted expanded presentation.
+beforeEach(() => localStorage.setItem('inventory-flow.inventory-detail-density', 'expanded'));
+afterEach(() => { cleanup(); localStorage.removeItem('inventory-flow.inventory-detail-density'); });
 
 function resource(id: string, container: ParentNode = document.body): HTMLElement {
   const control = container.querySelector<HTMLElement>(`[data-resource="${id}"]`);
@@ -156,11 +158,11 @@ describe('modern inventory result access', () => {
       const { onSelectVehicle, onRequestVehicle } = renderRow(vehicle);
       const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
       const buttons = within(actions).getAllByRole('button');
-      expect(buttons).toHaveLength(3);
+      expect(buttons).toHaveLength(4);
       expect(buttons[0]).toHaveAccessibleName('Open vehicle records for 2024 Ford F-150 XLT');
       const request = within(actions).getByRole('button', { name: 'Request vehicle 2024 Ford F-150 XLT' });
       const save = within(actions).getByRole('button', { name: 'Save H240512 to shortlist' });
-      expect(buttons[layout === 'desktop' ? 2 : 1]).toBe(request);
+      expect(buttons[layout === 'desktop' ? 3 : 1]).toBe(request);
       expect(buttons[layout === 'desktop' ? 1 : 2]).toBe(save);
       const listing = within(actions).getByRole('link', { name: 'Open listing for 2024 Ford F-150 XLT in a new tab' });
       expect(listing).toHaveAttribute('href', vehicle.publicListing.listingUrl);
@@ -393,7 +395,7 @@ describe('modern inventory result access', () => {
     const sticker = within(document.querySelector('.vehicle-resource-scan[data-resource-kind="window-sticker"]') as HTMLElement);
     expect(sticker.queryByText('MSRP')).not.toBeInTheDocument();
     expect(sticker.getByText('Highlight')).toBeVisible();
-    expect(sticker.getByText('XLT Sport Appearance Package')).toBeVisible();
+    expect(sticker.getByText('Equipment Group 302A')).toBeVisible();
     expect(screen.getAllByText('Equipment Group 302A').length).toBeGreaterThan(0);
     expect(screen.getByText('2.7L EcoBoost V6 · 4x4')).toHaveAttribute('title', 'SuperCrew pickup · 10-speed automatic · Gasoline');
     expect(screen.getByText('10-speed auto · Gasoline')).toBeVisible();
@@ -435,7 +437,7 @@ describe('modern inventory result access', () => {
     expect(within(supportingIdentity).getByRole('button', { name: 'Copy mileage: 8642' })).toBeInTheDocument();
     expect(metricsCell).not.toHaveTextContent('8,642 mi');
     expect(supportingIdentity).toHaveTextContent('21 days listed');
-    const equipmentCell = vehicleCell.querySelector('.inv-desk-configuration') as HTMLElement;
+    const equipmentCell = screen.getByRole('group', { name:'Configuration for 2024 Ford F-150 XLT' });
     expect(equipmentCell).toHaveTextContent('Equipment Group 302A');
     expect(equipmentCell.querySelectorAll('.inv-desk-equipment__item')).toHaveLength(3);
     expect(equipmentCell).toHaveTextContent('XLT Sport Appearance Package');
@@ -478,10 +480,10 @@ describe('modern inventory result access', () => {
     render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
 
     const row = screen.getByRole('button', { name: 'Copy VIN: 1FTFW1E84RKF12345' }).closest('tr')!;
-    const identity = within(row).getByRole('cell', { name: /ExteriorOxford WhiteInteriorBlack/ });
+    const identity = within(row).getByRole('cell', { name: /2024 Ford F-150/ });
     const primary = row;
     const price = primary.querySelector('.inv-desk-price') as HTMLElement;
-    const configuration = within(primary).getByRole('cell', { name: /MPG city\/hwy18 \/ 24/ });
+    const configuration = screen.getByRole('group', { name: 'Configuration for 2024 Ford F-150 XLT' });
     const operations = within(primary).getByRole('cell', { name: /Location Fowlerville.*Hold/ });
 
     const command = screen.getByRole('button', { name: 'Open vehicle details for 2024 Ford F-150 XLT' }).closest('tr')!;
@@ -497,8 +499,8 @@ describe('modern inventory result access', () => {
     expect(price).not.toHaveTextContent(/Listed MSRP|Under MSRP|Inventory|Captured/);
     await userEvent.click(within(identity).getByRole('button', { name: 'Copy window sticker base MSRP: 48750' }));
     expect(writeText).toHaveBeenCalledWith('48750');
-    expect(configuration).toHaveTextContent('MPG city/hwy18 / 24');
-    expect(within(configuration).getByText('18 / 24')).toHaveAttribute('title', '18 city / 24 hwy MPG');
+    expect(configuration).toHaveTextContent('Powertrain2.7L EcoBoost V6 · 4x4');
+    expect(configuration).toHaveTextContent('18 city / 24 hwy MPG');
     expect(operations).not.toHaveTextContent(/MSRP|Listing captured|MPG/);
     if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
     else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
@@ -855,7 +857,10 @@ describe('modern inventory result access', () => {
     const card = screen.getByRole('article');
     const detailTarget = within(card).getByRole('button', { name: /^Open details for 2024 Ford F-150 XLT/ });
     expect(card.parentElement).toHaveClass('if-srp-mobile-list');
-    for (const fact of ['2024 Ford F-150 XLT', '$46,995', '8,642 mi']) expect(detailTarget).toHaveTextContent(fact);
+    for (const fact of ['2024 Ford F-150 XLT', '$46,995']) expect(detailTarget).toHaveTextContent(fact);
+    expect(detailTarget).not.toHaveTextContent('8,642 mi');
+    expect(within(card).getByRole('button', { name:'Copy mileage: 8642' })).toBeEnabled();
+    expect(within(card).getAllByText('8,642 mi')).toHaveLength(1);
     expect(detailTarget).toHaveAccessibleName(expect.stringContaining('Open details'));
     expect(card).toHaveTextContent('H240512');
     expect(detailTarget).not.toHaveTextContent(vehicle.vin);

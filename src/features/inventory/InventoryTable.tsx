@@ -3,7 +3,7 @@ import { DISPOSITION_LABELS } from '../overview/disposition-model';
 import { equipmentFinderItems } from "./vehicle-equipment";
 import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { WorkspaceLink } from "../../components/WorkspaceLink";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useId, type ReactNode } from "react";
 import {
   CarFront,
   ChevronRight,
@@ -19,7 +19,7 @@ import {
 import { CopyableValue } from "../../components/CopyableValue";
 import { ServiceStatusLink } from "./ServiceStatusLink";
 import { InventoryRecordsPanel } from "./InventoryRecordsPanel";
-import { VehicleResourceCards, VehicleResourceScan } from "./VehicleResourceCards";
+import { VehicleResourceInventoryWarnings, VehicleResourceScan } from "./VehicleResourceCards";
 import { oasisActionLabel, vehicleOverviewResources } from "./vehicle-resource-catalog";
 import {
   formatMileage,
@@ -44,6 +44,7 @@ import type {
   InventoryTableProps,
   InventoryVehicle,
 } from "./types";
+import { useInventoryExpansion } from "./InventoryExpansion";
 import "./InventoryTable.desk.css";
 import "./InventoryMobile.scan.css";
 
@@ -235,7 +236,8 @@ function humanizeStatusLabel(label: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
+function DeskVehicleCell({ vehicle, onSelectVehicle, priority, expanded }: {
+  expanded: boolean;
   priority?: boolean;
   vehicle: InventoryVehicle;
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
@@ -255,12 +257,11 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
           <strong>{identity}</strong>
           <span className="inv-desk-vehicle__series">{series ? <span>{series}</span> : null}<CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/><span className="inv-desk-vehicle__age">{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</span></span>
         </button>
-        <DeskPriceCell vehicle={vehicle}/>
+        <div className="inv-desk-price-stack"><DeskPriceCell vehicle={vehicle}/><VehicleChangeHistory vehicle={vehicle} onSelectVehicle={onSelectVehicle}/></div>
         </div>
-        <DeskConfigurationCell vehicle={vehicle} onSelectVehicle={onSelectVehicle}/>
-        <VehicleChangeHistory vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
+        <DeskVehicleFacts vehicle={vehicle}/>
+        {!expanded ? <VehicleResourceInventoryWarnings vehicle={vehicle}/> : null}
       </div>
-      <DeskVehicleFacts vehicle={vehicle}/>
     </div>
   );
 }
@@ -465,15 +466,13 @@ function DeskConfigurationCell({ vehicle, onSelectVehicle }: { vehicle: Inventor
   const powertrain = [vehicle.engine, vehicle.drivetrain].filter(Boolean).join(" · ");
   const transmission = [vehicle.transmission?.replace(/\bautomatic\b/gi, "auto"), vehicle.fuelType].filter(Boolean).join(" · ");
   const fuelEconomy = capturedFuelEconomy(vehicle);
-  return <div className="inv-desk-configuration">
-    <div className="inv-desk-configuration__fact"><small>Engine</small><span title={[vehicle.bodyType || vehicle.bodyStyle, vehicle.transmission, vehicle.fuelType].filter(Boolean).join(" · ")}>{powertrain || configuration || "Specifications not published"}</span></div>
-    {transmission ? <div className="inv-desk-configuration__fact"><small>Transmission</small><span title={[vehicle.transmission, vehicle.fuelType].filter(Boolean).join(" · ")}>{transmission}</span></div> : null}
-    {fuelEconomy ? <div className="inv-desk-configuration__fact"><small>{/^\d+ city \/ \d+ hwy MPG$/.test(fuelEconomy) ? 'MPG city/hwy' : 'Economy'}</small><span className="inv-desk-configuration__economy" title={fuelEconomy}>{fuelEconomy.replace(/^(\d+) city \/ (\d+) hwy MPG$/, '$1 / $2')}</span></div> : null}
-    <div className="inv-desk-vehicle__comparison">
-      {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
-      {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
-    </div>
-    <DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
+  return <div className="inv-desk-configuration" role="group" aria-label={`Configuration for ${vehicleDisplayName(vehicle)}`}>
+    <div className="inv-desk-configuration__fact"><small>Powertrain</small><div className="inv-desk-configuration__values"><span title={[vehicle.bodyType || vehicle.bodyStyle, vehicle.transmission, vehicle.fuelType].filter(Boolean).join(" · ")}>{powertrain || configuration || "Specifications not published"}</span>{transmission ? <span title={[vehicle.transmission, vehicle.fuelType].filter(Boolean).join(" · ")}>{transmission}</span> : null}{fuelEconomy ? <span>{fuelEconomy}</span> : null}</div></div>
+    {vehicle.exteriorColor || vehicle.interiorColor ? <div className="inv-desk-configuration__fact"><small>Colors</small><div className="inv-desk-vehicle__comparison">
+      {vehicle.exteriorColor ? <span>{vehicle.exteriorColor}<small>exterior</small></span> : null}
+      {vehicle.interiorColor ? <span>{vehicle.interiorColor}<small>interior</small></span> : null}
+    </div></div> : null}
+    <DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle}/>
   </div>;
 }
 
@@ -495,6 +494,7 @@ interface DeskRowActionsProps extends Pick<
   hideListing?: boolean;
   /** Row-owned Records launcher; when supplied it renders beside Details so every row action lives in one group. */
   recordsAction?: ReactNode;
+  detailsAction?: ReactNode;
   /** Only for layouts without an Operations service signal of their own. */
   includeServiceLink?: boolean;
   recordsDisclosure?: { expanded: boolean; controls: string; onToggle: () => void };
@@ -504,7 +504,7 @@ interface DeskRowActionsProps extends Pick<
 // the Operations column, so the action group deliberately does not repeat them.
 // Every remaining action is directly visible (no overflow menu) at 44px.
 export function DeskRowActions({
-  vehicle, variant, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, subset, recordsAction, recordsDisclosure, hideRecords = false, hideListing = false, includeServiceLink = false,
+  vehicle, variant, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, subset, recordsAction, detailsAction, recordsDisclosure, hideRecords = false, hideListing = false, includeServiceLink = false,
 }: DeskRowActionsProps) {
   const shortlist = useCustomerShortlist();
   const saved = shortlist.isShortlisted(vehicle);
@@ -561,6 +561,7 @@ export function DeskRowActions({
         disabled title="No captured public listing link" aria-label={`Listing unavailable for ${name}`}>
         Listing <ExternalLink size={13} aria-hidden="true" />
       </button> : null}
+      {!subset ? detailsAction : null}
       {variant === "desktop" ? <>{canTrack || canCreateMove ? <span className="inv-desk-actions__divider" aria-hidden="true" /> : null}{movementActions}</> : null}
     </div>
   );
@@ -688,7 +689,7 @@ function InventorySourceBand({ vehicle, onSelectVehicle }: {
   const history = resources.find(resource => resource.id === 'autocheck');
   const oasis = resources.find(resource => resource.id === 'oasis');
   const source = (resource: typeof equipment, label: string, missing: string) => <section className="inventory-source-band__source vehicle-resources vehicle-resources--scan" aria-label={`${label} source evidence for ${vehicleDisplayName(vehicle)}`} onClick={stopRowSelection}>
-    {resource ? <VehicleResourceScan resource={resource} vehicle={vehicle} explicitDestination onOpenSection={target => onSelectVehicle(vehicle, target)}/> : <div className="inventory-source-band__missing"><strong>{label}</strong><p>{missing}</p></div>}
+    {resource ? <VehicleResourceScan resource={resource} vehicle={vehicle} presentation="inventory-summary" explicitDestination onOpenSection={target => onSelectVehicle(vehicle, target)}/> : <div className="inventory-source-band__missing"><strong>{label}</strong><p>{missing}</p></div>}
   </section>;
   return <div className="inventory-source-band" aria-label={`Source evidence for ${vehicleDisplayName(vehicle)}`}>
     {source(equipment, 'Factory equipment', 'Equipment not captured')}
@@ -697,16 +698,34 @@ function InventorySourceBand({ vehicle, onSelectVehicle }: {
   </div>;
 }
 
+function useVehicleDisclosure(vehicle: InventoryVehicle) {
+  const { expanded, toggle } = useInventoryExpansion(vehicle.vin);
+  const id = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!expanded && contentRef.current?.contains(document.activeElement)) triggerRef.current?.focus({ preventScroll:true });
+  }, [expanded]);
+  const control = <button ref={triggerRef} type="button" className="inv-desk-action inv-desk-action--details" data-row-action="expand-details" aria-expanded={expanded} aria-controls={id}
+    aria-label={`${expanded ? 'Collapse' : 'Expand'} details for ${vehicleDisplayName(vehicle)}`}
+    onClick={event => { event.stopPropagation(); toggle(); }}><ChevronDown size={16} aria-hidden="true"/>Details</button>;
+  const content = (children: ReactNode) => <div ref={contentRef} id={id} className="inventory-detail-disclosure" data-expanded={expanded} aria-hidden={!expanded} inert={!expanded}>
+    <div className="inventory-detail-disclosure__clip"><section className="inventory-detail-disclosure__body" aria-label={`Additional details for ${vehicleDisplayName(vehicle)}`}>{children}</section></div>
+  </div>;
+  return { expanded, control, content };
+}
+
 const DeskRow = memo(function DeskRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers, viewerStore }: VehicleRowProps) {
+  const disclosure = useVehicleDisclosure(vehicle);
   return <tbody className={`inv-desk-vehicle-rows${selected ? " is-selected" : ""}`} data-inventory-vehicle-rows={vehicle.id}>
     <tr className={`inv-desk-row${selected ? " is-selected" : ""}`} data-stock-number={vehicle.stockNumber} data-inventory-vehicle-trigger={vehicle.id}
       data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
       data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"} onClick={() => handlers.onSelectVehicle(vehicle)}>
-      <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle"><DeskVehicleCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} priority={priority}/></td>
+      <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle"><DeskVehicleCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} priority={priority} expanded={disclosure.expanded}/></td>
       <td className="inv-desk-td" data-column="status"><DeskStatusCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} onOpenSourceRecord={handlers.onOpenSourceRecord} viewerStore={viewerStore}/></td>
     </tr>
-    <tr className="inv-desk-evidence"><td colSpan={2}><InventorySourceBand vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle}/></td></tr>
-    <tr className="inv-desk-footer"><td colSpan={2}><DeskRowActions vehicle={vehicle} variant="desktop" {...handlers} recordsAction={<RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron={false} />} /></td></tr>
+    <tr className="inv-desk-evidence"><td colSpan={2}>{disclosure.content(<><div className="inv-desk-expanded-configuration"><DeskConfigurationCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle}/></div><InventorySourceBand vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle}/></>)}</td></tr>
+    <tr className="inv-desk-footer"><td colSpan={2}><DeskRowActions vehicle={vehicle} variant="desktop" {...handlers} detailsAction={disclosure.control} recordsAction={<RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron={false} />} /></td></tr>
   </tbody>;
 });
 
@@ -785,6 +804,7 @@ export function InventoryTable({
 
 const MobileRow = memo(function MobileRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers, viewerStore }: VehicleRowProps) {
   const { onSelectVehicle, onOpenSourceRecord } = handlers;
+  const disclosure = useVehicleDisclosure(vehicle);
   const name = vehicleDisplayName(vehicle);
   const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
   const movementStatus = vehicleMovementStatus(vehicle, viewerStore);
@@ -839,7 +859,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           </span>
           <span className="inventory-mobile-row__valuation">
             <b>{formatMoney(vehicle.price)}</b>
-            <span aria-label={`Mileage: ${formatMileage(vehicle.mileage)}`}>{formatMileage(vehicle.mileage)}</span>{vehicle.daysListed != null ? <span aria-label={`Age: ${vehicle.daysListed} days listed`}>{vehicle.daysListed} days</span> : null}
+            {vehicle.daysListed != null ? <span aria-label={`Age: ${vehicle.daysListed} days listed`}>{vehicle.daysListed} days</span> : null}
           </span>
           <small className="inventory-mobile-row__specification" title="Engine / drive"><span>Engine</span>{powertrain}</small>
           <span className="inventory-mobile-row__certification"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/></span>
@@ -903,9 +923,9 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
             <span>{humanizeStatusLabel(operationalUpdate)}</span>
           </p> : null}
       </div>
-      <DeskRowActions vehicle={vehicle} variant="mobile" {...handlers} recordsAction={<RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron />} />
-      <VehicleResourceCards vehicle={vehicle} variant="signals" />
-      <div className="inventory-mobile-row__supporting">
+      <DeskRowActions vehicle={vehicle} variant="mobile" {...handlers} detailsAction={disclosure.control} recordsAction={<RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron />} />
+      {!disclosure.expanded ? <VehicleResourceInventoryWarnings vehicle={vehicle}/> : null}
+      {disclosure.content(<><div className="inventory-mobile-row__supporting">
       <dl className="inventory-mobile-row__captured-facts" aria-label="Captured vehicle specifications">
         {transmissionAndFuel || compactFuelEconomy ? <div data-fact="transmission">
           {transmissionAndFuel ? <>
@@ -923,7 +943,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
         </div> : null}
       </dl>
       </div>
-      <InventorySourceBand vehicle={vehicle} onSelectVehicle={onSelectVehicle}/>
+      <InventorySourceBand vehicle={vehicle} onSelectVehicle={onSelectVehicle}/></>)}
     </article>
   );
 });

@@ -1,16 +1,16 @@
-.ifx-page-header { display:grid; grid-template-columns:minmax(0,1fr) auto; min-width:0; background:var(--ifx-workspace-header-background); color:var(--ifx-workspace-header-ink); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); box-shadow:none; }
+.ifx-page-header { display:grid; grid-template-columns:minmax(0,1fr) auto; min-width:0; background:var(--ifx-workspace-header-background); background-image:var(--ifx-panel-header-fill); color:var(--ifx-workspace-header-ink); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); box-shadow:var(--ifx-panel-shadow); }
 .ifx-page-header__row { display:flex; align-items:center; gap:var(--ifx-space-2); min-width:0; min-height:var(--ifx-control-height-lg); padding:var(--ifx-space-1) var(--ifx-space-3); }
 .ifx-page-header__icon { display:grid; place-items:center; flex:none; width:var(--ifx-space-6); height:var(--ifx-space-6); background:transparent; color:var(--blue-600); }
 .ifx-page-header__icon svg { width:var(--ifx-icon-heading-size); height:var(--ifx-icon-heading-size); stroke-width:2; }
 .ifx-page-header__identity { flex:1; min-width:0; }
-.ifx-page-header .ifx-page-header__title { display:flex; align-items:center; gap:var(--ifx-space-2); margin:0; color:var(--ifx-workspace-header-ink); font-size:var(--ifx-text-h4); font-weight:var(--ifx-weight-semibold); line-height:var(--ifx-leading-heading); }
+.ifx-page-header .ifx-page-header__title { display:flex; align-items:center; gap:var(--ifx-space-2); margin:0; color:var(--ifx-workspace-header-ink); font-size:var(--ifx-text-h4); font-weight:var(--ifx-weight-bold); line-height:var(--ifx-leading-heading); letter-spacing:var(--ifx-tracking-tight); }
 .ifx-page-header__title svg { flex:none; width:var(--ifx-icon-heading-size); height:var(--ifx-icon-heading-size); color:var(--blue-600); stroke-width:2; }
 .ifx-page-header__description { color:var(--ifx-workspace-header-muted); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
 .ifx-page-header__controls, .ifx-page-header__actions { display:flex; align-items:center; flex-wrap:wrap; min-width:0; gap:var(--ifx-space-1); }
 .ifx-page-header__controls { padding:var(--ifx-space-1) var(--ifx-space-3); }
 .ifx-page-header__actions { flex:none; margin-left:auto; }
 .ifx-page-header__facts { display:flex; flex-wrap:wrap; grid-column:1 / -1; align-items:center; gap:var(--ifx-space-1) var(--ifx-space-3); padding:0 var(--ifx-space-3) var(--ifx-space-2); color:var(--ink-600); font-size:var(--ifx-text-sm); }
-.ifx-ledger-heading { min-width:0; color:var(--navy-900); background:var(--ifx-panel-header); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); }
+.ifx-ledger-heading { min-width:0; color:var(--navy-900); background:var(--ifx-panel-header); background-image:var(--ifx-panel-header-fill); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); box-shadow:var(--ifx-header-bevel); }
 .ifx-ledger-heading__row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; min-width:0; }
 .ifx-ledger-heading__label { display:flex; align-items:center; min-width:0; max-width:100%; padding:var(--ifx-space-2) var(--ifx-space-3); }
 .ifx-ledger-heading .ifx-ledger-heading__title { display:flex; align-items:center; gap:var(--ifx-space-2); margin:0; color:var(--navy-900); font-size:var(--ifx-text-body); font-weight:var(--ifx-weight-semibold); line-height:var(--ifx-leading-heading); }
@@ -61,8 +61,8 @@
   font-family: var(--ifx-font-text);
   font-size: var(--ifx-text-md);
   font-weight: var(--ifx-weight-semibold);
-  line-height: 1.15;
-  letter-spacing: 0;
+  line-height: var(--ifx-leading-heading);
+  letter-spacing: var(--ifx-tracking-label);
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -97,6 +97,7 @@
   --ifx-icon-accent: var(--ifx-neutral-0);
   border-color: var(--blue-700);
   background: var(--blue-600);
+  background-image:var(--ifx-primary-fill);
   box-shadow: var(--ifx-primary-shadow);
 }
 
@@ -106,6 +107,7 @@
   border-color: var(--ifx-panel-border);
   color: var(--ifx-neutral-800);
   background: var(--ifx-neutral-0);
+  background-image:var(--ifx-control-fill);
   box-shadow: var(--ifx-control-shadow);
 }
 
@@ -129,7 +131,10 @@
 .ifx-button--primary:hover:not(:disabled),
 .ifx-icon-button.ifx-button--primary:hover:not(:disabled) {
   background: var(--blue-700);
-  box-shadow: var(--ifx-primary-shadow);
+  background-image:var(--ifx-primary-fill-hover);
+  color: var(--ifx-neutral-0);
+  box-shadow: var(--ifx-primary-shadow-hover);
+  transform: translateY(var(--ifx-hover-distance));
 }
 
 .ifx-button--danger:hover:not(:disabled),
@@ -151,13 +156,24 @@
 .ifx-icon-button.ifx-button--secondary:hover:not(:disabled) {
   border-color: var(--blue-500);
   background: var(--blue-050);
-  box-shadow: var(--ifx-control-shadow);
+  background-image:var(--ifx-control-fill-hover);
+  box-shadow: var(--ifx-control-shadow-hover);
+  transform: translateY(var(--ifx-hover-distance));
 }
 
 .ifx-button:active:not(:disabled),
 .ifx-icon-button:active:not(:disabled) {
-  box-shadow: none;
+  box-shadow: var(--ifx-control-shadow-pressed);
   transform: translateY(var(--ifx-press-distance));
+}
+
+.ifx-button--quiet:active:not(:disabled),
+.ifx-icon-button.ifx-button--quiet:active:not(:disabled) { box-shadow:none; }
+
+.ifx-icon-button.ifx-button--primary:active:not(:disabled),
+.ifx-icon-button.ifx-button--secondary:active:not(:disabled) {
+  box-shadow:var(--ifx-control-shadow-pressed);
+  transform:translateY(var(--ifx-press-distance));
 }
 
 .ifx-button:focus-visible,
@@ -244,6 +260,12 @@
 @media (forced-colors: active) {
   .ifx-button,
   .ifx-icon-button { border: 1px solid CanvasText; forced-color-adjust: auto; }
+  :is(.ifx-button,.ifx-icon-button):is(:hover,:active,:focus-visible) { box-shadow:none; transform:none; }
+  .ifx-page-header,.ifx-ledger-heading { border-color:CanvasText; box-shadow:none; }
 }
 
 @media (prefers-reduced-motion: reduce) { .ifx-button:active:not(:disabled), .ifx-icon-button:active:not(:disabled) { transform:none; } }
+
+@media print {
+  .ifx-button,.ifx-icon-button { box-shadow:none; }
+}

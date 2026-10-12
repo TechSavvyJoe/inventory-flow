@@ -109,20 +109,12 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
   const scope = page.getByRole('group', { name: 'Inventory location scope' })
   const quickFilters = page.getByRole('group', { name: 'Inventory quick filters' })
   const serviceFilters = page.getByRole('group', { name: 'Inventory service status' })
-  const serviceButtons = [
-    serviceFilters.getByRole('button', { name: /^All service: \d+ vehicles$/ }),
-    serviceFilters.getByRole('button', { name: /^Waiting for service: \d+ vehicles$/ }),
-    serviceFilters.getByRole('button', { name: /^In service: \d+ vehicles$/ }),
-    serviceFilters.getByRole('button', { name: /^Ready: \d+ vehicles$/ }),
-  ]
   const serviceSelect = serviceFilters.getByRole('combobox', { name: 'Inventory service status' })
-  const serviceControls = width <= 1100 ? [serviceSelect] : serviceButtons
-  if (width <= 1100) {
-    await expect(serviceSelect).toBeVisible()
-    await expect(serviceSelect.getByRole('option')).toHaveText([
-      /^All service: \d+ vehicles?$/, /^Waiting for service: \d+ vehicles?$/, /^In service: \d+ vehicles?$/, /^Ready: \d+ vehicles?$/,
-    ])
-  }
+  const serviceControls = [serviceSelect]
+  await expect(serviceSelect).toBeVisible()
+  await expect(serviceSelect.getByRole('option')).toHaveText([
+    /^All service: \d+ vehicles?$/, /^Waiting for service: \d+ vehicles?$/, /^In service: \d+ vehicles?$/, /^Ready: \d+ vehicles?$/,
+  ])
   const sections = [
     page.getByRole('combobox', { name: 'Search inventory' }),
     scope.getByRole('button', { name: /^Howell inventory, \d+ of \d+ group vehicles$/ }),
@@ -135,7 +127,7 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     page.getByRole('button', { name: /^Filters/ }),
     page.getByRole('button', { name: /^Sort inventory\./ }),
   ]
-  for (const optional of [page.getByRole('button', { name: 'Scan vehicle', exact: true }), page.getByRole('button', { name: /^Shortlist \(\d+\)$/ })]) {
+  for (const optional of [page.getByRole('button', { name: 'Scan vehicle', exact: true }), page.getByRole('button', { name: /^Shortlist \(\d+\) — Saved only$/ })]) {
     if (await optional.isVisible()) sections.push(optional)
   }
   const boxes = await Promise.all(sections.map(async section => {

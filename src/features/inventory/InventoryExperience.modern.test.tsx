@@ -40,12 +40,12 @@ describe('modern inventory scope and paging', () => {
     const item = { ...vehicle(1), location: { homeStore, sourceReportedStore: homeStore } };
     render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[item]} />);
     fireEvent.click(screen.getByRole('button', { name: `Save ${item.stockNumber} to shortlist` }));
-    fireEvent.click(screen.getByRole('button', { name: 'Shortlist (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Shortlist (1) — Saved only' }));
     fireEvent.click(screen.getByRole('button', { name: `Remove ${item.stockNumber} from shortlist` }));
-    expect(screen.getByRole('button', { name: 'Shortlist (0)' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Shortlist (0) — Saved only' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Shortlist (0)' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Shortlist (0) — Saved only' })).not.toBeInTheDocument();
   });
 
   it('starts the sales view with unheld vehicles here, includes visitors, and keeps held/offsite one tap away', async () => {
@@ -286,7 +286,7 @@ describe('modern inventory scope and paging', () => {
       />,
     );
 
-    expect(screen.getByPlaceholderText('Search stock, VIN, vehicle, packages, or equipment…')).toHaveAccessibleName('Search inventory');
+    expect(screen.getByRole('combobox', { name: 'Search inventory' })).toHaveAttribute('placeholder', 'Search stock, VIN, vehicle or equipment');
     expect(screen.getByRole('button', { name: 'All service: 1 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Waiting for service: 1 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'No hold: 0 vehicles' })).toBeInTheDocument();
@@ -471,6 +471,9 @@ describe('vehicle workspace background isolation', () => {
     unit.changeSummary = 'Price changed today';
     render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[unit]}
       />);
+    const disclosure = screen.getByRole('button', { name: 'Expand details for 2024 Ford F-150 XLT 4' });
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
 
     for (const [control, section, target] of [
       [/View all 1 equipment items for/i, 'Equipment', 'equipment'],

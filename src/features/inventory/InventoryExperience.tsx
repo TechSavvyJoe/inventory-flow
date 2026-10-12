@@ -1,3 +1,4 @@
+import { InventoryExpansionControl, InventoryExpansionProvider } from "./InventoryExpansion";
 import { useWorkspaceState, useWorkspaceScroll } from "../../lib/workspace-memory";
 import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
@@ -714,6 +715,7 @@ export function InventoryExperience({
 
   return (
     <ShortlistContext.Provider value={shortlist}>
+    <InventoryExpansionProvider key={`${shortlistContext}:${homeStore.id}`}>
     <section id="inventory-results-workspace" ref={captureModalBackground} data-filters-open={filtersOpen} className={`inventory-experience if-srp${selectedVehicle ? " has-workspace" : ""}`} aria-label="Inventory">
       <div className="inventory-experience__content" ref={backgroundRef}>
         <div className="if-srp-workbench">
@@ -731,23 +733,8 @@ export function InventoryExperience({
               openVehicleWorkspace(vehicle);
             }}
             persistenceKey={`inventory-search:v2:${searchPersistenceKey || homeStore.id}`}
-            placeholder="Search stock, VIN, vehicle, packages, or equipment…"
+            placeholder="Search stock, VIN, vehicle or equipment"
           />
-          {shortlist.count > 0 || onlyShortlisted ? <button type="button" className="inventory-shortlist-filter" aria-label={`Shortlist (${shortlist.count})`} title="Show saved vehicles only" aria-pressed={onlyShortlisted} onClick={() => setOnlyShortlisted(!onlyShortlisted)}>
-            <Heart aria-hidden="true" /><span className="inventory-tool-label">Shortlist</span><span aria-hidden="true">{shortlist.count}</span>
-          </button> : null}
-          <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" title="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan</span></button></span>
-          <div className="if-srp-tools">
-            <div className="inventory-toolbar__left">
-              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} title="Filters" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
-                <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
-              </button>
-            </div>
-
-            <div className="inventory-toolbar__right">
-              <SortComposer sorts={sorts} onChange={setSorts} />
-            </div>
-          </div>
       <CustomerShortlistDrawer openRequest={openSavedListsRequest} entries={shortlist.entries}
         onRemove={shortlist.remove} onClear={shortlist.clear}
         management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
@@ -793,6 +780,22 @@ export function InventoryExperience({
             </div> : null}
           </div>
 
+          <div className="if-srp-tools">
+            <div className="inventory-toolbar__left">
+              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} title="Filters" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
+                <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
+              </button>
+            </div>
+
+            <div className="inventory-toolbar__right">
+              <SortComposer sorts={sorts} onChange={setSorts} />
+            </div>
+          {shortlist.count > 0 || onlyShortlisted ? <button type="button" className="inventory-shortlist-filter" aria-label={`Shortlist (${shortlist.count}) — Saved only`} title="Show saved vehicles only" aria-pressed={onlyShortlisted} onClick={() => setOnlyShortlisted(!onlyShortlisted)}>
+            <Heart aria-hidden="true" /><span className="inventory-tool-label">Saved only</span><span aria-hidden="true">{shortlist.count}</span>
+          </button> : null}
+          </div>
+          <InventoryExpansionControl className="inv-btn inv-btn--secondary inventory-expansion-control" />
+          <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" title="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan</span></button></span>
         </div>
         </div>
 
@@ -915,6 +918,7 @@ export function InventoryExperience({
       ) : null}
     </section>
     {shortlist.management?.pendingSave ? <SaveVehicleDialog key={`${shortlist.context}:${shortlist.management.pendingSave.vin}`} management={shortlist.management} /> : null}
+    </InventoryExpansionProvider>
     </ShortlistContext.Provider>
   );
 }

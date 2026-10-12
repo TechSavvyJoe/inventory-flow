@@ -17,7 +17,7 @@ function shortlistFirstVehicle() {
   fireEvent.click(rows().getAllByRole('button', { name: /Open vehicle details/ })[0])
   fireEvent.click(screen.getByRole('button', { name: /Add .* to shortlist/ }))
   fireEvent.click(screen.getByRole('button', { name: 'Back to inventory' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Shortlist (1)' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Shortlist (1) — Saved only' }))
 }
 
 describe('Shortlist working context', () => {
@@ -26,7 +26,7 @@ describe('Shortlist working context', () => {
     shortlistFirstVehicle()
     page.unmount()
     showPremiumInventory(vehicles, { searchPersistenceKey: context })
-    expect(screen.getByRole('button', { name: 'Shortlist (1)' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Shortlist (1) — Saved only' })).toHaveAttribute('aria-pressed', 'true')
     expect(rows().getAllByRole('button', { name: /Open vehicle details/ })).toHaveLength(1)
   })
 
@@ -51,7 +51,7 @@ describe('Shortlist working context', () => {
     expect(selected).toHaveBeenLastCalledWith(selectedId)
     fireEvent.click(screen.getByRole('button', { name: 'Back to inventory' }))
     expect(selected).toHaveBeenLastCalledWith(null)
-    expect(screen.getByRole('button', { name: 'Shortlist (0)' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Shortlist (0) — Saved only' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

@@ -17,6 +17,72 @@ function management(overrides: Partial<ShortlistManagement> = {}): ShortlistMana
 }
 
 describe('CustomerShortlistDrawer synced lists', () => {
+  it('preserves a dirty rename draft across same-list refreshes and resets it on reopening', async () => {
+    const user = userEvent.setup()
+    const state = management()
+    const props = { entries:[available], onRemove:vi.fn(), onClear:vi.fn() }
+    const view = render(<CustomerShortlistDrawer {...props} management={state} />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Manage' }))
+    const input = screen.getByRole('textbox', { name:'Customer list name' })
+    await user.clear(input)
+    await user.type(input, 'My draft')
+    const updated = { ...state, activeLabel:'Remote name' }
+    view.rerender(<CustomerShortlistDrawer {...props} management={updated} />)
+    expect(input).toHaveValue('My draft')
+    await user.click(screen.getByRole('button', { name:'Save name' }))
+    expect(state.renameActiveList).toHaveBeenCalledWith('My draft')
+    await waitFor(() => expect(screen.queryByRole('textbox', { name:'Customer list name' })).not.toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name:'Manage' }))
+    expect(screen.getByRole('textbox', { name:'Customer list name' })).toHaveValue('Remote name')
+  })
+
+  it('updates pristine names while retaining add search on a same-list rename', async () => {
+    const user = userEvent.setup()
+    const state = management({ addVehicleToActiveList:vi.fn() })
+    const props = { entries:[available], onRemove:vi.fn(), onClear:vi.fn() }
+    const view = render(<CustomerShortlistDrawer {...props} management={state} />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Manage' }))
+    await user.click(screen.getByRole('button', { name:'Add vehicles' }))
+    await user.type(screen.getByRole('searchbox', { name:'Find vehicles to add' }), 'F-150')
+    view.rerender(<CustomerShortlistDrawer {...props} management={{ ...state, activeLabel:'Remote name' }} />)
+    expect(screen.getByRole('textbox', { name:'Customer list name' })).toHaveValue('Remote name')
+    expect(screen.getByRole('searchbox', { name:'Find vehicles to add' })).toHaveValue('F-150')
+  })
+
+  it('resets dirty name and destructive confirmation when selecting another list', async () => {
+    const user = userEvent.setup()
+    const state = management()
+    const props = { entries:[available], onRemove:vi.fn(), onClear:vi.fn() }
+    const view = render(<CustomerShortlistDrawer {...props} management={state} />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Manage' }))
+    await user.type(screen.getByRole('textbox', { name:'Customer list name' }), ' draft')
+    await user.click(screen.getByRole('button', { name:'Delete list' }))
+    await user.selectOptions(screen.getByRole('combobox', { name:'Customer list' }), 'two')
+    view.rerender(<CustomerShortlistDrawer {...props} management={{ ...state, activeListId:'two', activeLabel:'CD' }} />)
+    await user.click(screen.getByRole('button', { name:'Manage' }))
+    expect(screen.getByRole('textbox', { name:'Customer list name' })).toHaveValue('CD')
+    expect(screen.queryByRole('button', { name:'Confirm delete' })).not.toBeInTheDocument()
+  })
+
+  it.each(['employee change', 'access revocation'] as const)('discards the rename draft after %s', async change => {
+    const user = userEvent.setup()
+    const state = management()
+    const props = { entries:[available], onRemove:vi.fn(), onClear:vi.fn() }
+    const view = render(<CustomerShortlistDrawer {...props} management={state} accessContext="employee-a" />)
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Manage' }))
+    await user.type(screen.getByRole('textbox', { name:'Customer list name' }), ' private draft')
+    const updated = { ...state, activeLabel:'Current name', accessRevoked:change === 'access revocation' }
+    view.rerender(<CustomerShortlistDrawer {...props} management={updated} accessContext={change === 'employee change' ? 'employee-b' : 'employee-a'} />)
+    expect(screen.queryByRole('textbox', { name:'Customer list name' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name:/^Saved vehicles:/ }))
+    await user.click(screen.getByRole('button', { name:'Manage' }))
+    expect(screen.getByRole('textbox', { name:'Customer list name' })).toHaveValue('Current name')
+  })
+
   it('returns focus after the sheet closes and a concurrent list read releases the disabled opener', async () => {
     const user = userEvent.setup()
     const manager = management()
@@ -95,7 +161,7 @@ describe('CustomerShortlistDrawer synced lists', () => {
     const user = userEvent.setup()
     const onRemove = vi.fn()
     render(<CustomerShortlistDrawer entries={[available]} onRemove={onRemove} onClear={vi.fn()} management={management()} />)
-    const launcher = screen.getByRole('button', { name:'Saved vehicles: AB (1)' })
+    const launcher = screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' })
     await user.click(launcher)
     expect(launcher).toHaveAttribute('aria-expanded', 'true')
     await user.click(launcher)
@@ -108,19 +174,19 @@ describe('CustomerShortlistDrawer synced lists', () => {
     const user = userEvent.setup()
     const props = { entries:[available], onRemove:vi.fn(), onClear:vi.fn(), management:management() }
     const { rerender } = render(<CustomerShortlistDrawer {...props} />)
-    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1)' }))
+    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' }))
     rerender(<CustomerShortlistDrawer {...props} modalOpen />)
     expect(screen.queryByRole('region', { name:'Customer shortlist launcher' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name:'Saved vehicles 1' })).not.toBeInTheDocument()
     rerender(<CustomerShortlistDrawer {...props} />)
     expect(screen.getByRole('region', { name:'Saved vehicles 1' })).toBeVisible()
-    expect(screen.getByRole('button', { name:'Saved vehicles: AB (1)' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' })).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('shows the current vehicle trim in the compact row identity', async () => {
     const user = userEvent.setup()
     render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={vi.fn()} authorizedVehicles={[{ ...vehicle, trim:'Lariat' }]} />)
-    await user.click(screen.getByRole('button', { name:'Saved vehicles: Shortlist (1)' }))
+    await user.click(screen.getByRole('button', { name:'Saved vehicles: Shortlist (1) — Saved lists' }))
     expect(screen.getByText('2026 Ford F-150 Lariat')).toBeVisible()
     expect(screen.getByRole('button', { name:'Open shortlisted 2026 Ford F-150 Lariat, stock H1' })).toBeVisible()
   })
@@ -130,7 +196,7 @@ describe('CustomerShortlistDrawer synced lists', () => {
     root.id = 'root'
     document.body.append(root)
     render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={vi.fn()} management={management()} />, { container:root })
-    const launcher = screen.getByRole('button', { name:'Saved vehicles: AB (1)' })
+    const launcher = screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' })
     await user.click(launcher)
     expect(screen.getByRole('region', { name:'Saved vehicles 1' })).toBeVisible()
     expect(screen.getByRole('region', { name:'Saved vehicles 1' })).not.toHaveAttribute('aria-modal')
@@ -145,7 +211,7 @@ describe('CustomerShortlistDrawer synced lists', () => {
   it('closes on an outside pointer without stealing the clicked control focus', async () => {
     const user = userEvent.setup()
     render(<><button type="button">Inventory action</button><CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={vi.fn()} management={management()} /></>)
-    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1)' }))
+    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' }))
     const outside = screen.getByRole('button', { name:'Inventory action' })
     await user.click(outside)
     expect(screen.queryByRole('region', { name:'Saved vehicles 1' })).not.toBeInTheDocument()
@@ -155,7 +221,7 @@ describe('CustomerShortlistDrawer synced lists', () => {
   it('returns focus to the management disclosure that removed its form', async () => {
     const user = userEvent.setup()
     render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={vi.fn()} management={management()} />)
-    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1)' }))
+    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' }))
     const newList = screen.getByRole('button', { name:'New list' })
     await user.click(newList)
     await user.click(screen.getByRole('button', { name:'Cancel' }))
@@ -174,7 +240,7 @@ describe('CustomerShortlistDrawer synced lists', () => {
     const user = userEvent.setup()
     const onClear = vi.fn()
     render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={onClear} management={management()} />)
-    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1)' }))
+    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' }))
     expect(screen.queryByRole('button', { name:'Clear list' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name:'Manage' }))
     await user.click(screen.getByRole('button', { name:'Clear list' }))
@@ -192,7 +258,7 @@ describe('CustomerShortlistDrawer synced lists', () => {
     const clearBravo = vi.fn()
     const state = management()
     const { rerender } = render(<CustomerShortlistDrawer entries={[available]} onRemove={vi.fn()} onClear={clearAlpha} management={state} />)
-    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1)' }))
+    await user.click(screen.getByRole('button', { name:'Saved vehicles: AB (1) — Saved lists' }))
     await user.click(screen.getByRole('button', { name:'Manage' }))
     await user.click(screen.getByRole('button', { name:'Clear list' }))
     await user.selectOptions(screen.getByRole('combobox', { name:'Customer list' }), 'two')
