@@ -210,8 +210,8 @@
   .if-srp .inventory-scope-switch__compact { display:flex; flex-direction:column; align-items:center; }
   .if-srp .if-srp-scope b { padding-left:0; }
   .if-srp .if-srp-tools .inv-btn { padding-inline:var(--ifx-space-1); gap:var(--ifx-space-0-5); }
-  .if-srp .if-srp-quickviews { gap:var(--ifx-space-0-5); }
-  .if-srp .if-srp-quickviews > button { gap:var(--ifx-space-0-5); padding-inline:var(--ifx-space-0-5); }
+  .if-srp .if-srp-quickviews { display:grid; grid-template-columns:max-content repeat(4,minmax(var(--ifx-control-height-md),1fr)); gap:var(--ifx-space-0-5); }
+  .if-srp .if-srp-quickviews > button { flex-direction:column; gap:0; height:var(--ifx-control-height-md); padding:0; }
 }
 
 /* At 320px the saved label wraps inside its track rather than covering Scan. */

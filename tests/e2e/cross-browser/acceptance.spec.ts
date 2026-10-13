@@ -88,7 +88,7 @@ const test = base.extend<{ runtimeHealth: void }>({
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
   const screenshotPath = testInfo.outputPath(`${name}.png`)
-  await page.screenshot({ path: screenshotPath, fullPage: false })
+  await page.screenshot({ path: screenshotPath, fullPage: false, scale: 'css' })
   await testInfo.attach(name, { path: screenshotPath, contentType: 'image/png' })
 }
 
@@ -164,7 +164,7 @@ function results(page: Page, mobile: boolean) {
 test('inventory reflows from a wide monitor to a narrow phone without crowded controls', async ({ page, isMobile }, testInfo) => {
   test.setTimeout(120_000)
   await loadInventory(page)
-  const widths = isMobile ? [320, 390, 430] : [320, 390, 600, 720, 760, 761, 820, 1024, 1280, 1320, 1440, 1920, 2560]
+  const widths = isMobile ? [320, 330, 360, 390, 430] : [320, 330, 360, 390, 600, 720, 760, 761, 820, 1024, 1280, 1320, 1440, 1920, 2560]
   const measurements: unknown[] = []
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 })
@@ -189,15 +189,16 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     const bounds = await page.locator('.if-srp-controls').evaluate(element => {
       const controls = [...element.querySelectorAll<HTMLElement>('button,select')].filter(control => control.getClientRects().length && !control.closest('[hidden]'))
       return { height: element.getBoundingClientRect().height, controls: controls.map(control => ({
+        name: control.getAttribute('aria-label') || control.textContent?.trim() || control.tagName,
         left: control.getBoundingClientRect().left, right: control.getBoundingClientRect().right,
         height: control.getBoundingClientRect().height, size: parseFloat(getComputedStyle(control).fontSize),
       })) }
     })
     expect(bounds.height, `At most two readable control rows including service at ${width}`).toBeLessThanOrEqual(112)
     for (const control of bounds.controls) {
-      expect(control.left).toBeGreaterThanOrEqual(0)
-      expect(control.right).toBeLessThanOrEqual(width + 1)
-      expect(control.size).toBeGreaterThanOrEqual(13)
+      expect(control.left, `${width}px ${control.name} left edge`).toBeGreaterThanOrEqual(0)
+      expect(control.right, `${width}px ${control.name} right edge`).toBeLessThanOrEqual(width + 1)
+      expect(control.size, `${width}px ${control.name} readable text`).toBeGreaterThanOrEqual(13)
     }
     const top = (await firstRow.boundingBox())!.y
     expect(top, `First vehicle appears near the controls at ${width}`).toBeLessThan(480)

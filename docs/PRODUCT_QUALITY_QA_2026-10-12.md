@@ -64,6 +64,14 @@ The final local `pnpm check:repo-safety` and `pnpm check` passed: 257 files, 4,8
 
 GPT-6 Astra/high independently reviewed the four-file repair patch with no blocking findings. Model mix for this repair: GPT-6 Luna/medium for CI diagnosis and the deterministic timer test, GPT-6.1 Sol/high for responsive fixes and tablet inspection, and GPT-6 Astra/high for the final independent review.
 
+## Linux WebKit follow-up
+
+[Run 38324643753](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/38324643753) passed unit/build, the ordinary browser suite and all 40 visual comparisons without snapshot updates. Cross-browser acceptance passed 65 cases and skipped four, but Linux WebKit exposed one additional 320px defect: the intrinsic width of the Hold labels and counts pushed Offsite beyond the right edge. Local macOS WebKit had not reproduced its font metrics.
+
+Through 360px, Hold choices now have equal grid tracks with labels above counts inside the existing 44px button height. This preserves complete labels, counts and text sizes. The saved-list layout fix remains scoped to 320px; canonical 390px-and-larger references are unchanged. Reflow coverage now includes 330px and 360px in both projects, and failure messages identify the exact control and edge. Both focused cases passed locally across 15 Chromium widths and five WebKit phone widths. Acceptance diagnostic captures now use `scale: 'css'` so phone device-pixel ratios do not enlarge the exported image; the visual-regression capture configuration is unchanged.
+
+The hosted ordinary suite took 11 minutes 20 seconds and acceptance took 11 minutes 37 seconds, leaving little room under their shared 25-minute job limit; an earlier run had already exceeded that limit. The two suites now run in independent parallel jobs. The stable `e2e` gate requires both jobs to succeed. Browser projects, assertions, retries and test timeouts are unchanged, and failed-suite artifacts have distinct names. `actionlint` 1.7.12 passed. The final local `pnpm check` passed all 257 files / 4,806 tests (three skips), type checks, safety/design gates, build and companion archive verification. Astra/high independently approved the responsive patch and aggregate success/failure logic; fresh hosted execution remains required.
+
 ## Boundaries
 
 No production deployment, D1 migration, live inventory ingestion, authenticated OEM/DealerMail action or customer communication was performed. Public listing, hold evidence, physical location, movement and service states remain independent. Ford/OASIS and other provider facts shown here are captured synthetic evidence; no FMCDealer sign-in was attempted. Changes are proposed through a branch and pull request, not merged to production.
