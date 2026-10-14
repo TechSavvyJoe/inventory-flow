@@ -59,6 +59,72 @@ describe('manager service readiness ledger', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM vehicle_service_intake').get().n).toBe(1)
   })
 
+  it('returns archived service history when the VIN leaves the current inventory feed', () => {
+    const { db, service, reload } = local()
+    const notes = 'SYNTHETIC ARCHIVED SERVICE NOTE'
+    service.updateServiceReadiness(VIN, {
+      status: 'in_service', expectedVersion: 0, serviceDate: '2026-08-28', notes,
+    }, manager, 'archive-start')
+    reload().updateServiceReadiness(VIN, {
+      status: 'serviced', expectedVersion: 1, serviceDate: '2026-08-30',
+    }, manager, 'archive-ready')
+
+    // A distinct source SHA is required: importRelease keys source runs by
+    // type/date/hash, and reusing the fixture hash would leave the VIN in the
+    // previous current run's snapshots.
+    const withoutVin = buildSyntheticRelease()
+    withoutVin.vehicles = withoutVin.vehicles.filter((vehicle) => vehicle.vin !== VIN)
+    withoutVin.sourceRuns.public = {
+      ...withoutVin.sourceRuns.public,
+      sha256: 'D'.repeat(64),
+      rowCount: withoutVin.vehicles.length,
+    }
+    withoutVin.sourceRuns.dealerMail = {
+      ...withoutVin.sourceRuns.dealerMail,
+      sha256: 'E'.repeat(64),
+      rowCount: withoutVin.vehicles.length,
+    }
+    withoutVin.sourceRuns.resources = {
+      ...withoutVin.sourceRuns.resources,
+      sha256: 'F'.repeat(64),
+    }
+    importRelease(db, withoutVin)
+    expect(() => reload().getVehicle(VIN, manager)).toThrowError(expect.objectContaining({ code: 'VEHICLE_NOT_FOUND' }))
+
+    const archived = reload().getServiceReadiness(VIN, manager)
+    expect(archived).toMatchObject({
+      vin: VIN,
+      status: 'serviced',
+      readinessBasis: 'manager_updated',
+      version: 2,
+      completedAt: '2026-08-30',
+      serviceEnteredAt: '2026-08-28',
+      store: 'Howell',
+      canManage: false,
+      archivedFromInventory: true,
+      notes: null,
+    })
+    expect(archived.history.map((row) => row.status)).toEqual(['serviced', 'in_service'])
+    expect(archived.history.find((row) => row.status === 'in_service')?.notes).toBe(notes)
+    expect(archived.history.every((row) => row.canManage === false)).toBe(true)
+
+    for (const role of ['driver', 'porter', 'coordinator']) {
+      const response = reload().getServiceReadiness(VIN, { ...manager, role })
+      expect(response).toMatchObject({ status: 'serviced', archivedFromInventory: true, canManage: false })
+      expect(response.history).toEqual([])
+      expect(JSON.stringify(response)).not.toContain(notes)
+    }
+
+    expect(() => reload().updateServiceReadiness(VIN, {
+      status: 'needs_service', expectedVersion: 2,
+    }, manager, 'archive-write')).toThrowError(expect.objectContaining({ code: 'VEHICLE_NOT_FOUND', status: 404 }))
+
+    importRelease(db, buildSyntheticRelease())
+    const restored = reload().getServiceReadiness(VIN, manager)
+    expect(restored).toMatchObject({ status: 'serviced', version: 2, canManage: true })
+    expect(restored).not.toHaveProperty('archivedFromInventory')
+  })
+
   it('does not treat listing age, hold status, or non-arrival feed changes as service work', () => {
     const release = buildSyntheticRelease()
     release.publicChangeEvents = [{ type: 'price_change', vin: VIN, reportDate: release.reportDate }, { type: 'new_arrival', vin: 'TESTDATAMISSING01', reportDate: release.reportDate }]
