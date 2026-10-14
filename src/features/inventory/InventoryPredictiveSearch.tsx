@@ -10,6 +10,7 @@ import {
 import { Clock3, CornerDownLeft, Search, Sparkles, X } from "lucide-react";
 import {
   buildInventorySearchIndexes,
+  isPersistableInventorySearchQuery,
   rankInventorySearchWithAuthorizedFallback,
   type InventorySearchMatch,
 } from "./inventory-search";
@@ -101,9 +102,10 @@ export function InventoryPredictiveSearch({
 
   useEffect(() => {
     const validRecents = readRecentSearches(persistenceKey)
-      .filter((recent) => rankInventorySearchWithAuthorizedFallback(indexes, recent, 1).length > 0)
+      .filter((recent) => isPersistableInventorySearchQuery(indexes, recent))
       .slice(0, RECENT_SEARCH_LIMIT);
     setRecentSearches(validRecents);
+    writeRecentSearches(persistenceKey, validRecents);
   }, [indexes, persistenceKey]);
 
   useEffect(() => {
@@ -134,7 +136,7 @@ export function InventoryPredictiveSearch({
 
   const remember = (query: string) => {
     const clean = query.trim().replace(/\s+/g, " ").slice(0, 80);
-    if (!clean || rankInventorySearchWithAuthorizedFallback(indexes, clean, 1).length === 0) return;
+    if (!clean || !isPersistableInventorySearchQuery(indexes, clean)) return;
     setRecentSearches((current) => {
       const next = [clean, ...current.filter((item) => item.toLocaleLowerCase() !== clean.toLocaleLowerCase())]
         .slice(0, RECENT_SEARCH_LIMIT);

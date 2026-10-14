@@ -67,7 +67,7 @@ export function inventoryVinsHref(vins: readonly string[]): string {
 }
 
 export function serviceStatusHref(status: ServiceWorkflowStatus, store?: StoreName): string {
-  return query('/service', [['status', status], store ? ['store', store] : ['scope', 'all']])
+  return query('/service', [['status', status], store ? ['store', store] : ['scope', 'group']])
 }
 
 export function returnOverdueHref(store: StoreName): string {
