@@ -57,6 +57,10 @@ export async function probeMatchingTargets(targets, probe, classify, {
     if (remainingMs <= 0) break
     const controller = new AbortController()
     const attemptTimeoutMs = Math.min(timeoutMs, remainingMs)
+    // A target that consumes the overall budget must not open the next one.
+    // Timer resolution can fire the timeout a few milliseconds early, which
+    // would otherwise leave a sliver of budget and start another stalled probe.
+    const budgetLimited = attemptTimeoutMs < timeoutMs
     let timer
     let result
     try {
@@ -75,6 +79,7 @@ export async function probeMatchingTargets(targets, probe, classify, {
     if (status === 'OK') return entry
     if (status === 'SESSION_EXPIRED') expiredFallback ??= entry
     else lastResult = entry
+    if (result?.probeTimedOut && budgetLimited) break
   }
   return expiredFallback ?? lastResult ?? (targets.length ? { status: 'ERROR', result: { probeTimedOut: true } } : null)
 }
