@@ -998,6 +998,31 @@ describe('app-first daily orchestrator helpers', () => {
     expect(manifest).not.toHaveProperty('manager_disposition_overlay')
   })
 
+  it('fails the run when a present manager overlay is unreadable', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-09-23'
+    const publicPath = path.join(workspaceRoot, 'public.json')
+    const dealerPath = path.join(workspaceRoot, 'dealer.json')
+    writeFileSync(publicPath, JSON.stringify({ vehicles: [{ vin: '1FT8W3BM8RED19309', store: 'Howell' }] }))
+    writeFileSync(dealerPath, JSON.stringify({
+      completeDealerMailUsedInventory: { rows: [{ vin: '1FT8W3BM8RED19309', storeName: 'Howell' }] },
+      excludeActiveHoldsValidationSet: { rows: [{ vin: '1FT8W3BM8RED19309', storeName: 'Howell' }] },
+      summary: { uniqueHeldVehicles: 0 },
+    }))
+    const overlayDirectory = path.join(workspaceRoot, 'work', 'manager-supplied', 'sold-logs')
+    mkdirSync(overlayDirectory, { recursive: true })
+    writeFileSync(path.join(overlayDirectory, '2026-09-howell-operational.json'), '{stale overlay')
+
+    expect(() => internals.deriveManifest({
+      reportDate,
+      publicPath,
+      dealerPath,
+      warnings: [],
+      steps: [],
+      managerDispositionValidated: true,
+    })).toThrow(/MANAGER_DISPOSITION_OVERLAY_UNREADABLE/)
+  })
+
   it.each([false, true])('retries the receipt-bound pending followups before any new capture, even with force=%s', async (forcePublish) => {
     const internals = await loadInternals()
     const reportDate = '2026-10-08'

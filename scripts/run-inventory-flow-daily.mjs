@@ -7,6 +7,7 @@ import { sanitizeManagerDispositionDocuments } from '../server/manager-dispositi
 import { cloudBundleSha256, cloudReleaseFrom, publishedManifestFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { writeAtomicFile, writeJsonAtomic } from './lib/atomic-write.mjs'
 import { assertRetainedPublication, readRetainedPublication } from './publication-followup-metadata.mjs'
 import { assessOasisCapture } from './lib/oasis-parser.mjs'
 import { acquirePublicationLock, assertInheritedPublicationLock, readPublicationReconciliation, receiptSourceHashes, releasePublicationLock } from './sync-cloud-release.mjs'
@@ -103,20 +104,14 @@ function fileInfo(filePath) {
 }
 
 function writeJson(filePath, value) {
-  mkdirSync(path.dirname(filePath), { recursive: true })
   // The local API re-imports the manifest every few minutes and the cloud sync
-  // reads it concurrently; a temp file plus rename never exposes a half-written
-  // document to either reader.
-  const temporary = `${filePath}.${process.pid}.tmp`
-  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' })
-  renameSync(temporary, filePath)
+  // reads it concurrently; fsync the temp bytes and directory before readers
+  // can observe the renamed path.
+  writeJsonAtomic(filePath, value)
 }
 
 function writeBuffer(filePath, value) {
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  const temporary = `${filePath}.${process.pid}.tmp`
-  writeFileSync(temporary, value)
-  renameSync(temporary, filePath)
+  writeAtomicFile(filePath, value)
 }
 
 function captureFileTransaction(filePaths) {
@@ -881,14 +876,13 @@ function managerBindingFor(reportDate, publicRows = []) {
   const directory = path.join(WORK_ROOT, 'manager-supplied', 'sold-logs')
   const target = path.join(directory, `${month}-howell-operational.json`)
   if (!existsSync(target)) return null
-  // manager-supplied is a hand-dropped file, not build output: a stale or
-  // half-written overlay must not crash the daily manifest. Treat any parse
-  // or validation failure the same as "no overlay for this month."
+  // Missing overlay is fine. A present but unreadable or invalid file must
+  // fail the run: silently binding no overlay would drop sold/delivered marks.
   let overlay
   try {
     overlay = readJson(target)
-  } catch {
-    return null
+  } catch (error) {
+    throw new Error(`MANAGER_DISPOSITION_OVERLAY_UNREADABLE: ${error.message}`, { cause: error })
   }
   const stats = overlay.summary ?? overlay
   const currentVehicles = publicRows.map((row) => ({
