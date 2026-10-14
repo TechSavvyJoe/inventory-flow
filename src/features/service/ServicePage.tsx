@@ -20,6 +20,7 @@ import { providerHoldLabel } from '../inventory/provider-evidence-utils'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
 import { serviceEvidenceSummary, SourceServiceHistory } from './SourceServiceHistory'
 import { searchFieldsMatch } from '../../lib/search'
+import { WORKFLOW_RESET_LABELS } from '../../lib/workflow-view-reset'
 import { FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
 import './ServiceDesk.css'
 
@@ -318,7 +319,7 @@ export function ServicePage() {
           <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-open-vehicle" })} aria-label={`Open vehicle for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { returnTo: returnPath })}><CarFront size={18} aria-hidden="true" />Open vehicle</Link>
           <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-records" })} aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={18} aria-hidden="true" />Records</Link>
         </nav><div className="service-row-supporting"><VehicleQuickFacts vehicle={vehicle} /></div></li>
-      })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
+      })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>{WORKFLOW_RESET_LABELS.clearSearch}</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>{WORKFLOW_RESET_LABELS.viewAllStores}</button> : null}</div>}
     </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
   </section>
 }

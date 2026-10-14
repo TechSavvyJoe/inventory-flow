@@ -165,6 +165,20 @@ describe('Action center page and shared navigation count', () => {
     expect(screen.getByLabelText('Current URL')).toHaveTextContent(/^\/attention\?keep=1#kept$/)
   })
 
+  it('labels the empty-state reset Clear search when only the query is active', () => {
+    const fixture = data()
+    fixture.attention = [{ ...task('past_expected_hold'), allowedActions: [] }]
+    fixture.vehicles = []
+    mocked.context.data = fixture
+    show()
+    fireEvent.change(screen.getByLabelText('Search work queue'), { target: { value: 'No match' } })
+    expect(screen.getByRole('heading', { name: 'No tasks match this view' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear search' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(screen.getByLabelText('Search work queue')).toHaveValue('')
+  })
+
   it('protects an unfinished follow-up when a filter would remove its row', () => {
     const fixture = data()
     fixture.attention = [{ ...task('past_expected_hold'), allowedActions: ['add_note'] }]

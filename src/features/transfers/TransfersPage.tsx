@@ -35,6 +35,7 @@ import { readBoardRoute, transferMatchesBoardRoute, type BoardRoute } from '../o
 import { simpleTransferActions } from './SimpleTransferTracker'
 import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath, workspaceReturnLabel } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
+import { WORKFLOW_RESET_LABELS } from '../../lib/workflow-view-reset'
 import { flowButtonClassName, FlowButton, FlowIconButton, FlowPageHeader } from '../../design-system'
 import { isReturnOverdue, slaLabel, type SlaStatus } from '../../lib/sla-label'
 import './transfers-page.css'
@@ -795,7 +796,7 @@ export function TransfersPage() {
                   </button>
                 )
               })}
-              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || activeFilter !== 'all' || linkedHomeStore || linkedRoute ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all'); setLinkedHomeStore(null); setLinkedRoute(null) }}>Reset view</button> : null}</div> : null}
+              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores, or reset search and queue filters.' : 'Reset the view to show active moves.'}</p><span className="transfer-list-no-results-actions">{query || queueView !== 'active' || activeFilter !== 'all' || linkedHomeStore || linkedRoute ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all'); setLinkedHomeStore(null); setLinkedRoute(null) }}>{WORKFLOW_RESET_LABELS.resetView}</button> : null}{storeScope === 'home' ? <button type="button" onClick={() => { setStoreScope('group'); setLinkedHomeStore(null) }}>{WORKFLOW_RESET_LABELS.viewAllStores}</button> : null}</span></div> : null}
             </div>
           </aside>
           <div className="transfer-detail-surface" id="transfer-detail-workspace">
