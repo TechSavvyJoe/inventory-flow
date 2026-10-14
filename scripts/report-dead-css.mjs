@@ -1,10 +1,15 @@
-// Read-only report of CSS selectors under src/ that can never match, because they require a class
-// that no source file renders. It writes nothing; it only prints.
+// Report CSS selectors under src/ that can never match, because they require a class
+// that no source file renders. The default run writes nothing. --strip-dead-rules
+// deletes fully dead rules and empty at-rules left behind.
 //
 //   node scripts/report-dead-css.mjs                  per-file summary and the most common dead classes
 //   node scripts/report-dead-css.mjs --selectors      also every dead selector with the class that kills it
 //   node scripts/report-dead-css.mjs --templates      also the class templates the scan resolved
 //   node scripts/report-dead-css.mjs --json           the whole report as JSON on stdout
+//   node scripts/report-dead-css.mjs --strip-dead-rules
+//       delete rules whose every selector requires an unrendered class, then
+//       drop at-rules left with no rules. A mixed selector list keeps only the
+//       selectors that can still match.
 //   node scripts/report-dead-css.mjs src/styles/shell.css ...   limit the report to these sheets
 //
 // A class counts as rendered when it can come out of non-test src TS/TSX or index.html:
@@ -22,7 +27,7 @@
 // only when every argument is dead. A rule is dead only when every selector in its list is dead;
 // a rule with live and dead selectors is "partial" (drop the dead selectors, keep the rule).
 // Nested rules are decided with their parent rule.
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -231,6 +236,7 @@ for (const file of sheets) {
   const css = readFileSync(join(ROOT, file), 'utf8')
   const root = postcss.parse(css, { from: file })
   const stats = { rules: 0, deadRules: 0, partialRules: 0, selectors: 0, deadSelectors: 0, declarations: count(root, () => true), deadDeclarations: 0, important: count(root, (d) => d.important), deadImportant: 0, lines: css.split('\n').length - (css.endsWith('\n') ? 1 : 0) }
+  const doomed = []
   root.walkRules((rule) => {
     if (rule.parent?.type === 'atrule' && /keyframes$/i.test(rule.parent.name)) return
     for (let a = rule.parent; a; a = a.parent) if (a.type === 'rule') return
@@ -248,8 +254,24 @@ for (const file of sheets) {
       stats.deadRules++
       stats.deadDeclarations += count(rule, () => true)
       stats.deadImportant += count(rule, (d) => d.important)
-    } else stats.partialRules++
+      doomed.push(rule)
+    } else {
+      stats.partialRules++
+      if (flag('--strip-dead-rules')) rule.selectors = verdicts.filter((verdict) => !verdict.dead).map((verdict) => verdict.selector)
+    }
   })
+  if (flag('--strip-dead-rules') && (doomed.length || root.toString() !== css)) {
+    for (const rule of doomed) rule.remove()
+    const emptyAtRules = []
+    root.walkAtRules((at) => {
+      if (/keyframes$/i.test(at.name)) return
+      const hasContent = at.nodes?.some((node) => node.type === 'rule' || node.type === 'atrule' || node.type === 'decl')
+      if (!hasContent) emptyAtRules.push(at)
+    })
+    for (const at of emptyAtRules) at.remove()
+    const next = root.toString()
+    if (next !== css) writeFileSync(join(ROOT, file), next.endsWith('\n') ? next : `${next}\n`)
+  }
   report.files[file] = stats
 }
 

@@ -3,324 +3,13 @@
    queue changes shape based on its size: 1-2 moves become a compact selector
    above a full-width detail; longer queues use a balanced master-detail view. */
 
-.transfers-page.transfer-workspace-v3 {
-  --transfer-v3-border: #cbd7e2;
-  --transfer-v3-divider: #dde5ec;
-  --transfer-v3-soft: #f4f7fa;
-  --transfer-v3-selected: #edf5fe;
-  --transfer-v3-shadow: 0 14px 34px rgb(12 42 69 / 9%);
-  display: block;
-  max-width: 1600px;
-}
-
-.transfer-stage-mobile-label,
-.transfer-mobile-counts,
 .transfer-list-filter,
-.transfer-create-mobile-label,
-.transfer-list-mobile-copy,
-.transfer-list-mobile-rail,
 .transfer-mobile-detail-bar {
   display: none;
 }
 
-.transfer-workspace-v3 .transfers-page-header {
-  align-items: end;
-  margin-bottom: 10px;
-}
-
-.transfer-workspace-v3 .transfers-page-header h1 {
-  margin-top: 3px;
-}
-
-.transfer-workspace-v3 .transfers-page-header p {
-  max-width: 850px;
-  margin-top: 5px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-overview {
-  display: grid;
-  grid-template-columns: minmax(390px, .7fr) minmax(0, 1.3fr);
-  min-width: 0;
-  margin-bottom: 10px;
-  overflow: hidden;
-  border-color: var(--transfer-v3-border);
-  border-radius: 10px;
-  box-shadow: 0 7px 20px rgb(14 46 75 / 5%);
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics {
-  grid-column: auto;
-  min-width: 0;
-  margin-bottom: 0;
-  border-right: 1px solid var(--transfer-v3-border);
-  border-bottom: 0;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics > span {
-  min-height: 54px;
-  grid-template-columns: 20px auto minmax(0, 1fr);
-  gap: 2px 6px;
-  padding: 8px 10px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics svg {
-  width: 17px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics strong {
-  font-size: 16px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics small {
-  overflow: hidden;
-  font-size: 9px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-}
-
-.transfer-workspace-v3 .transfer-workflow-path {
-  grid-column: auto;
-  min-width: 0;
-  margin-bottom: 0;
-  padding: 0 8px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-path li {
-  min-height: 54px;
-  gap: 6px;
-  padding: 6px 7px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-path li > span {
-  width: 23px;
-  height: 23px;
-  flex-basis: 23px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-path strong {
-  font-size: 9px;
-}
-
-.transfer-workspace-v3 .transfers-layout {
-  min-height: 620px;
-  height: clamp(620px, calc(100dvh - 244px), 820px);
-  overflow: hidden;
-  border-color: var(--transfer-v3-border);
-  border-radius: 11px;
-  box-shadow: var(--transfer-v3-shadow);
-}
-
-.transfer-workspace-v3 .transfers-layout--master-detail {
-  display: grid;
-  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
-}
-
-.transfer-workspace-v3 .transfers-layout--short-queue {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.transfer-workspace-v3 .transfer-list {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0;
-  border-right: 1px solid var(--transfer-v3-border);
-  background: linear-gradient(180deg, #f7f9fb 0%, #eef3f7 100%);
-}
-
-.transfer-workspace-v3 .transfer-list-toolbar {
-  flex: 0 0 auto;
-  padding: 10px;
-  border-bottom: 1px solid var(--transfer-v3-divider);
-  background: rgb(248 250 252 / 96%);
-}
-
-.transfer-workspace-v3 .transfer-list-create {
-  min-height: 38px;
-  margin-bottom: 7px;
-  box-shadow: none;
-}
-
-.transfer-workspace-v3 .transfer-list-search {
-  height: 38px;
-  border-color: #c8d4df;
-  border-radius: 7px;
-}
-
-.transfer-workspace-v3 .transfer-list-views {
-  gap: 5px;
-  margin-top: 7px;
-}
-
-.transfer-workspace-v3 .transfer-list-views button {
-  min-height: 32px;
-  border-radius: 7px;
-  font-size: 12px;
-}
-
-.transfer-workspace-v3 .transfer-list-count {
-  padding: 8px 2px 0;
-}
-
-.transfer-workspace-v3 .transfer-list-items {
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-.transfer-workspace-v3 .transfer-list-item {
-  grid-template-columns: 72px minmax(0, 1fr) 17px;
-  gap: 10px;
-  min-height: 112px;
-  padding: 10px 9px 10px 11px;
-  border-color: var(--transfer-v3-divider);
-  background: rgb(255 255 255 / 88%);
-}
-
-.transfer-workspace-v3 .transfer-list-item:focus-visible {
-  z-index: 1;
-  outline: 3px solid #83b7f4;
-  outline-offset: -3px;
-}
-
-.transfer-workspace-v3 .transfer-list-item.is-selected {
-  background: var(--transfer-v3-selected);
-  box-shadow: inset 4px 0 0 var(--blue-600);
-}
-
-.transfer-workspace-v3 .transfer-list-photo {
-  width: 72px;
-  height: 52px;
-  border-radius: 7px;
-}
-
-.transfer-workspace-v3 .transfer-list-copy {
-  gap: 3px;
-}
-
-.transfer-workspace-v3 .transfer-list-route,
-.transfer-workspace-v3 .transfer-location,
-.transfer-workspace-v3 .transfer-list-stage,
-.transfer-workspace-v3 .transfer-next,
-.transfer-workspace-v3 .transfer-due {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.transfer-workspace-v3 .transfer-list-signals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px 10px;
-}
-
-.transfer-workspace-v3 .transfer-list-signals > span {
-  min-width: 0;
-}
-
-.transfer-workspace-v3 .transfer-next {
-  display: -webkit-box;
-  overflow: hidden;
-  line-height: 1.3;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.transfer-workspace-v3 .transfer-due {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px 10px;
-}
-
-.transfer-workspace-v3 .transfer-due > span + span::before {
-  margin-right: 6px;
-  color: #9aa8b5;
-  content: '·';
-}
-
-.transfer-workspace-v3 .transfer-detail-surface {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: #fff;
-  container: transfer-detail / inline-size;
-}
-
 /* With only one or two moves, the queue becomes a compact horizontal selector
    and the selected transfer gets the full content width. */
-.transfer-workspace-v3 .transfer-list--short {
-  display: grid;
-  grid-template-columns: minmax(500px, .85fr) minmax(0, 1.15fr);
-  gap: 10px;
-  padding: 9px;
-  overflow: hidden;
-  border-right: 0;
-  border-bottom: 1px solid var(--transfer-v3-border);
-  background: #f4f7fa;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-  display: grid;
-  grid-template-columns: minmax(215px, .9fr) minmax(200px, 1.1fr);
-  grid-template-areas:
-    "create search"
-    "views count";
-  align-content: center;
-  gap: 7px 9px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-create {
-  grid-area: create;
-  margin: 0;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-search {
-  grid-area: search;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-views {
-  grid-area: views;
-  margin: 0;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-count {
-  grid-area: count;
-  align-self: center;
-  padding: 0;
-  text-align: right;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-items {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  overflow: hidden;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-item {
-  min-height: 102px;
-  border: 1px solid var(--transfer-v3-divider);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
-  border-color: #8bb7e5;
-  background: var(--transfer-v3-selected);
-  box-shadow: inset 4px 0 0 var(--blue-600);
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
-  grid-column: 1 / -1;
-}
 
 /* Dense, two-column selected-transfer workspace. */
 .transfer-tracker-v3.mif-transfer-tracker--page {
@@ -338,11 +27,6 @@
   grid-template-columns: minmax(0, 1.04fr) minmax(0, .96fr);
   border-bottom: 1px solid var(--transfer-v3-divider, #dde5ec);
   background: linear-gradient(120deg, #fff 0%, #f8fafc 100%);
-}
-
-.transfer-tracker-v3 .mif-tracker-overview-primary {
-  min-width: 0;
-  border-right: 1px solid var(--transfer-v3-divider, #dde5ec);
 }
 
 .transfer-tracker-v3 .mif-tracker-header {
@@ -436,8 +120,7 @@
   border-bottom: 0;
 }
 
-.transfer-tracker-v3 .mif-tracker-accountability span,
-.transfer-tracker-v3 .mif-next-action span {
+.transfer-tracker-v3 .mif-tracker-accountability span {
   font-size: 9px;
   letter-spacing: .035em;
   text-transform: uppercase;
@@ -459,55 +142,6 @@
   margin: 7px 10px 0;
   padding: 8px 10px;
   border-radius: 7px;
-}
-
-.transfer-tracker-v3 .mif-tracker-control-grid {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: minmax(310px, .92fr) minmax(0, 1.08fr);
-  align-items: stretch;
-  margin-top: 7px;
-  border-top: 1px solid var(--transfer-v3-divider, #dde5ec);
-  border-bottom: 1px solid var(--transfer-v3-divider, #dde5ec);
-  background: #f7f9fb;
-}
-
-.transfer-tracker-v3 .mif-tracker-control-grid.is-actionless {
-  grid-template-columns: 1fr;
-}
-
-.transfer-tracker-v3 .mif-next-action {
-  min-width: 0;
-  gap: 14px;
-  margin: 7px 8px;
-  padding: 8px 10px;
-  border: 1px solid #c8daec;
-  border-left: 4px solid var(--mif-blue);
-  border-radius: 7px;
-  background: var(--blue-050);
-  box-shadow: none;
-}
-
-.transfer-tracker-v3 .mif-next-action > div:first-child {
-  min-width: 0;
-}
-
-.transfer-tracker-v3 .mif-next-action > div:first-child strong {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 1.3;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.transfer-tracker-v3 .mif-next-action > div:last-child {
-  flex: 0 0 auto;
-}
-
-.transfer-tracker-v3 .mif-next-action small,
-.transfer-tracker-v3 .mif-next-action > div:last-child strong {
-  font-size: 9px;
 }
 
 .transfer-tracker-v3 .mif-tracker-actions--prominent {
@@ -532,15 +166,6 @@
   min-width: 0;
 }
 
-.transfer-tracker-v3 .mif-tracker-lower-grid {
-  min-height: 0;
-  flex: 1 1 auto;
-  grid-template-columns: minmax(300px, .92fr) minmax(340px, 1.08fr);
-  overflow: hidden;
-  border-top: 0;
-  background: #fff;
-}
-
 .transfer-tracker-v3 .mif-tracker-section {
   min-height: 0;
   overflow: auto;
@@ -556,25 +181,6 @@
   padding: 6px 2px 5px;
   background: rgb(255 255 255 / 96%);
   font-size: 11px;
-}
-
-.transfer-tracker-v3 .mif-status-lane {
-  grid-template-columns: minmax(106px, .72fr) minmax(0, 1.28fr);
-  gap: 8px;
-  padding: 6px 0;
-}
-
-.transfer-tracker-v3 .mif-status-lane dt {
-  font-size: 9px;
-}
-
-.transfer-tracker-v3 .mif-status-value {
-  font-size: 12px;
-}
-
-.transfer-tracker-v3 .mif-status-detail,
-.transfer-tracker-v3 .mif-source-stale {
-  font-size: 8px;
 }
 
 .transfer-tracker-v3 .mif-timeline-event {
@@ -628,10 +234,6 @@
     grid-template-columns: 1fr;
   }
 
-  .transfer-tracker-v3 .mif-tracker-overview-primary {
-    border-right: 0;
-  }
-
   .transfer-tracker-v3 .mif-tracker-accountability {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border-top: 1px solid var(--mif-border);
@@ -648,115 +250,9 @@
   .transfer-tracker-v3 .mif-tracker-accountability > div:last-child {
     grid-column: 1 / -1;
   }
-
-  .transfer-tracker-v3 .mif-tracker-control-grid {
-    grid-template-columns: minmax(280px, .8fr) minmax(0, 1.2fr);
-  }
-}
-
-@media (max-width: 1180px) {
-  .transfer-workspace-v3 .transfer-workflow-overview {
-    grid-template-columns: 1fr;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-metrics {
-    border-right: 0;
-    border-bottom: 1px solid var(--transfer-v3-border);
-  }
-
-  .transfer-workspace-v3 .transfers-layout--master-detail {
-    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
-  }
-
-  .transfer-workspace-v3 .transfer-list--short {
-    grid-template-columns: 1fr;
-  }
-
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: 210px minmax(250px, 1fr) minmax(300px, 1fr) auto;
-    grid-template-areas: "create search views count";
-  }
 }
 
 @media (max-width: 980px) {
-  .transfer-workspace-v3 .transfers-page-header {
-    display: block;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-overview {
-    display: block;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path {
-    grid-template-columns: repeat(6, minmax(135px, 1fr));
-    overflow-x: auto;
-  }
-
-  .transfer-workspace-v3 .transfers-layout,
-  .transfer-workspace-v3 .transfers-layout--master-detail,
-  .transfer-workspace-v3 .transfers-layout--short-queue {
-    height: auto;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
-    overflow: visible;
-    border: 0;
-    box-shadow: none;
-  }
-
-  .transfer-workspace-v3 .transfer-list,
-  .transfer-workspace-v3 .transfer-list--short {
-    display: block;
-    padding: 9px;
-    overflow: hidden;
-    border: 1px solid var(--transfer-v3-border);
-    border-radius: 10px;
-    background: #f4f7fa;
-  }
-
-  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    display: grid;
-    grid-template-columns: minmax(190px, .8fr) minmax(240px, 1.2fr);
-    grid-template-areas:
-      "create search"
-      "views count";
-    gap: 7px 9px;
-    padding: 0 0 9px;
-    border: 0;
-    background: transparent;
-  }
-
-  .transfer-workspace-v3 .transfer-list-items,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-items {
-    display: grid;
-    grid-auto-columns: minmax(310px, 58vw);
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    gap: 8px;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-gutter: auto;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
-    grid-column: auto;
-    min-height: 104px;
-    border: 1px solid var(--transfer-v3-divider);
-    border-radius: 8px;
-    scroll-snap-align: start;
-  }
-
-  .transfer-workspace-v3 .transfer-detail-surface {
-    min-height: 700px;
-    margin-top: 10px;
-    overflow: hidden;
-    border: 1px solid var(--transfer-v3-border);
-    border-radius: 10px;
-  }
 
   .transfer-tracker-v3.mif-transfer-tracker--page {
     min-height: 700px;
@@ -764,97 +260,7 @@
 }
 
 @media (max-width: 720px) {
-  .transfer-workspace-v3 .transfers-page-header {
-    margin-bottom: 8px;
-  }
 
-  .transfer-workspace-v3 .transfers-page-header > div > span {
-    font-size: 9px;
-  }
-
-  .transfer-workspace-v3 .transfers-page-header h1 {
-    font-size: 27px;
-  }
-
-  .transfer-workspace-v3 .transfers-page-header p {
-    display: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-overview {
-    margin-bottom: 8px;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-metrics {
-    display: flex;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-metrics::-webkit-scrollbar,
-  .transfer-workspace-v3 .transfer-workflow-path::-webkit-scrollbar,
-  .transfer-workspace-v3 .transfer-list-items::-webkit-scrollbar {
-    display: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-metrics > span {
-    min-width: 132px;
-    min-height: 48px;
-    flex: 1 0 132px;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path {
-    grid-template-columns: repeat(6, 132px);
-    scrollbar-width: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path li {
-    min-height: 46px;
-  }
-
-  .transfer-workspace-v3 .transfer-list,
-  .transfer-workspace-v3 .transfer-list--short {
-    padding: 8px;
-  }
-
-  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "search"
-      "views"
-      "create"
-      "count";
-  }
-
-  .transfer-workspace-v3 .transfer-list-create {
-    display: flex;
-    grid-area: create;
-    min-height: 38px;
-    margin: 0;
-  }
-
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-count,
-  .transfer-workspace-v3 .transfer-list-count {
-    text-align: left;
-  }
-
-  .transfer-workspace-v3 .transfer-list-items,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-items {
-    grid-auto-columns: minmax(286px, 88vw);
-    scrollbar-width: none;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item {
-    grid-template-columns: minmax(0, 1fr) 16px;
-    min-height: 112px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-photo {
-    display: none;
-  }
-
-  .transfer-workspace-v3 .transfer-detail-surface,
   .transfer-tracker-v3.mif-transfer-tracker--page {
     min-height: 0;
     overflow: visible;
@@ -867,10 +273,6 @@
 
   .transfer-tracker-v3 .mif-tracker-overview-grid {
     display: block;
-  }
-
-  .transfer-tracker-v3 .mif-tracker-overview-primary {
-    border-right: 0;
   }
 
   .transfer-tracker-v3 .mif-tracker-header {
@@ -901,14 +303,6 @@
     grid-column: 1 / -1;
   }
 
-  .transfer-tracker-v3 .mif-tracker-control-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .transfer-tracker-v3 .mif-next-action {
-    margin: 7px 8px 0;
-  }
-
   .transfer-tracker-v3 .mif-tracker-actions--prominent {
     position: static;
     display: grid;
@@ -920,12 +314,6 @@
 
   .transfer-tracker-v3 .mif-tracker-actions--prominent .mif-button {
     min-height: 42px;
-  }
-
-  .transfer-tracker-v3 .mif-tracker-lower-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    overflow: visible;
   }
 
   .transfer-tracker-v3 .mif-tracker-section {
@@ -944,10 +332,6 @@
     padding: 0;
   }
 
-  .transfer-tracker-v3 .mif-status-lane {
-    grid-template-columns: minmax(105px, .72fr) minmax(0, 1.28fr);
-  }
-
   .transfer-tracker-v3 .mif-timeline-event {
     grid-template-columns: 20px minmax(0, 1fr);
   }
@@ -962,238 +346,10 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .transfer-workspace-v3 .transfer-list-items {
-    scroll-behavior: auto;
-  }
-}
-
 /* Mobile movement queue v5
    The phone surface is intentionally queue-first: one compact operating
    summary, one filterable list, and a separate detail state opened by URL. */
 @media (max-width: 720px) {
-  .transfers-page.transfer-workspace-v3 {
-    width: calc(100% + 24px);
-    max-width: none;
-    margin: 0 -12px;
-    color: #102238;
-    background: #fff;
-  }
-
-  .transfer-workspace-v3 > .source-warning {
-    margin: 0 12px 8px;
-    padding: 8px 10px;
-    border-radius: 8px;
-  }
-
-  .transfer-workspace-v3 > .source-warning p {
-    display: none;
-  }
-
-  .transfer-workspace-v3 > .source-warning strong,
-  .transfer-workspace-v3 > .source-warning summary {
-    font-size: 12px;
-  }
-
-  .transfer-workspace-v3 .transfers-page-header {
-    margin: 0;
-    padding: 3px 16px 6px;
-  }
-
-  .transfer-workspace-v3 .transfers-page-header > div > span,
-  .transfer-workspace-v3 .transfers-page-header p {
-    display: none;
-  }
-
-  .transfer-workspace-v3 .transfers-page-header h1 {
-    margin: 0;
-    font-size: 24px;
-    line-height: 1.2;
-    letter-spacing: -.035em;
-  }
-
-  .transfer-mobile-counts {
-    min-width: 0;
-    display: flex;
-    gap: 0;
-    padding: 6px 16px 10px;
-    overflow-x: auto;
-    color: #5e6f82;
-    font-size: 11px;
-    line-height: 1.2;
-    scrollbar-width: none;
-    white-space: nowrap;
-  }
-
-  .transfer-mobile-counts::-webkit-scrollbar {
-    display: none;
-  }
-
-  .transfer-mobile-counts span {
-    display: inline-flex;
-    align-items: baseline;
-    flex: 0 0 auto;
-  }
-
-  .transfer-mobile-counts span + span::before {
-    margin: 0 7px;
-    color: #8a98a8;
-    content: '·';
-  }
-
-  .transfer-mobile-counts strong {
-    margin-right: 4px;
-    color: #102238;
-    font-size: 14px;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-overview {
-    margin: 0;
-    overflow: visible;
-    border: 0;
-    border-top: 1px solid #dce4ec;
-    border-bottom: 1px solid #dce4ec;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-metrics {
-    display: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path {
-    position: relative;
-    min-width: 0;
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    margin: 0;
-    padding: 8px 8px 7px;
-    overflow: hidden;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path::before {
-    position: absolute;
-    z-index: 0;
-    top: 21px;
-    right: calc(8.333% + 6px);
-    left: calc(8.333% + 6px);
-    height: 1px;
-    background: #bfc9d4;
-    content: '';
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path li {
-    position: relative;
-    z-index: 1;
-    min-height: 51px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 5px;
-    padding: 0 1px;
-    color: #6c7b8c;
-    text-align: center;
-    box-shadow: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path li + li::before {
-    display: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path li > span {
-    width: 27px;
-    height: 27px;
-    flex: 0 0 27px;
-    border: 1px solid #bfc9d4;
-    background: #fff;
-    color: #5f6e7e;
-    font-size: 12px;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path li.is-complete > span {
-    border-color: var(--blue-600);
-    background: var(--blue-600);
-    color: #fff;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path li.is-current {
-    color: var(--blue-600);
-    box-shadow: none;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path li.is-current > span {
-    border: 2px solid var(--blue-600);
-    background: var(--blue-600);
-    color: #fff;
-  }
-
-  .transfer-workspace-v3 .transfer-workflow-path strong {
-    max-width: 58px;
-    color: inherit;
-    font-size: 8px;
-    font-weight: 680;
-    line-height: 1.15;
-  }
-
-  .transfer-stage-desktop-label {
-    display: none;
-  }
-
-  .transfer-stage-mobile-label {
-    display: inline;
-  }
-
-  .transfer-workspace-v3 .transfers-layout,
-  .transfer-workspace-v3 .transfers-layout--master-detail,
-  .transfer-workspace-v3 .transfers-layout--short-queue {
-    min-height: 0;
-    display: block;
-    overflow: visible;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .transfer-workspace-v3 .transfer-list,
-  .transfer-workspace-v3 .transfer-list--short {
-    display: block;
-    padding: 0;
-    overflow: visible;
-    border: 0;
-    border-radius: 0;
-    background: #fff;
-  }
-
-  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 46px minmax(116px, auto);
-    grid-template-areas:
-      'search filter create'
-      'views views views';
-    gap: 9px 8px;
-    padding: 10px 12px 9px;
-    border: 0;
-    border-bottom: 1px solid #dce4ec;
-    background: #fff;
-  }
-
-  .transfer-workspace-v3 .transfer-list-search {
-    grid-area: search;
-    height: 46px;
-    padding: 0 11px;
-    border-color: #c9d5e1;
-    border-radius: 7px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-search input {
-    font-size: 13.5px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-search input::placeholder {
-    color: #68798b;
-  }
 
   .transfer-list-filter {
     position: relative;
@@ -1238,146 +394,6 @@
     white-space: nowrap;
   }
 
-  .transfer-workspace-v3 .transfer-list-create,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-create {
-    grid-area: create;
-    min-height: 46px;
-    display: inline-flex;
-    justify-content: center;
-    gap: 6px;
-    margin: 0;
-    padding: 0 12px;
-    border: 1px solid var(--blue-600);
-    border-radius: 7px;
-    color: var(--blue-600);
-    background: #fff;
-    box-shadow: none;
-    font-size: 13px;
-    font-weight: 750;
-    white-space: nowrap;
-  }
-
-  .transfer-workspace-v3 .transfer-list-create svg {
-    width: 15px;
-  }
-
-  .transfer-create-desktop-label {
-    display: none;
-  }
-
-  .transfer-create-mobile-label {
-    display: inline;
-  }
-
-  .transfer-workspace-v3 .transfer-list-views,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-views {
-    grid-area: views;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0;
-    margin: 0;
-    overflow: hidden;
-    border: 1px solid #c9d5e1;
-    border-radius: 7px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-views button,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-views button {
-    position: relative;
-    min-height: 44px;
-    gap: 5px;
-    border: 0;
-    border-radius: 0;
-    color: #536579;
-    background: #fff;
-    font-size: 12.5px;
-    font-weight: 680;
-  }
-
-  .transfer-workspace-v3 .transfer-list-views button.is-active {
-    color: var(--blue-600);
-    background: #fff;
-    box-shadow: inset 0 -3px var(--blue-600);
-  }
-
-  .transfer-workspace-v3 .transfer-list-views button span {
-    min-width: 19px;
-    padding: 2px 4px;
-    border-radius: 999px;
-    background: #edf3f9;
-    color: var(--blue-600);
-    font-size: 11px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-count,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-count {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-
-  .transfer-workspace-v3 .transfer-list-items,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-items {
-    display: block;
-    overflow: visible;
-    scrollbar-gutter: auto;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
-    width: 100%;
-    min-height: 150px;
-    display: grid;
-    grid-template-columns: 66px minmax(96px, 1fr) minmax(90px, 105px) 14px;
-    align-items: center;
-    gap: 8px;
-    padding: 14px 12px;
-    overflow: hidden;
-    border: 0;
-    border-bottom: 1px solid #dde5ed;
-    border-radius: 0;
-    background: #fff;
-    box-shadow: none;
-    scroll-snap-align: none;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item:first-child {
-    border-top: 0;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item.is-selected,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
-    border-color: #dde5ed;
-    background: linear-gradient(90deg, #edf5fe 0%, #f9fbfd 75%, #fff 100%);
-    box-shadow: inset 4px 0 var(--blue-600);
-  }
-
-  .transfer-workspace-v3 .transfer-list-item:active {
-    background: #f1f6fb;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item > svg {
-    width: 16px;
-    color: #536579;
-  }
-
-  .transfer-workspace-v3 .transfer-list-photo {
-    width: 66px;
-    height: 62px;
-    display: block;
-    align-self: center;
-    object-fit: contain;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
   .transfer-list-photo--placeholder {
     display: grid !important;
     place-items: center;
@@ -1389,182 +405,6 @@
 
   .transfer-list-photo--placeholder svg {
     width: 28px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-copy--desktop {
-    display: none;
-  }
-
-  .transfer-list-mobile-copy {
-    min-width: 0;
-    display: grid;
-    align-content: center;
-    gap: 5px;
-  }
-
-  .transfer-mobile-stock {
-    overflow: hidden;
-    color: #102238;
-    font-size: 15.5px;
-    font-weight: 780;
-    line-height: 1.1;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .transfer-mobile-vehicle {
-    display: -webkit-box;
-    overflow: hidden;
-    color: #102238;
-    font-size: 15px !important;
-    font-weight: 720;
-    line-height: 1.16;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .transfer-mobile-route {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow: hidden;
-    color: #5b6d80;
-    font-size: 12.5px !important;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .transfer-mobile-route span {
-    color: #7b8a99;
-  }
-
-  .transfer-mobile-stage {
-    min-width: 0;
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    color: var(--blue-700);
-    font-size: 12.5px !important;
-    font-weight: 700;
-    line-height: 1.2;
-  }
-
-  .transfer-mobile-stage b {
-    width: 18px;
-    height: 18px;
-    flex: 0 0 18px;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--blue-600);
-    border-radius: 50%;
-    color: var(--blue-600);
-    background: #fff;
-    font-size: 8px;
-  }
-
-  .transfer-mobile-stage > span,
-  .transfer-mobile-owner > span {
-    min-width: 0;
-    display: -webkit-box;
-    overflow: hidden;
-    line-height: 1.22;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .transfer-mobile-owner {
-    min-width: 0;
-    display: flex;
-    align-items: flex-start;
-    gap: 5px;
-    color: #536579;
-    font-size: 12.5px !important;
-  }
-
-  .transfer-mobile-owner svg {
-    width: 14px;
-    flex: 0 0 14px;
-  }
-
-  .transfer-list-mobile-rail {
-    min-width: 0;
-    align-self: stretch;
-    display: grid;
-    align-content: center;
-    gap: 8px;
-    padding-left: 9px;
-    border-left: 1px solid #e1e7ed;
-    color: #536579;
-  }
-
-  .transfer-list-mobile-rail > span {
-    min-width: 0;
-    display: -webkit-box;
-    overflow: hidden;
-    font-size: 12.5px !important;
-    line-height: 1.28;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .transfer-mobile-due.is-overdue,
-  .transfer-mobile-issue {
-    color: #bd2026;
-  }
-
-  .transfer-mobile-due {
-    font-weight: 760;
-  }
-
-  .transfer-mobile-due.is-due-soon {
-    color: #a75b00;
-  }
-
-  .transfer-mobile-due.is-on-track {
-    color: #536579;
-  }
-
-  .transfer-mobile-driver {
-    color: #4f6276;
-    font-weight: 650;
-  }
-
-  .transfer-mobile-issue {
-    align-items: flex-start;
-    gap: 4px;
-    font-weight: 680;
-  }
-
-  .transfer-mobile-issue svg {
-    width: 12px;
-    height: 12px;
-    flex: 0 0 12px;
-  }
-
-  .transfer-mobile-scheduled {
-    color: #246548;
-  }
-
-  .transfer-workspace-v3:not(.is-mobile-detail-open) .transfer-detail-surface {
-    display: none;
-  }
-
-  .transfer-workspace-v3.is-mobile-detail-open > .source-warning,
-  .transfer-workspace-v3.is-mobile-detail-open > .transfers-page-header,
-  .transfer-workspace-v3.is-mobile-detail-open > .transfer-mobile-counts,
-  .transfer-workspace-v3.is-mobile-detail-open > .transfer-workflow-overview,
-  .transfer-workspace-v3.is-mobile-detail-open .transfer-list {
-    display: none;
-  }
-
-  .transfer-workspace-v3.is-mobile-detail-open .transfer-detail-surface {
-    min-height: calc(100dvh - var(--top-height, 60px) - var(--mobile-bottom-height, 66px));
-    display: block;
-    margin: 0;
-    overflow: visible;
-    border: 0;
-    border-radius: 0;
   }
 
   .transfer-mobile-detail-bar {
@@ -1624,115 +464,26 @@
   }
 }
 
-@media (max-width: 359px) {
-  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-create {
-    width: 44px;
-    padding: 0;
-  }
-
-  .transfer-workspace-v3 .transfer-list-create .transfer-create-mobile-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-  }
-
-  .transfer-workspace-v3 .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
-    grid-template-columns: 62px minmax(0, 1fr) minmax(76px, .68fr) 12px;
-    gap: 6px;
-    padding-inline: 9px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-photo {
-    width: 62px;
-    height: 56px;
-  }
-}
-
 /* Production finish: a short queue should reveal the full operational record, not
    compress status and history into nested sixty-pixel scroll panes. */
-@media (min-width: 821px) {
-  .transfer-workspace-v3 .transfers-layout.transfers-layout--short-queue {
-    height: auto;
-    min-height: 0;
-    grid-template-rows: auto auto;
-    overflow: visible;
-  }
 
-  .transfer-workspace-v3 .transfers-layout--short-queue .transfer-list,
-  .transfer-workspace-v3 .transfers-layout--short-queue .transfer-list-items {
-    max-height: none;
-    overflow: visible;
-  }
-
-  .transfer-workspace-v3 .transfers-layout--short-queue .transfer-detail-surface,
-  .transfer-workspace-v3 .transfers-layout--short-queue .mif-transfer-tracker--page {
-    min-height: 690px;
-    overflow: visible;
-  }
-
-  .transfer-workspace-v3 .transfers-layout--short-queue .mif-tracker-lower-grid {
-    min-height: 320px;
-    overflow: visible;
-  }
-
-  .transfer-workspace-v3 .transfers-layout--short-queue .mif-tracker-section {
-    min-height: 300px;
-    overflow: visible;
-  }
-}
-
-.transfer-workspace-v3 .transfer-list-accountability,
-.transfer-workspace-v3 .transfer-list-outcomes {
-  color: #435c72;
-  font-size: 12px !important;
-  line-height: 1.35;
-}
-
-.transfer-workspace-v3 .transfer-list-accountability b,
-.transfer-workspace-v3 .transfer-list-outcomes b {
-  color: #193a55;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .015em;
-}
-
-.transfer-tracker-v3 .mif-status-lane dt,
 .transfer-tracker-v3 .mif-timeline-event time {
   color: #536d82;
   font-size: 11px;
   font-weight: 650;
 }
 
-.transfer-tracker-v3 .mif-status-value,
 .transfer-tracker-v3 .mif-timeline-copy strong {
   color: #193a55;
   font-size: 12.5px;
   font-weight: 700;
 }
 
-.transfer-tracker-v3 .mif-status-detail,
-.transfer-tracker-v3 .mif-source-stale,
 .transfer-tracker-v3 .mif-timeline-copy > span,
 .transfer-tracker-v3 .mif-timeline-meta span {
   color: #506a80;
   font-size: 11px;
   line-height: 1.4;
-}
-
-.transfer-workspace-v3 .transfer-workflow-path strong {
-  color: #29465f;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.25;
 }
 
 .transfer-tracker-v3 .mif-tracker-actions--prominent {
@@ -1752,204 +503,6 @@
    Queue controls expose operational filters and sorting at every breakpoint.
    The selected move keeps request, custody, deal, delivery, and return facts
    separate so a pending sale can never visually imply a completed delivery. */
-.transfer-workspace-v3 .transfer-workflow-metrics {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics > span {
-  grid-template-columns: 18px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-content: center;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics svg {
-  grid-row: 1;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics small {
-  grid-column: 1 / -1;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-}
-
-.transfer-workspace-v3 .transfers-layout--master-detail {
-  grid-template-columns: minmax(420px, 470px) minmax(0, 1fr);
-}
-
-.transfer-workspace-v3 .transfer-list-toolbar {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-areas:
-    'create create'
-    'search search'
-    'filter sort'
-    'views views'
-    'count count';
-  gap: 7px;
-}
-
-.transfer-workspace-v3 .transfer-list-create { grid-area: create; margin: 0; }
-.transfer-workspace-v3 .transfer-list-search { grid-area: search; }
-.transfer-workspace-v3 .transfer-list-filter { grid-area: filter; }
-.transfer-workspace-v3 .transfer-list-sort { grid-area: sort; }
-.transfer-workspace-v3 .transfer-list-views { grid-area: views; margin: 0; }
-.transfer-workspace-v3 .transfer-list-count { grid-area: count; padding-top: 1px; }
-
-.transfer-workspace-v3 .transfer-list-filter,
-.transfer-workspace-v3 .transfer-list-sort {
-  position: relative;
-  min-width: 0;
-  height: 38px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
-  border: 1px solid #c8d4df;
-  border-radius: 7px;
-  color: #415970;
-  background: #fff;
-}
-
-.transfer-workspace-v3 .transfer-list-filter:focus-within,
-.transfer-workspace-v3 .transfer-list-sort:focus-within {
-  border-color: var(--blue-600);
-  box-shadow: 0 0 0 3px rgb(7 89 189 / 12%);
-}
-
-.transfer-workspace-v3 .transfer-list-filter > svg,
-.transfer-workspace-v3 .transfer-list-sort > svg {
-  width: 15px;
-  flex: 0 0 15px;
-}
-
-.transfer-workspace-v3 .transfer-list-filter select,
-.transfer-workspace-v3 .transfer-list-sort select {
-  min-width: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  outline: 0;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 680;
-  cursor: pointer;
-}
-
-.transfer-workspace-v3 .transfer-list-filter .sr-only,
-.transfer-workspace-v3 .transfer-list-sort .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.transfer-workspace-v3 .transfer-control-label {
-  display: none;
-}
-
-.transfer-workspace-v3 .transfer-list-item {
-  min-height: 176px;
-  align-items: start;
-}
-
-.transfer-workspace-v3 .transfer-list-photo {
-  margin-top: 2px;
-}
-
-.transfer-workspace-v3 .transfer-list-copy--desktop {
-  gap: 4px;
-}
-
-.transfer-workspace-v3 .transfer-list-accountability,
-.transfer-workspace-v3 .transfer-list-outcomes {
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px 10px;
-  color: #4f6275;
-  font-size: 9px !important;
-  line-height: 1.28;
-}
-
-.transfer-workspace-v3 .transfer-list-accountability > span,
-.transfer-workspace-v3 .transfer-list-outcomes > span {
-  min-width: 0;
-}
-
-.transfer-workspace-v3 .transfer-list-accountability b,
-.transfer-workspace-v3 .transfer-list-outcomes b {
-  color: #182f45;
-  font-size: 8px;
-  letter-spacing: .025em;
-  text-transform: uppercase;
-}
-
-.transfer-workspace-v3 .transfer-list-outcomes {
-  padding-top: 3px;
-  border-top: 1px solid #e1e7ed;
-}
-
-.transfer-workspace-v3 .transfer-list--short {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-  grid-template-columns: minmax(185px, .8fr) minmax(230px, 1.15fr) minmax(140px, .62fr) minmax(130px, .58fr) minmax(260px, 1.05fr) auto;
-  grid-template-areas: 'create search filter sort views count';
-  align-items: center;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-items {
-  align-items: stretch;
-}
-
-.transfer-workspace-v3 .transfer-list--short .transfer-list-item {
-  min-height: 168px;
-}
-
-@media (min-width: 1181px) {
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item {
-    min-height: 136px;
-  }
-
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-copy--desktop {
-    display: grid;
-    grid-template-columns: minmax(0, 1.08fr) minmax(155px, .92fr);
-    grid-template-areas:
-      'top top'
-      'route outcomes'
-      'signals outcomes'
-      'next accountability'
-      'due accountability';
-    column-gap: 12px;
-  }
-
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-top { grid-area: top; }
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-route { grid-area: route; }
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-signals { grid-area: signals; }
-  .transfer-workspace-v3 .transfer-list--short .transfer-next { grid-area: next; }
-  .transfer-workspace-v3 .transfer-list--short .transfer-due { grid-area: due; }
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-accountability {
-    grid-area: accountability;
-    align-content: start;
-    padding-left: 10px;
-    border-left: 1px solid #e1e7ed;
-  }
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-outcomes {
-    grid-area: outcomes;
-    align-content: start;
-    padding: 0 0 3px 10px;
-    border-top: 0;
-    border-left: 1px solid #e1e7ed;
-  }
-}
 
 .transfer-tracker-v3 .mif-tracker-overview-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1978,8 +531,7 @@
   border-bottom: 0;
 }
 
-.transfer-tracker-v3 .mif-tracker-accountability span,
-.transfer-tracker-v3 .mif-next-action span {
+.transfer-tracker-v3 .mif-tracker-accountability span {
   font-size: 9.5px;
 }
 
@@ -2044,12 +596,10 @@
   font-size: 12px;
 }
 
-.transfer-tracker-v3 .mif-status-lane dt,
 .transfer-tracker-v3 .mif-timeline-event time {
   font-size: 9.5px;
 }
 
-.transfer-tracker-v3 .mif-status-value,
 .transfer-tracker-v3 .mif-timeline-copy strong {
   font-size: 10.5px;
 }
@@ -2063,31 +613,9 @@
   border-top: 1px solid var(--mif-border);
 }
 
-@media (max-width: 1180px) and (min-width: 981px) {
-  .transfer-workspace-v3 .transfers-layout--master-detail {
-    grid-template-columns: minmax(350px, 390px) minmax(0, 1fr);
-  }
-
-  .transfer-workspace-v3 .transfer-list--short {
-    grid-template-columns: 1fr;
-  }
-
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: 180px minmax(210px, 1fr) minmax(145px, .7fr) minmax(145px, .7fr);
-    grid-template-areas:
-      'create search filter sort'
-      'views views views count';
-    align-items: center;
-  }
-}
-
 @container transfer-detail (max-width: 900px) {
   .transfer-tracker-v3 .mif-tracker-overview-grid {
     grid-template-columns: 1fr;
-  }
-
-  .transfer-tracker-v3 .mif-tracker-overview-primary {
-    border-right: 0;
   }
 
   .transfer-tracker-v3 .mif-tracker-accountability {
@@ -2117,22 +645,6 @@
 
   .transfer-tracker-v3 .mif-outcome-separation > header + div {
     border-left: 0;
-  }
-}
-
-@media (max-width: 980px) and (min-width: 721px) {
-  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: 180px minmax(210px, 1fr) minmax(150px, .65fr) minmax(150px, .65fr);
-    grid-template-areas:
-      'create search filter sort'
-      'views views views count';
-  }
-
-  .transfer-workspace-v3 .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
-    min-height: 176px;
   }
 }
 
@@ -2216,89 +728,6 @@
 
   .transfer-request-page .mif-request-layout {
     padding-top: 10px;
-  }
-
-  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: minmax(88px, 1fr) 64px 58px minmax(116px, auto);
-    grid-template-areas:
-      'search filter sort create'
-      'views views views views';
-  }
-
-  .transfer-workspace-v3 .transfer-list-filter,
-  .transfer-workspace-v3 .transfer-list-sort {
-    width: 100%;
-    height: 46px;
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-    padding: 0;
-  }
-
-  .transfer-workspace-v3 .transfer-list-filter > svg,
-  .transfer-workspace-v3 .transfer-list-sort > svg {
-    width: 16px;
-  }
-
-  .transfer-workspace-v3 .transfer-control-label {
-    display: inline;
-    font-size: 12px;
-    font-weight: 720;
-  }
-
-  .transfer-workspace-v3 .transfer-list-filter select,
-  .transfer-workspace-v3 .transfer-list-sort select {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
-    min-height: 174px;
-    grid-template-columns: 64px minmax(100px, 1fr) minmax(92px, 106px) 14px;
-    padding-block: 13px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-photo {
-    align-self: start;
-    margin-top: 2px;
-  }
-
-  .transfer-mobile-location {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    overflow: hidden;
-    color: #566b7f;
-    font-size: 12px !important;
-    line-height: 1.2;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .transfer-mobile-location svg {
-    width: 12px;
-    flex: 0 0 12px;
-  }
-
-  .transfer-list-mobile-rail {
-    gap: 6px;
-  }
-
-  .transfer-mobile-outcome,
-  .transfer-mobile-return {
-    color: #435a70;
-    font-weight: 650;
-  }
-
-  .transfer-mobile-return {
-    color: #7a5415;
   }
 
   .transfer-mobile-detail-bar {
@@ -2410,81 +839,30 @@
     font-size: 12.5px;
   }
 
-  .transfer-tracker-v3 .mif-next-action > div:first-child strong {
-    font-size: 13px;
-  }
-
-  .transfer-tracker-v3 .mif-next-action small,
-  .transfer-tracker-v3 .mif-next-action > div:last-child strong,
-  .transfer-tracker-v3 .mif-next-action span {
-    font-size: 10.5px;
-  }
-
   .transfer-tracker-v3 .mif-tracker-section h3 {
     font-size: 13px;
   }
 
-  .transfer-tracker-v3 .mif-status-lane {
-    grid-template-columns: minmax(112px, .78fr) minmax(0, 1.22fr);
-  }
-
-  .transfer-tracker-v3 .mif-status-lane dt,
   .transfer-tracker-v3 .mif-timeline-event time {
     font-size: 10.5px;
   }
 
-  .transfer-tracker-v3 .mif-status-value,
   .transfer-tracker-v3 .mif-timeline-copy strong {
     font-size: 12px;
   }
 
-  .transfer-tracker-v3 .mif-status-detail,
-  .transfer-tracker-v3 .mif-source-stale,
   .transfer-tracker-v3 .mif-timeline-copy > span,
   .transfer-tracker-v3 .mif-timeline-meta span {
     font-size: 10.5px;
   }
 }
 
-@media (max-width: 359px) {
-  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: minmax(0, 1fr) 54px 50px 44px;
-  }
-
-  .transfer-workspace-v3 .transfer-control-label {
-    font-size: 9px;
-  }
-}
-
 /* Operational type floor. Dense movement metadata stays compact without
    dropping user-facing labels or values below 12px at normal zoom. */
-.transfer-workspace-v3 .transfer-workflow-metrics small,
-.transfer-workspace-v3 .transfer-workflow-path strong,
-.transfer-workspace-v3 .transfer-workflow-path li > span,
-.transfer-workspace-v3 .transfer-list-views button,
-.transfer-workspace-v3 .transfer-list-views button > span,
-.transfer-workspace-v3 .transfer-list-filter select,
-.transfer-workspace-v3 .transfer-list-sort select,
-.transfer-workspace-v3 .transfer-list-accountability,
-.transfer-workspace-v3 .transfer-list-outcomes,
-.transfer-workspace-v3 .transfer-list-accountability b,
-.transfer-workspace-v3 .transfer-list-outcomes b,
-.transfer-workspace-v3 .transfers-page-header > div > span,
-.transfer-workspace-v3 > .source-warning strong,
-.transfer-workspace-v3 > .source-warning summary,
-.transfer-workspace-v3 .transfer-control-label,
-.transfer-mobile-stage > span,
 .transfer-mobile-detail-bar small,
 .transfer-tracker-v3 .mif-tracker-header small,
 .transfer-tracker-v3 .mif-tracker-accountability span,
 .transfer-tracker-v3 .mif-tracker-accountability small,
-.transfer-tracker-v3 .mif-next-action span,
-.transfer-tracker-v3 .mif-next-action small,
-.transfer-tracker-v3 .mif-next-action > div:last-child strong,
-.transfer-tracker-v3 .mif-status-lane dt,
-.transfer-tracker-v3 .mif-status-detail,
-.transfer-tracker-v3 .mif-source-stale,
 .transfer-tracker-v3 .mif-timeline-event time,
 .transfer-tracker-v3 .mif-timeline-copy > span,
 .transfer-tracker-v3 .mif-timeline-meta span,
@@ -2498,7 +876,6 @@
   line-height: 1.35;
 }
 
-.transfer-tracker-v3 .mif-status-value,
 .transfer-tracker-v3 .mif-timeline-copy strong,
 .transfer-tracker-v3 .mif-outcome-separation > div > strong {
   font-size: 12px;
@@ -2517,211 +894,41 @@
   align-items: flex-start;
 }
 
-.transfer-tracker-v3 .mif-action-group {
-  display: grid;
-  flex: 1 1 190px;
-  gap: 5px;
-  min-width: 0;
-}
-
-.transfer-tracker-v3 .mif-action-group > span {
-  color: #5b6f82;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .055em;
-  line-height: 1.25;
-  text-transform: uppercase;
-}
-
-.transfer-tracker-v3 .mif-action-group > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.transfer-tracker-v3 .mif-action-group.is-source {
-  flex: 0 1 auto;
-}
-
-.transfer-workspace-v3 :is(
-  .transfer-list-create,
-  .transfer-list-search input,
-  .transfer-list-filter select,
-  .transfer-list-sort select,
-  .transfer-list-views button,
-  .transfer-mobile-detail-bar
-):focus-visible {
-  outline: 3px solid #83b7f4;
-  outline-offset: 2px;
-}
-
 @media (max-width: 980px) {
   .transfer-tracker-v3 .mif-tracker-actions--prominent {
     display: grid;
     grid-template-columns: 1fr;
     gap: 9px;
   }
-
-  .transfer-tracker-v3 .mif-action-group > div {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .transfer-tracker-v3 .mif-action-group .mif-button {
-    justify-content: center;
-    width: 100%;
-  }
-}
-
-@media (max-width: 420px) {
-  .transfer-tracker-v3 .mif-action-group > div {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Stable system-font weights avoid fuzzy variable-weight interpolation while
    keeping operational labels readable at normal desktop and mobile zoom. */
-.transfer-workspace-v3 :is(h1, h2, h3, strong, b),
 .transfer-tracker-v3 :is(h2, h3, strong, b) {
   font-weight: 700;
 }
 
-.transfer-workspace-v3 :is(button, input, select, textarea, summary),
-.transfer-tracker-v3 :is(button, summary),
-.transfer-tracker-v3 .mif-action-group > span {
+.transfer-tracker-v3 :is(button, summary) {
   font-weight: 600;
 }
 
-.transfer-workspace-v3 :is(p, small, time, dt, dd),
 .transfer-tracker-v3 :is(p, small, time, dt, dd) {
   font-weight: 500;
 }
 
-.transfer-workspace-v3 .transfer-workflow-path li > span,
-.transfer-workspace-v3 .transfer-mobile-stage b,
-.transfer-tracker-v3 .mif-condition-banner small,
-.transfer-tracker-v3 .mif-technical-status-details > summary {
+.transfer-tracker-v3 .mif-condition-banner small {
   font-size: 11px !important;
   line-height: 1.35;
 }
 
-.transfer-workspace-v3 span,
 .transfer-tracker-v3 span { font-weight: 500 !important; }
-.transfer-workspace-v3 :is(button, input, select, textarea, summary),
 .transfer-tracker-v3 :is(button, summary) { font-weight: 600 !important; }
-.transfer-workspace-v3 :is(h1, h2, h3, strong, b),
 .transfer-tracker-v3 :is(h2, h3, strong, b) { font-weight: 700 !important; }
-.transfer-workspace-v3 :is(.transfer-list-count, .transfer-list-stage) { font-weight: 600 !important; }
-.transfer-workspace-v3 .transfer-workflow-path li > span,
-.transfer-workspace-v3 .transfer-mobile-stage b,
 .transfer-tracker-v3 .mif-tracker-stock { font-weight: 700 !important; }
 .transfer-tracker-v3 :is(.mif-status-lane dt, .mif-timeline-event time) { font-weight: 500 !important; }
-.transfer-tracker-v3 .mif-action-group > span { font-weight: 600 !important; }
 
 /* Production refinement: larger operational type, quieter cards, and clearer
    action hierarchy without hiding any movement detail. */
-.transfer-workspace-v3 {
-  --transfer-v3-border: #c8d5df;
-  --transfer-v3-divider: #dce5ec;
-  --transfer-v3-soft: #f5f8fa;
-  --transfer-v3-selected: var(--blue-050);
-  --transfer-v3-shadow: 0 10px 28px rgb(12 42 69 / 8%);
-}
-
-.transfer-workspace-v3 .transfers-page-header h1 {
-  font-size: clamp(1.55rem, 2vw, 1.95rem);
-  line-height: 1.12;
-}
-
-.transfer-workspace-v3 .transfers-page-header p {
-  color: #496176;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.transfer-workspace-v3 .transfer-workflow-overview,
-.transfer-workspace-v3 .transfers-layout {
-  border-radius: 10px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics > span {
-  min-height: 62px;
-  padding: 10px 12px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics strong {
-  color: #102e47;
-  font-size: 18px;
-}
-
-.transfer-workspace-v3 .transfer-workflow-metrics small,
-.transfer-workspace-v3 .transfer-workflow-path strong {
-  color: #4f6578;
-  font-size: 12px !important;
-  line-height: 1.3;
-}
-
-.transfer-workspace-v3 .transfer-workflow-path li {
-  min-height: 62px;
-  padding: 8px;
-}
-
-.transfer-workspace-v3 .transfer-list-toolbar {
-  padding: 12px;
-  background: #f7f9fb;
-}
-
-.transfer-workspace-v3 .transfer-list-create,
-.transfer-workspace-v3 .transfer-list-search,
-.transfer-workspace-v3 .transfer-list-filter select,
-.transfer-workspace-v3 .transfer-list-sort select {
-  min-height: 42px;
-  border-radius: 8px;
-  font-size: 12.5px;
-}
-
-.transfer-workspace-v3 .transfer-list-views button {
-  min-height: 36px;
-  border-radius: 7px;
-  font-size: 12px !important;
-}
-
-.transfer-workspace-v3 .transfer-list-count {
-  color: #526a7d;
-  font-size: 12px;
-}
-
-.transfer-workspace-v3 .transfer-list-item,
-.transfer-workspace-v3 .transfer-list--short .transfer-list-item {
-  min-height: 118px;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.transfer-workspace-v3 .transfer-list-item.is-selected,
-.transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
-  border-color: #7ca9d0;
-  background: var(--blue-050);
-  box-shadow: inset 3px 0 0 var(--blue-600);
-}
-
-.transfer-workspace-v3 .transfer-list-top strong {
-  color: #102e47;
-  font-size: 14px;
-  line-height: 1.3;
-}
-
-.transfer-workspace-v3 .transfer-list-route,
-.transfer-workspace-v3 .transfer-location,
-.transfer-workspace-v3 .transfer-list-stage,
-.transfer-workspace-v3 .transfer-next,
-.transfer-workspace-v3 .transfer-due,
-.transfer-workspace-v3 .transfer-list-signals,
-.transfer-workspace-v3 .transfer-list-accountability,
-.transfer-workspace-v3 .transfer-list-outcomes {
-  font-size: 12px !important;
-  line-height: 1.4;
-}
 
 .transfer-tracker-v3 .mif-tracker-header {
   min-height: 88px;
@@ -2742,11 +949,6 @@
 .transfer-tracker-v3 .mif-tracker-accountability small,
 .transfer-tracker-v3 .mif-outcome-separation header span,
 .transfer-tracker-v3 .mif-outcome-separation > div > span,
-.transfer-tracker-v3 .mif-next-action span,
-.transfer-tracker-v3 .mif-next-action small,
-.transfer-tracker-v3 .mif-status-lane dt,
-.transfer-tracker-v3 .mif-status-detail,
-.transfer-tracker-v3 .mif-source-stale,
 .transfer-tracker-v3 .mif-timeline-event time,
 .transfer-tracker-v3 .mif-timeline-copy > span,
 .transfer-tracker-v3 .mif-timeline-meta span {
@@ -2757,8 +959,6 @@
 .transfer-tracker-v3 .mif-tracker-request-summary strong,
 .transfer-tracker-v3 .mif-tracker-accountability strong,
 .transfer-tracker-v3 .mif-outcome-separation > div > strong,
-.transfer-tracker-v3 .mif-next-action strong,
-.transfer-tracker-v3 .mif-status-value,
 .transfer-tracker-v3 .mif-timeline-copy strong {
   font-size: 12.5px;
   line-height: 1.4;
@@ -2771,71 +971,6 @@
   background: #f7f9fb;
 }
 
-.transfer-tracker-v3 .mif-action-group > span {
-  color: #536a7d;
-  font-size: 12px;
-  letter-spacing: .035em;
-  text-transform: none;
-}
-
-.transfer-tracker-v3 .mif-action-group .mif-button {
-  min-height: 40px;
-  border-radius: 8px;
-  font-size: 12.5px;
-}
-
-.transfer-workspace-v3 .transfers-page-header > span,
-.transfer-workspace-v3 .transfers-page-header > div > span,
-.transfer-workspace-v3 .transfer-list-top b,
-.transfer-workspace-v3 .transfer-list-accountability b,
-.transfer-workspace-v3 .transfer-list-outcomes b,
-.transfer-tracker-v3 .mif-next-action > div:last-child strong,
-.transfer-tracker-v3 .mif-technical-status-details > summary {
-  font-size: 12px !important;
-}
-
-.transfer-workspace-v3 .transfer-list-filter select,
-.transfer-workspace-v3 .transfer-list-sort select,
-.transfer-workspace-v3 .transfer-mobile-stage > span {
-  font-size: 12px !important;
-}
-
 .transfer-tracker-v3 .mif-outcome-separation header span {
   color: #526a7d;
-}
-
-.transfer-tracker-v3 .mif-technical-status-details > summary {
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 8px 10px;
-  border-radius: 7px;
-  cursor: pointer;
-}
-
-.transfer-tracker-v3 .mif-technical-status-details > summary:hover {
-  background: #edf3f7;
-}
-
-@media (max-width: 760px) {
-  .transfer-workspace-v3 .transfers-page-header p {
-    font-size: 13px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-item,
-  .transfer-workspace-v3 .transfer-list--short .transfer-list-item {
-    min-height: 126px;
-  }
-
-  .transfer-workspace-v3 .transfer-list-create,
-  .transfer-workspace-v3 .transfer-list-search,
-  .transfer-workspace-v3 .transfer-list-filter select,
-  .transfer-workspace-v3 .transfer-list-sort select,
-  .transfer-workspace-v3 .transfer-list-views button,
-  .transfer-workspace-v3 .transfer-mobile-detail-bar button,
-  .transfer-tracker-v3 .mif-action-group .mif-button,
-  .transfer-tracker-v3 .mif-technical-status-details > summary,
-  .transfer-workspace-v3 .mif-transfer-empty .mif-button {
-    min-height: 44px;
-  }
 }

@@ -394,40 +394,6 @@
   box-shadow: var(--shadow-panel);
 }
 
-.inventory-sort-header {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 0;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.inventory-sort-header:hover,
-.inventory-sort-header.is-active { color: var(--inventory-blue); }
-
-.inventory-sort-header__state {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-}
-
-.inventory-sort-header__state small {
-  display: grid;
-  width: 13px;
-  height: 13px;
-  place-items: center;
-  border-radius: 50%;
-  color: #ffffff;
-  background: var(--inventory-blue);
-  font-size: 8px;
-}
-
 .inventory-vehicle-visual {
   display: grid;
   width: 48px;
