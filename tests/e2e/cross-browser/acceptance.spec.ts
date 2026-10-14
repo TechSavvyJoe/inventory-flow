@@ -1291,7 +1291,7 @@ test('vehicle moves search, queue filters, and request entry are usable', async 
   await page.getByRole('button', { name: 'Start a vehicle move', exact: true }).click()
   await expect(page).toHaveURL(/\/transfers\/new/)
   await expect(page.getByRole('heading', { name: 'Start a move', exact: true })).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'Search inventory to move' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Search inventory to move' })).toBeVisible()
   await expectNoOverflow(page)
 })
 
@@ -1309,7 +1309,7 @@ test('action center opens the exact task and inventory updates have their own pa
   await expect(scope.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true')
   const items = page.getByRole('list', { name: 'Attention items' }).getByRole('listitem')
   expect(await items.count()).toBeGreaterThan(0)
-  await page.getByRole('textbox', { name: 'Search work queue' }).fill('missing-alert*?~|')
+  await page.getByRole('combobox', { name: 'Search work queue' }).fill('missing-alert*?~|')
   await expect(items).toHaveCount(0)
   await page.getByRole('button', { name: 'Clear queue search' }).click()
   expect(await items.count()).toBeGreaterThan(0)

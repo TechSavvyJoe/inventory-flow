@@ -222,9 +222,9 @@ describe('inventory search privacy flow', () => {
   })
 
   it.each([
-    ['/transfers', 'textbox', 'Search vehicle moves', TransfersPage],
-    ['/service', 'searchbox', 'Search service vehicles', ServicePage],
-    ['/attention', 'textbox', 'Search work queue', AttentionPage],
+    ['/transfers', 'combobox', 'Search vehicle moves', TransfersPage],
+    ['/service', 'combobox', 'Search service vehicles', ServicePage],
+    ['/attention', 'combobox', 'Search work queue', AttentionPage],
   ] as const)('keeps a typed %s page search in memory and out of the URL', async (route, searchRole, searchName, Page) => {
     dataState.usePageData = true
     const user = userEvent.setup()

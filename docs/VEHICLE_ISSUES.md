@@ -71,8 +71,13 @@ companion API do not gain access to staff issue notes or photos.
 R2 storage precedes the audited ledger commit. If storage fails, the report is
 not committed. If the ledger commit fails after storage, an unreferenced
 encrypted object may remain; it cannot be retrieved through the employee API.
-Content-addressed object keys make retries safe. Any future cleanup must retain
-every object referenced by issue history and allow for in-flight writes.
+Content-addressed object keys make retries safe. Operator cleanup must retain
+every object referenced by issue history and allow for in-flight writes. Use
+`node scripts/cleanup-issue-photo-orphans.mjs` with saved D1 photo-reference and
+R2 object JSON exports: dry-run by default, skip objects inside the grace
+window, never treat a ledger-referenced key as an orphan, and never call R2
+delete from the script itself — it only reports candidate keys for an
+authorized follow-up delete.
 
 ## API and release boundary
 

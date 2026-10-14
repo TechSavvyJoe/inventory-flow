@@ -175,7 +175,9 @@ describe('Service readiness workspace', () => {
     mocked.get.mockResolvedValue(detail('needs_service'))
     show('/service?vin=TESTDATAHWELL0001&action=in_service')
     expect(await screen.findByLabelText('Date entered service')).toHaveValue('2026-08-30')
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    // Confirmation is a dedicated editor — no status <select>. List search may
+    // still expose a combobox on wide layouts; that is not a save control.
+    expect(screen.queryByRole('combobox', { name: /status/i })).not.toBeInTheDocument()
     expect(mocked.update).not.toHaveBeenCalled()
   })
 
@@ -266,7 +268,7 @@ describe('Service readiness workspace', () => {
 
   it('matches service search terms across separate authorized fields and clears the search', () => {
     show()
-    const search = screen.getByRole('searchbox', { name: 'Search service vehicles' })
+    const search = screen.getByRole('combobox', { name: 'Search service vehicles' })
     fireEvent.change(search, { target: { value: 'Ford SYNTHETIC-002' } })
     expect(screen.getAllByText('Synthetic Ford 002')).toHaveLength(2)
     expect(screen.queryByText('Synthetic Ford 001')).not.toBeInTheDocument()
@@ -285,7 +287,7 @@ describe('Service readiness workspace', () => {
 
   it('shows one truthful list no-results state with a clear action', () => {
     show()
-    const search = screen.getByRole('searchbox', { name: 'Search service vehicles' })
+    const search = screen.getByRole('combobox', { name: 'Search service vehicles' })
     fireEvent.change(search, { target: { value: 'no such vehicle' } })
     expect(screen.getByRole('heading', { name: 'No matching vehicles' })).toBeInTheDocument()
     expect(screen.queryByText('No vehicles waiting for service')).not.toBeInTheDocument()

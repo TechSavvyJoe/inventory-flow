@@ -34,15 +34,15 @@ describe('Inventory updates workspace', () => {
     mocked.context.currentUser = 'Synthetic Manager One';
     const first = show();
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'new-lincoln' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search inventory updates' }), { target: { value: 'new-lincoln' } });
     first.unmount();
     const second = show();
-    expect(screen.getByRole('textbox', { name: 'Search inventory updates' })).toHaveValue('new-lincoln');
+    expect(screen.getByRole('combobox', { name: 'Search inventory updates' })).toHaveValue('new-lincoln');
     expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true');
     second.unmount();
     mocked.context.currentUser = 'Synthetic Manager Two';
     show();
-    expect(screen.getByRole('textbox', { name: 'Search inventory updates' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Search inventory updates' })).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Howell' })).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -67,7 +67,7 @@ describe('Inventory updates workspace', () => {
     expect(within(results).getByLabelText('Engine / drive: Synthetic engine')).toHaveTextContent('Synthetic engine')
     expect(within(results).getByLabelText('Exterior / interior: Synthetic blue')).toHaveTextContent('Synthetic blue')
     expect(screen.queryByText('Synthetic new-lincoln')).not.toBeInTheDocument()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
     expect(screen.getAllByRole('option')).toHaveLength(1)
     expect(screen.getByRole('option')).toHaveTextContent('Synthetic new-home')
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
@@ -80,7 +80,7 @@ describe('Inventory updates workspace', () => {
   it('matches reordered terms across fields and selects a suggestion without leaving the filtered workspace', async () => {
     const user = userEvent.setup()
     show('/updates?view=price')
-    const search = screen.getByRole('textbox', { name: 'Search inventory updates' })
+    const search = screen.getByRole('combobox', { name: 'Search inventory updates' })
     const results = screen.getByRole('list', { name: 'Price changes results' })
     await user.type(search, 'Howell down Synthetic')
     expect(within(results).getAllByRole('listitem')).toHaveLength(1)
@@ -112,7 +112,7 @@ describe('Inventory updates workspace', () => {
     expect(screen.queryByText('$99,000')).not.toBeInTheDocument()
     expect(within(rows[0]).queryByRole('link', { name: 'Service' })).not.toBeInTheDocument()
     expect(rows[0].querySelector('.updates-values')!.compareDocumentPosition(rows[0].querySelector('.updates-specs')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'price-up' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search inventory updates' }), { target: { value: 'price-up' } })
     expect(within(screen.getByRole('list', { name: 'Price changes results' })).getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByRole('button', { name: /Price changes\s*2/ })).toBeInTheDocument()
   })
@@ -145,7 +145,7 @@ describe('Inventory updates workspace', () => {
     const results = screen.getByRole('list', { name: 'Other updates results' })
     expect(within(results).getAllByRole('listitem')).toHaveLength(1)
     expect(results).toHaveTextContent('Howell → Fowlerville')
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
     const suggestions = screen.getByRole('listbox', { name: 'Search inventory updates suggestions' })
     expect(within(suggestions).getAllByRole('option')).toHaveLength(1)
     expect(suggestions).toHaveTextContent('Synthetic store')
@@ -156,11 +156,11 @@ describe('Inventory updates workspace', () => {
   it('clears an active other-update type and search together to restore results', () => {
     show('/updates?view=other&source=companion')
     fireEvent.change(screen.getByRole('combobox', { name: 'Other update type' }), { target: { value: 'store_transfer' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'no match' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search inventory updates' }), { target: { value: 'no match' } })
     expect(screen.getByText('No updates match your search')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Clear update filters' }))
     expect(screen.getByRole('combobox', { name: 'Other update type' })).toHaveValue('all')
-    expect(screen.getByRole('textbox', { name: 'Search inventory updates' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Search inventory updates' })).toHaveValue('')
     expect(within(screen.getByRole('list', { name: 'Other updates results' })).getAllByRole('listitem')).toHaveLength(2)
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/updates?view=other&source=companion')
   })
@@ -175,7 +175,7 @@ describe('Inventory updates workspace', () => {
     expect(screen.getByRole('button', { name: /Price changes\s*3/ })).toBeInTheDocument()
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
     expect(screen.getByText('Vehicle details are unavailable for this comparison')).toBeInTheDocument()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
