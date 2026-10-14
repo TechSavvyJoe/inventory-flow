@@ -271,49 +271,55 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
   const prepareCustomerSheet = useCallback(async (requestedListId?: string): Promise<SavedListSheetSnapshot | null> => {
     const listId = requestedListId ?? activeListId
     if (!enabled || !ownerId || !listId || !refreshVehicles || boundAccessKey.current !== accessKey || revoked.current || mutationBusy.current || pendingMutation.current) return null
-    sheetAbort.current?.abort()
-    const controller = new AbortController()
-    sheetAbort.current = controller
-    const requestGeneration = generation.current
-    const requestWriteVersion = writeVersion.current
-    // Polling and sheet preparation share one read order. A late response from
-    // either path must not replace a newer membership or label observation.
-    const requestReadVersion = ++listReadVersion.current
-    const stillCurrent = () => !controller.signal.aborted && requestGeneration === generation.current && requestWriteVersion === writeVersion.current && requestReadVersion === listReadVersion.current && !revoked.current
-    setPreparingSheet(true)
-    setError(null)
-    try {
-      // The app data owner controls authenticated inventory refresh and cache
-      // revalidation. List membership is read independently from its existing
-      // owner-bound endpoint; no saved vehicle snapshot becomes authority.
-      const response = await getSavedVehicleLists(role, store, ownerId, controller.signal)
-      if (!stillCurrent()) return null
-      const currentList = response.lists.find(list => list.id === listId)
-      if (!currentList) throw new Error('This saved list is no longer available. Choose another list.')
-      const currentVehicles = await refreshVehicles()
-      if (!stillCurrent()) return null
-      if (!currentVehicles) throw new Error('Current inventory could not be refreshed. Try again before creating a new customer sheet.')
-      const byVin = new Map(currentVehicles.map(vehicle => [vehicle.vin, vehicle]))
-      const vehicles = currentList.items.flatMap(item => {
-        const vehicle = byVin.get(item.vin)
-        return item.available && vehicle ? [vehicle] : []
-      })
-      setLists(response.lists)
-      setLastConfirmedAt(Date.now())
-      if (!vehicles.length) throw new Error('No vehicles in this list are available in your current access. Edit the list before creating a customer sheet.')
-      return { listId, label: currentList.label, vehicles, refreshedAt: Date.now(), unavailableCount: currentList.items.length - vehicles.length }
-    } catch (cause) {
-      if (!stillCurrent()) return null
-      setError(messageFor(cause))
-      if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
-        revoked.current = true
-        setLists([])
-        setActiveListId(null)
-        setPendingSave(null)
+    // One automatic retry. A 25s list poll can win the shared read order in the
+    // middle of an explicit refresh; the click should finish on the newer
+    // membership instead of reporting that poll as a failed sheet.
+    for (let allowRetry = true; ; allowRetry = false) {
+      sheetAbort.current?.abort()
+      const controller = new AbortController()
+      sheetAbort.current = controller
+      const requestGeneration = generation.current
+      const requestWriteVersion = writeVersion.current
+      // Polling and sheet preparation share one read order. A late response from
+      // either path must not replace a newer membership or label observation.
+      const requestReadVersion = ++listReadVersion.current
+      const stillCurrent = () => !controller.signal.aborted && requestGeneration === generation.current && requestWriteVersion === writeVersion.current && requestReadVersion === listReadVersion.current && !revoked.current
+      const supersededByNewerListRead = () => !controller.signal.aborted && requestGeneration === generation.current && requestWriteVersion === writeVersion.current && requestReadVersion !== listReadVersion.current && !revoked.current
+      setPreparingSheet(true)
+      setError(null)
+      try {
+        // The app data owner controls authenticated inventory refresh and cache
+        // revalidation. List membership is read independently from its existing
+        // owner-bound endpoint; no saved vehicle snapshot becomes authority.
+        const response = await getSavedVehicleLists(role, store, ownerId, controller.signal)
+        if (!stillCurrent()) { if (allowRetry && supersededByNewerListRead()) continue; return null }
+        const currentList = response.lists.find(list => list.id === listId)
+        if (!currentList) throw new Error('This saved list is no longer available. Choose another list.')
+        const currentVehicles = await refreshVehicles()
+        if (!stillCurrent()) { if (allowRetry && supersededByNewerListRead()) continue; return null }
+        if (!currentVehicles) throw new Error('Current inventory could not be refreshed. Try again before creating a new customer sheet.')
+        const byVin = new Map(currentVehicles.map(vehicle => [vehicle.vin, vehicle]))
+        const vehicles = currentList.items.flatMap(item => {
+          const vehicle = byVin.get(item.vin)
+          return item.available && vehicle ? [vehicle] : []
+        })
+        setLists(response.lists)
+        setLastConfirmedAt(Date.now())
+        if (!vehicles.length) throw new Error('No vehicles in this list are available in your current access. Edit the list before creating a customer sheet.')
+        return { listId, label: currentList.label, vehicles, refreshedAt: Date.now(), unavailableCount: currentList.items.length - vehicles.length }
+      } catch (cause) {
+        if (!stillCurrent()) { if (allowRetry && supersededByNewerListRead()) continue; return null }
+        setError(messageFor(cause))
+        if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+          revoked.current = true
+          setLists([])
+          setActiveListId(null)
+          setPendingSave(null)
+        }
+        return null
+      } finally {
+        if (requestGeneration === generation.current && sheetAbort.current === controller) setPreparingSheet(false)
       }
-      return null
-    } finally {
-      if (requestGeneration === generation.current && sheetAbort.current === controller) setPreparingSheet(false)
     }
   }, [accessKey, activeListId, enabled, ownerId, refreshVehicles, role, store])
 
