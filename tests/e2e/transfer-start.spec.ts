@@ -11,7 +11,7 @@ test('start-a-move picker and direct form stay usable without horizontal overflo
   await page.goto('/transfers/new')
 
   await expect(page.getByRole('heading', { name: 'Start a move' })).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'Search inventory to move' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Search inventory to move' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Move vehicle' }).first()).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
 
@@ -38,7 +38,7 @@ test('role and store previews preserve the working location and expose only the 
   }
   const search = async (stock: string) => {
     await page.goto('/transfers/new')
-    await page.getByRole('textbox', { name: 'Search inventory to move' }).fill(stock)
+    await page.getByRole('combobox', { name: 'Search inventory to move' }).fill(stock)
     return page.locator('.move-picker-row').filter({ hasText: stock })
   }
 
@@ -84,7 +84,7 @@ test('a group manager can record a completed direct store move without pickup or
   const destination = mobile ? 'Lincoln' : 'Ford Detroit'
 
   await page.goto('/transfers/new')
-  await page.getByRole('textbox', { name: 'Search inventory to move' }).fill(stock)
+  await page.getByRole('combobox', { name: 'Search inventory to move' }).fill(stock)
   const vehicle = page.locator('.move-picker-row').filter({ hasText: stock })
   await expect(vehicle).toHaveCount(1)
   await vehicle.getByRole('button', { name: 'Move vehicle' }).click()
@@ -110,7 +110,7 @@ test('an authorized active direct move keeps Track and adds Move again', async (
   const currentDestination = testInfo.project.name === 'mobile' ? 'Lincoln' : 'Ford Detroit'
 
   await page.goto('/transfers/new')
-  await page.getByRole('textbox', { name: 'Search inventory to move' }).fill(stock)
+  await page.getByRole('combobox', { name: 'Search inventory to move' }).fill(stock)
   const vehicle = page.locator('.move-picker-row').filter({ hasText: stock })
   await expect(vehicle.getByRole('button', { name: 'Track move' })).toBeVisible()
   await expect(vehicle.getByRole('button', { name: 'Move again' })).toBeVisible()

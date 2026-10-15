@@ -48,7 +48,8 @@ Never delete, loosen, or re-pin these without Joe's approval — agents may add 
 
 ## Validation before handoff
 
-- Run `pnpm check:repo-safety` then `pnpm check` before the first push and every pull request; `pnpm check` runs the type check (`tsc -b` with `noUnusedLocals`/`noUnusedParameters`), repository safety gate, design-system ratchet, tests, and production build.
+- Run `pnpm check:repo-safety` then `pnpm check` before the first push and every pull request; `pnpm check` runs the type check (`tsc -b` with `noUnusedLocals`/`noUnusedParameters`), repository safety gate, design-system ratchet, unit tests, and production build.
+- `pnpm check` is not a substitute for full CI or a release. It does not run Playwright e2e, visual baselines (`qa:visual` / visual CI), `pnpm cloud:validate`, publisher recovery suites, or Python publisher checks. Before a production release, follow `docs/DEPLOY_CHECKLIST.md` and run `pnpm cloud:validate` plus the e2e/visual path the checklist names.
 - Exercise inventory search, sorting, row actions, vehicle workspace tabs, dialog keyboard behavior, and transfer workflows.
 - Inspect the actual browser at all four target viewports; do not claim a UI fix based only on source or unit tests.
 - Report any production boundary that remains simulated, local-only, read-only, or unverified.

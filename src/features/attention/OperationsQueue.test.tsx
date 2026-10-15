@@ -98,7 +98,7 @@ describe('Action center store workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
     expect(tasks()).toHaveLength(3)
     expect(screen.getByRole('button', { name: /All tasks\s*3/ })).toBeInTheDocument()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search work queue' }), { target: { value: 'Lincoln L01' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search work queue' }), { target: { value: 'Lincoln L01' } })
     expect(tasks()).toHaveLength(1)
     expect(screen.getByRole('status')).toHaveTextContent('1 task')
   })
@@ -126,7 +126,7 @@ describe('Action center store workflow', () => {
       task(),
       task({ id: 'away-move', vin: 'TESTDATAFOWLER001', vehicleName: 'Synthetic Fowlerville move', type: 'transfer_next_action', store: 'Fowlerville', actionStore: 'Fowlerville', relatedStores: ['Howell'], actionability: 'informational', informationalReason: 'other_store' }),
     ])
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search work queue' }), { target: { value: 'Fowlerville move' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search work queue' }), { target: { value: 'Fowlerville move' } })
     expect(screen.getByRole('heading', { name: 'No actionable tasks match this view' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('0 tasks · 1 informational')
     expect(screen.getByRole('list', { name: 'Also worth knowing' })).toHaveTextContent('Synthetic Fowlerville move')
