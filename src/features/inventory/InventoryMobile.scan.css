@@ -104,3 +104,16 @@
 
 .if-srp-mobile-list .inventory-detail-disclosure { grid-column:1 / -1; min-width:0; }
 .if-srp-mobile-list .inventory-source-qualifications { grid-column:1 / -1; padding:var(--ifx-space-1); }
+
+/* Keep the first compact vehicle's actions above the mobile dock. */
+@media (max-width:320px) {
+  .if-srp-mobile-list { gap:0; }
+  .if-srp-mobile-list .if-srp-mobile-row--scan { padding:0 var(--ifx-space-1); border-radius:0; box-shadow:none; }
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__main { gap:0; }
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title strong { font-size:var(--ifx-text-md); line-height:1.2; }
+  .if-srp-mobile-list .inventory-mobile-row__factory-pricing { gap:0 var(--ifx-space-2); }
+  .if-srp-mobile-list .inventory-registration-facts > div { padding-block:0; }
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold,
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-service-link { min-height:var(--ifx-control-height-md); }
+}
+

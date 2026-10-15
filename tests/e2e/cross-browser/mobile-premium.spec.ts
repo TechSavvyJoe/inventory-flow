@@ -20,6 +20,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('maxey-role', 'group_manager')
     localStorage.setItem('maxey-home-store', 'Howell')
+    localStorage.removeItem('inventory-flow.inventory-detail-density')
   })
 })
 

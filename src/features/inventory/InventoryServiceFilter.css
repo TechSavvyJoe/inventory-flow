@@ -219,8 +219,13 @@
   .if-srp .if-srp-service-select { width:100%; min-width:0; max-width:100%; }
 }
 
-/* At 320px the saved label wraps inside its track rather than covering Scan. */
+/* At 320px keep the five workbench rows, but drop chrome so the first
+   vehicle's actions still clear the mobile dock. */
 @media (max-width:320px) {
+  .if-srp .if-srp-workbench { row-gap:0; padding-block:0; }
+  .if-srp .if-srp-workbench::before { display:none; }
+  .if-srp .if-srp-header .ifx-page-header__title { font-size:var(--ifx-text-lg); }
+  .if-srp .if-srp-quickviews { border-top:0; }
   .if-srp .if-srp-tools { min-width:0; width:100%; }
   .if-srp .if-srp-tools .inventory-shortlist-filter { flex:1 1 0; height:var(--ifx-control-height-md); padding-block:0; white-space:normal; }
   .if-srp .if-srp-tools .inventory-shortlist-filter .inventory-tool-label { min-width:0; }
