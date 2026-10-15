@@ -182,6 +182,7 @@ describe('AppDataProvider access-context isolation', () => {
 
     await waitFor(() => expect(screen.getByTestId('context')).toHaveTextContent('sales:Fowlerville'))
     expect(screen.getByTestId('user')).toHaveTextContent('Authenticated Employee')
+    // Vitest runs as DEV, so demo preview prefs stay in localStorage.
     expect(window.localStorage.getItem('maxey-role')).toBe('sales')
     expect(window.localStorage.getItem('maxey-home-store')).toBe('Fowlerville')
     await waitFor(() => expect(apiMocks.getBootstrap).toHaveBeenCalledWith('Fowlerville', 'sales', expect.any(AbortSignal)))
