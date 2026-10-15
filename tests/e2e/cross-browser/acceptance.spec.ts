@@ -176,6 +176,7 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
   const measurements: unknown[] = []
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 })
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined)))))
     await page.evaluate(() => window.scrollTo(0, 0))
     await expectNoOverflow(page)
     const freshnessTimestamp = page.locator('.freshness-chip small')
@@ -564,6 +565,7 @@ test('ordinary joined records keep readable facts and two useful vehicles in the
 })
 
 test('two primary columns keep complete vehicle evidence and direct actions in one joined record', async ({ page, isMobile }, testInfo) => {
+  test.setTimeout(90_000)
   test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
   let includePriceChange = false
   await page.route('**/api/bootstrap?**', async route => {

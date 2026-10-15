@@ -4,6 +4,7 @@
 .inventory-service-link__detail { display: flex; flex-wrap: wrap; gap: 0 8px; color: currentColor; font: 500 12px/15px var(--font-app); }
 .inventory-service-link__detail > span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .inventory-service-link__date { white-space:nowrap; overflow-wrap:normal; }
+.if-srp-mobile-list .inventory-service-link__date { white-space:normal; overflow-wrap:anywhere; }
 .inventory-service-link:hover { text-decoration: underline; }
 .inventory-service-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .inventory-service-link--needs_service { color: color-mix(in srgb,var(--amber) 85%,var(--ink-900)); }
