@@ -145,7 +145,7 @@ describe('modern inventory scope and paging', () => {
   it('never loses a secondary view restriction when Filters closes', () => {
     render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[vehicle(1)]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    fireEvent.click(screen.getByRole('button', { name: /^New today/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'New today: 0 vehicles' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show 0 vehicles' }));
     expect(screen.getByRole('button', { name: 'Filters 1' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Clear view filter: New today' })).toBeInTheDocument();
@@ -193,10 +193,10 @@ describe('modern inventory scope and paging', () => {
     render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[moving, vehicle(2)]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Vehicle movement' }), { target: { value: 'active' } });
-    expect(screen.getByRole('button', { name: 'Being moved 1' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Being moved 1' }));
+    expect(screen.getByRole('button', { name: 'Being moved: 1 vehicles' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Being moved: 1 vehicles' }));
     expect(screen.getByRole('combobox', { name: 'Vehicle movement' })).toHaveValue('all');
-    fireEvent.click(screen.getByRole('button', { name: 'Being moved 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Being moved: 1 vehicles' }));
     expect(screen.getByRole('combobox', { name: 'Vehicle movement' })).toHaveValue('active');
     fireEvent.click(screen.getByRole('button', { name: 'Show 1 vehicle' }));
     expect(screen.getByRole('button', { name: 'Filters 1' })).toBeInTheDocument();
@@ -292,7 +292,9 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('button', { name: 'No hold: 0 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Offsite: 0 vehicles' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    expect(screen.getByRole('button', { name: 'Being moved 0' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Being moved: 0 vehicles' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New today: 0 vehicles' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Price changed: 0 vehicles' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Inventory quick view' })).not.toBeInTheDocument();
     const service = screen.getByRole('combobox', { name: 'Inventory service status' });
     expect(service).toHaveValue('all');

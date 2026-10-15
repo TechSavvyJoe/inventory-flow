@@ -791,7 +791,18 @@ export function InventoryExperience({
               </div>
             </div>
             {filtersOpen ? <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
-              {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[Extract<QuickView, 'moving' | 'new' | 'price'>, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={value === 'moving' ? filters.movement === 'active' : quickView === value} onClick={() => toggleSecondaryView(value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
+              {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[Extract<QuickView, 'moving' | 'new' | 'price'>, string]>).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={`${label}: ${quickViewCounts[value]} vehicles`}
+                  aria-pressed={value === 'moving' ? filters.movement === 'active' : quickView === value}
+                  onClick={() => toggleSecondaryView(value)}
+                >
+                  <span aria-hidden="true">{label}</span>
+                  <span aria-hidden="true">{quickViewCounts[value]}</span>
+                </button>
+              ))}
             </div> : null}
           </div>
 
