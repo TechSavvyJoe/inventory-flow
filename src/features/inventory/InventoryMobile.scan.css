@@ -112,5 +112,4 @@
 .if-srp-mobile-list .inventory-registration-facts dd,
 .if-srp-mobile-list .inventory-mobile-row__captured-facts dd { font-size:var(--ifx-text-md); }
 .if-srp-mobile-list .inventory-mobile-row__copy-facts .copyable-value__content { overflow-wrap:anywhere; }
-.if-srp-mobile-list .inventory-service-link__date { white-space:normal; overflow-wrap:anywhere; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual img { object-fit:contain; }

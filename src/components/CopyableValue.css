@@ -1,5 +1,5 @@
 .copyable-value {
-  min-width: min(100%, max-content);
+  min-width: 0;
   max-width: 100%;
   display: inline-flex;
   align-items: center;
