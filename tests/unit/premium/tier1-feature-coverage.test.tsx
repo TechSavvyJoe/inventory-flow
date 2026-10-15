@@ -34,7 +34,7 @@ describe('Premium primary-screen feature coverage', () => {
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' })
     expect(operations).toHaveTextContent('Location')
     expect(operations).toHaveTextContent('Howell')
-    expect(operations).toHaveTextContent('Hold status')
+    expect(within(operations).getByRole('button', { name: 'Hold evidence' })).toBeVisible()
     expect(operations).toHaveTextContent('Service')
     expect(operations).not.toHaveTextContent('Confirm with the home store')
     expect(operations).not.toHaveTextContent('Available')

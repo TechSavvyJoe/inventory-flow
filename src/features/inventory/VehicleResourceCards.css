@@ -303,29 +303,23 @@
 
 .vehicle-resource-shortcut__heading .vehicle-resource-brand--autocheck { width:calc(var(--ifx-space-12) + var(--ifx-space-1)); }
 
-/* The inventory ledger joins sources; each destination sits beside its own facts. */
-.inventory-source-band .vehicle-resource-scan { display:grid; grid-template-columns:calc(var(--ifx-space-16) + var(--ifx-space-4)) minmax(0,1fr); align-items:start; gap:var(--ifx-space-1) var(--ifx-space-2); width:100%; padding:0; border:0; }
-.inventory-source-band .vehicle-resource-scan__source--destination { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; align-items:start; justify-content:start; align-content:start; gap:var(--ifx-space-1); grid-column:1; grid-row:1 / 3; width:100%; max-width:100%; min-height:var(--ifx-control-height-md); padding:var(--ifx-space-1) 0; border:0; border-radius:0; box-shadow:none; background:transparent; text-align:left; }
-.inventory-source-band .vehicle-resource-scan__source--destination > :is(.vehicle-resource-brand,.vehicle-resource-symbol) { grid-column:1; grid-row:1; width:var(--ifx-space-16); height:var(--ifx-space-5); max-width:100%; object-fit:contain; object-position:left center; }
-.inventory-source-band .vehicle-resource-scan__source--destination > .vehicle-resource-brand--ford { width:var(--ifx-space-12); }
-.inventory-source-band .vehicle-resource-scan__source--destination > .vehicle-resource-symbol { width:var(--ifx-space-5); }
-.inventory-source-band .vehicle-resource-scan__source--destination > .vehicle-resource-scan__source-label { grid-column:1 / -1; grid-row:2; font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); }
-.inventory-source-band .vehicle-resource-scan__source--destination > svg:not(.vehicle-resource-symbol) { grid-column:2; grid-row:1; }
-.inventory-source-band .vehicle-resource-scan__findings { grid-column:2; grid-row:1; width:100%; }
-.inventory-source-band .vehicle-resource-scan__fields { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--ifx-space-0-5) var(--ifx-space-2); margin:0; }
-.inventory-source-band .vehicle-resource-scan__fields > div { display:block; min-width:0; max-width:100%; margin:0; padding:0; border:0; }
-.inventory-source-band .vehicle-resource-scan__fields dt { display:inline; margin-right:var(--ifx-space-1); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); }
-.inventory-source-band .vehicle-resource-scan__fields dd { display:inline; margin:0; color:var(--ink-900); font:var(--ifx-weight-regular) var(--ifx-text-body)/var(--ifx-leading-compact) var(--font-app); white-space:normal; }
-.inventory-source-band .vehicle-resource-scan__fields > [data-field="captured"] dd { font-size:var(--ifx-text-body); white-space:normal; }
-.inventory-source-band .vehicle-resource-scan__fields dd > span { display:inline; overflow:visible; -webkit-line-clamp:unset; }
-.inventory-source-band .vehicle-resource-scan__fields dd > span + span::before { content:" · "; }
-.inventory-source-band .vehicle-resource-scan__caption { grid-column:2; grid-row:2; margin:0; padding:0; border:0; font:var(--ifx-weight-regular) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
-
-.inventory-source-band .vehicle-resource-scan__wide-findings { grid-column:1 / -1; grid-row:3; min-width:0; padding-top:var(--ifx-space-1); }
-.inventory-source-band .vehicle-resource-scan__wide-findings .vehicle-resource-scan__fields > div { flex-basis:100%; }
-
-.inventory-source-band .vehicle-resource-scan:is([data-resource-kind="window-sticker"],[data-resource-kind="vauto"],[data-resource-kind="oasis"]) { grid-template-columns:var(--ifx-space-16) minmax(0,1fr); }
-.inventory-source-band .vehicle-resource-scan__fields > div,
-.inventory-source-band .vehicle-resource-scan__fields :is(dt,dd) { line-height:1.3; }
-.inventory-source-band .vehicle-resource-scan__fields dt { white-space:nowrap; }
-.inventory-source-band .vehicle-resource-scan__fields [data-field="in service"] dd { display:inline-block; white-space:nowrap; }
+/* Inventory-only summaries keep the source identity and destination in one heading. */
+.vehicle-resource-scan--inventory-summary { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:var(--ifx-space-0-5); width:100%; padding:0; border:0; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__source--destination { display:flex; align-items:center; justify-content:flex-start; gap:var(--ifx-space-2); width:100%; max-width:100%; min-height:var(--ifx-control-height-md); padding:0; border:0; border-radius:0; box-shadow:none; background:transparent; text-align:left; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__source--destination > :is(.vehicle-resource-brand,.vehicle-resource-symbol) { flex:none; width:var(--ifx-space-12); height:var(--ifx-space-5); max-width:100%; object-fit:contain; object-position:left center; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__source--destination > .vehicle-resource-symbol { width:var(--ifx-space-5); }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__source-label { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--ifx-space-1) var(--ifx-space-2); font:var(--ifx-weight-semibold) var(--ifx-text-body)/var(--ifx-leading-compact) var(--font-app); }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-destination { display:inline; margin:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__source--destination > svg:not(.vehicle-resource-symbol) { flex:none; margin-left:auto; }
+.vehicle-resource-scan--inventory-summary > :is(.vehicle-resource-scan__source,.vehicle-resource-scan__findings,.vehicle-resource-scan__caption,.vehicle-resource-scan__wide-findings) { grid-column:1; grid-row:auto; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__findings { width:100%; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__fields { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--ifx-space-0-5) var(--ifx-space-3); margin:0; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__fields > div { display:block; min-width:0; max-width:100%; margin:0; padding:0; border:0; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__fields dt { display:inline; margin-right:var(--ifx-space-1); color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); }
+.vehicle-resources--scan .vehicle-resource-scan--inventory-summary .vehicle-resource-scan__fields dd { display:inline; margin:0; color:var(--ink-900); font:var(--ifx-weight-regular) var(--ifx-text-body)/var(--ifx-leading-compact) var(--font-app); white-space:normal; overflow-wrap:anywhere; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__fields > div dd > span { display:inline; overflow:visible; -webkit-line-clamp:unset; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__fields dd > span + span::before { content:" · "; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__fields > :is([data-field="captured"],[data-field="highlight"],[data-field="title"],[data-field="accidents"],[data-field="actions"],[data-field="in service"]) { flex-basis:100%; }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__caption { margin:0; padding:0; border:0; font:var(--ifx-weight-regular) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__wide-findings { min-width:0; padding-top:var(--ifx-space-0-5); }
+.vehicle-resource-scan--inventory-summary .vehicle-resource-scan__wide-findings .vehicle-resource-scan__fields > div { flex-basis:100%; }

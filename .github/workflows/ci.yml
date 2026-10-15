@@ -77,11 +77,30 @@ jobs:
           python -m unittest discover -s tests/python
 
   e2e:
+    # Keep the required check stable, and report a failure if either independent
+    # suite fails, is cancelled, or is skipped after an unsuccessful build.
+    if: always() && github.event_name != 'schedule'
+    needs: [test-and-build, e2e-browser, e2e-cross-browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both browser suites to succeed
+        env:
+          BUILD_RESULT: ${{ needs.test-and-build.result }}
+          BROWSER_RESULT: ${{ needs.e2e-browser.result }}
+          CROSS_BROWSER_RESULT: ${{ needs.e2e-cross-browser.result }}
+        run: |
+          if [ "$BUILD_RESULT" != 'success' ] || [ "$BROWSER_RESULT" != 'success' ] || [ "$CROSS_BROWSER_RESULT" != 'success' ]; then
+            printf 'Required results: build=%s browser=%s cross-browser=%s\n' "$BUILD_RESULT" "$BROWSER_RESULT" "$CROSS_BROWSER_RESULT"
+            exit 1
+          fi
+
+  e2e-browser:
     if: github.event_name != 'schedule'
     needs: test-and-build
     runs-on: ubuntu-latest
-    # Per-push coverage is Chromium and WebKit only (desktop/mobile plus the
-    # chromium-desktop/webkit-mobile cross-browser projects). Firefox, the
+    # This suite covers ordinary Chromium desktop and WebKit mobile tests.
+    # Cross-browser acceptance runs independently in e2e-cross-browser. Firefox, the
     # Chromium-Android emulation, and the WebKit-desktop project run once a
     # night in cross-browser-nightly below, not on every push. The pinned image
     # includes both engines and their OS dependencies, avoiding repeated slow
@@ -129,6 +148,62 @@ jobs:
           PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
         run: pnpm test:e2e --project=desktop --project=mobile
 
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-browser
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  e2e-cross-browser:
+    if: github.event_name != 'schedule'
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    # This suite covers chromium-desktop/webkit-mobile acceptance projects.
+    # Ordinary browser tests run independently in e2e-browser. Firefox, the
+    # Chromium-Android emulation, and the WebKit-desktop project run once a
+    # night in cross-browser-nightly below, not on every push. The pinned image
+    # includes both engines and their OS dependencies, avoiding repeated slow
+    # Ubuntu mirror installs while preserving both suites and their limits.
+    timeout-minutes: 25
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Trust the workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify bundled browser engines
+        run: |
+          pnpm exec node --input-type=module <<'NODE'
+          import { accessSync } from 'node:fs'
+          import { createRequire } from 'node:module'
+          import { chromium, webkit } from '@playwright/test'
+          const require = createRequire(import.meta.url)
+          if (require('@playwright/test/package.json').version !== '1.62.1') throw new Error('PLAYWRIGHT_IMAGE_VERSION_MISMATCH')
+          for (const browser of [chromium, webkit]) accessSync(browser.executablePath())
+          console.log('Pinned Chromium and WebKit engines present')
+          NODE
+
       - name: Run cross-browser acceptance (Chromium + WebKit only)
         env:
           PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
@@ -138,7 +213,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-cross-browser
           path: |
             playwright-report/
             test-results/

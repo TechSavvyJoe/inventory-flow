@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeftRight,
@@ -19,11 +19,12 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigationType } from 'react-router-dom'
 import { formatDateTime } from '../lib/format'
 import { FlowBrandLockup } from '../design-system'
 import { useContainedFocus } from '../lib/useContainedFocus'
 import { useModalBackgroundIsolation } from '../lib/useModalBackgroundIsolation'
+import { readWorkspaceReturnPath } from '../lib/inventory-navigation'
 import { verifiedApplicationUrl } from '../lib/verified-application-url'
 import { STORE_NAMES, type StoreName, type UserRole } from '../types'
 import { useAppData } from './AppDataContext'
@@ -86,6 +87,8 @@ const MOBILE_UTILITY_HINTS: Partial<Record<NavigationItemId, string>> = {
   admin: 'Employee access, source health, and audit activity',
 }
 
+const PAGE_NAVIGATION_STATE = { pageNavigation: true }
+
 const NAV_STORAGE_KEY = 'maxey-inventory-flow:expanded-navigation-v3'
 
 function readStoredNavigationState() {
@@ -115,6 +118,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const appShellRef = useRef<HTMLDivElement>(null)
   const mainContentRef = useRef<HTMLElement>(null)
   const location = useLocation()
+  const navigationType = useNavigationType()
+  const previousLocationRef = useRef(location)
   const routeUrl = `${location.pathname}${location.search}${location.hash}`
   const previousRouteUrlRef = useRef(routeUrl)
   const attentionCount = openStoreActionCount(data, { store: homeStore, role })
@@ -180,6 +185,24 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [navExpanded])
 
+  useLayoutEffect(() => {
+    const previous = previousLocationRef.current
+    previousLocationRef.current = location
+    if (navigationType === 'POP') return
+    const pageNavigation = location.state?.pageNavigation === true
+    if (!pageNavigation && previous.pathname === location.pathname) return
+    const returnTo = readWorkspaceReturnPath(new URLSearchParams(previous.search).get('returnTo'))
+    if (!pageNavigation && returnTo === `${location.pathname}${location.search}${location.hash}`) return
+
+    // A newly opened page must not inherit the outgoing document's offset.
+    // Existing workspace restores run on the next frame and still own saved
+    // positions for workflow links. Deliberate shell navigation opens at top.
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    if (!pageNavigation) return
+    const frame = window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [location, navigationType])
+
   useEffect(() => {
     // Consuming a private search request replaces router state at the same
     // URL. It must not steal focus from someone already editing that search.
@@ -211,6 +234,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavLink
             key={to}
             to={to}
+            state={PAGE_NAVIGATION_STATE}
             className={`nav-link${active ? ' is-active' : ''}`}
             aria-current={active ? 'page' : undefined}
             title={label}
@@ -280,7 +304,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {softwareAdminUrl && <a className="utility-service-link" href={softwareAdminUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true"/><span><strong>Software Admin</strong><small>Separate software-owner administration</small></span><ChevronRight aria-hidden="true"/></a>}
 
         {mobileUtilityItems.map(({ id, to, label, icon: Icon }) => (
-          <NavLink key={id} className="utility-service-link" to={to} onClick={() => setUtilityOpen(false)}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{MOBILE_UTILITY_HINTS[id]}</small></span><ChevronRight aria-hidden="true"/></NavLink>
+          <NavLink key={id} className="utility-service-link" to={to} state={PAGE_NAVIGATION_STATE} onClick={() => setUtilityOpen(false)}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{MOBILE_UTILITY_HINTS[id]}</small></span><ChevronRight aria-hidden="true"/></NavLink>
         ))}
       </section>
     </div>
@@ -398,6 +422,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <NavLink
               key={to}
               to={to}
+              state={PAGE_NAVIGATION_STATE}
               className={active ? 'is-active' : ''}
               aria-current={active ? 'page' : undefined}
             >

@@ -1,4 +1,4 @@
-import { test as base, expect, type Page, type TestInfo } from '@playwright/test'
+import { test as base, expect, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 
 // The browser engine is real WebKit. Device descriptors emulate viewport/input;
@@ -88,7 +88,7 @@ const test = base.extend<{ runtimeHealth: void }>({
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
   const screenshotPath = testInfo.outputPath(`${name}.png`)
-  await page.screenshot({ path: screenshotPath, fullPage: false })
+  await page.screenshot({ path: screenshotPath, fullPage: false, scale: 'css' })
   await testInfo.attach(name, { path: screenshotPath, contentType: 'image/png' })
 }
 
@@ -109,20 +109,12 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
   const scope = page.getByRole('group', { name: 'Inventory location scope' })
   const quickFilters = page.getByRole('group', { name: 'Inventory quick filters' })
   const serviceFilters = page.getByRole('group', { name: 'Inventory service status' })
-  const serviceButtons = [
-    serviceFilters.getByRole('button', { name: /^All service: \d+ vehicles$/ }),
-    serviceFilters.getByRole('button', { name: /^Waiting for service: \d+ vehicles$/ }),
-    serviceFilters.getByRole('button', { name: /^In service: \d+ vehicles$/ }),
-    serviceFilters.getByRole('button', { name: /^Ready: \d+ vehicles$/ }),
-  ]
   const serviceSelect = serviceFilters.getByRole('combobox', { name: 'Inventory service status' })
-  const serviceControls = width <= 1100 ? [serviceSelect] : serviceButtons
-  if (width <= 1100) {
-    await expect(serviceSelect).toBeVisible()
-    await expect(serviceSelect.getByRole('option')).toHaveText([
-      /^All service: \d+ vehicles?$/, /^Waiting for service: \d+ vehicles?$/, /^In service: \d+ vehicles?$/, /^Ready: \d+ vehicles?$/,
-    ])
-  }
+  const serviceControls = [serviceSelect]
+  await expect(serviceSelect).toBeVisible()
+  await expect(serviceSelect.getByRole('option')).toHaveText([
+    /^All service · \d+$/, /^Waiting · \d+$/, /^In service · \d+$/, /^Ready · \d+$/,
+  ])
   const sections = [
     page.getByRole('combobox', { name: 'Search inventory' }),
     scope.getByRole('button', { name: /^Howell inventory, \d+ of \d+ group vehicles$/ }),
@@ -135,7 +127,7 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     page.getByRole('button', { name: /^Filters/ }),
     page.getByRole('button', { name: /^Sort inventory\./ }),
   ]
-  for (const optional of [page.getByRole('button', { name: 'Scan vehicle', exact: true }), page.getByRole('button', { name: /^Shortlist \(\d+\)$/ })]) {
+  for (const optional of [page.getByRole('button', { name: 'Scan vehicle', exact: true }), page.getByRole('button', { name: /^Shortlist \(\d+\) — Saved only$/ })]) {
     if (await optional.isVisible()) sections.push(optional)
   }
   const boxes = await Promise.all(sections.map(async section => {
@@ -172,7 +164,7 @@ function results(page: Page, mobile: boolean) {
 test('inventory reflows from a wide monitor to a narrow phone without crowded controls', async ({ page, isMobile }, testInfo) => {
   test.setTimeout(120_000)
   await loadInventory(page)
-  const widths = isMobile ? [320, 390, 430] : [320, 390, 600, 720, 760, 761, 820, 1024, 1280, 1320, 1440, 1920, 2560]
+  const widths = isMobile ? [320, 330, 360, 390, 430] : [320, 330, 360, 390, 600, 720, 760, 761, 820, 1024, 1280, 1320, 1440, 1920, 2560]
   const measurements: unknown[] = []
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 })
@@ -198,15 +190,16 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     const bounds = await page.locator('.if-srp-controls').evaluate(element => {
       const controls = [...element.querySelectorAll<HTMLElement>('button,select')].filter(control => control.getClientRects().length && !control.closest('[hidden]'))
       return { height: element.getBoundingClientRect().height, controls: controls.map(control => ({
+        name: control.getAttribute('aria-label') || control.textContent?.trim() || control.tagName,
         left: control.getBoundingClientRect().left, right: control.getBoundingClientRect().right,
         height: control.getBoundingClientRect().height, size: parseFloat(getComputedStyle(control).fontSize),
       })) }
     })
     expect(bounds.height, `At most two readable control rows including service at ${width}`).toBeLessThanOrEqual(112)
     for (const control of bounds.controls) {
-      expect(control.left).toBeGreaterThanOrEqual(0)
-      expect(control.right).toBeLessThanOrEqual(width + 1)
-      expect(control.size).toBeGreaterThanOrEqual(13)
+      expect(control.left, `${width}px ${control.name} left edge`).toBeGreaterThanOrEqual(0)
+      expect(control.right, `${width}px ${control.name} right edge`).toBeLessThanOrEqual(width + 1)
+      expect(control.size, `${width}px ${control.name} readable text`).toBeGreaterThanOrEqual(13)
     }
     const top = (await firstRow.boundingBox())!.y
     expect(top, `First vehicle appears near the controls at ${width}`).toBeLessThan(480)
@@ -494,18 +487,38 @@ test('inventory scope, literal search, multilevel sort, and row controls operate
   await capture(page, testInfo, 'inventory')
 })
 
+async function expandJoinedRecord(row: Locator) {
+  const group = row.locator('xpath=..')
+  const toggle = group.getByRole('button', { name: /^(?:Expand|Collapse) details for / })
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  const details = group.getByRole('region', { name: /^Additional details for / })
+  await expect(details).toBeVisible()
+  await expect.poll(() => details.evaluate(element => {
+    const clip = element.parentElement!
+    return clip.scrollHeight - clip.clientHeight
+  }), { message: 'Complete joined evidence is revealed before measuring its facts' }).toBeLessThanOrEqual(1)
+  return details
+}
+
 test('ordinary joined records keep readable facts and two useful vehicles in the first canonical viewport', async ({ page, isMobile }, testInfo) => {
   test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
   await loadInventory(page)
   await page.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }).click()
   await page.getByRole('button', { name: /^All: \d+ vehicles$/ }).click()
+  await page.getByRole('button', { name: /^Sort inventory\./ }).click()
+  const movementSort = page.getByRole('button', { name: 'Remove Last movement sort', exact: true })
+  if (await movementSort.count()) await movementSort.click()
+  await expect(page.getByRole('combobox', { name: 'Sort priority 1 field', exact: true })).toHaveValue('vehicle')
+  await expect(page.getByRole('button', { name: 'Vehicle: change to descending', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Close sort options', exact: true }).click()
   const row = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-F02"]')
   await expect(row).toBeVisible()
   await expect(row).toContainText('Maverick')
   await expect(row).toHaveAttribute('data-hold-state', 'clear')
   await expect(row.locator('xpath=..').getByRole('button', { name: /View change history/ })).toHaveCount(0)
   const measure = () => row.evaluate(row => {
-    const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-configuration__fact > span', '.inv-desk-hold > span:last-child']
+    const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-hold > span:last-child']
     const text = selectors.map(selector => {
       const element = row.querySelector<HTMLElement>(selector)!
       const css = getComputedStyle(element)
@@ -548,7 +561,8 @@ test('ordinary joined records keep readable facts and two useful vehicles in the
     const actions = row.locator('xpath=..').getByRole('group', { name: /^Actions for 2022 Ford Maverick/ })
     await expect(actions).toBeVisible()
     const targets = actions.locator('button, a')
-    await expect(targets).toHaveCount(4)
+    await expect(targets).toHaveCount(5)
+    await expect(actions.getByRole('button', { name: /^Expand details for 2022 Ford Maverick/ })).toBeVisible()
     await expect(actions.getByRole('button', { name: /^Open vehicle records for 2022 Ford Maverick/ })).toBeVisible()
     await expect(actions.getByRole('button', { name: /^Save DEMO-F02 to shortlist$/ })).toBeVisible()
     await expect(actions.getByRole('button', { name: 'Request to Howell 2022 Ford Maverick Lariat', exact: true })).toBeVisible()
@@ -560,6 +574,17 @@ test('ordinary joined records keep readable facts and two useful vehicles in the
       expect(box!.height, `${width}px ordinary action height`).toBeGreaterThanOrEqual(44)
       expect(box!.width, `${width}px ordinary action width`).toBeGreaterThanOrEqual(44)
     }
+    // Density is checked collapsed; configuration must remain fully readable
+    // when the employee deliberately opens this vehicle's details.
+    const details = await expandJoinedRecord(row)
+    const powertrain = details.getByText('2.0L EcoBoost · AWD', { exact: true })
+    await expect(powertrain).toBeVisible()
+    const fact = await powertrain.evaluate(element => ({ size: parseFloat(getComputedStyle(element).fontSize), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }))
+    expect(fact.size).toBeGreaterThanOrEqual(15)
+    expect(fact.scrollWidth).toBeLessThanOrEqual(fact.clientWidth + 1)
+    expect(fact.scrollHeight).toBeLessThanOrEqual(fact.clientHeight + 1)
+    await actions.getByRole('button', { name: /^Collapse details for 2022 Ford Maverick/ }).click()
+    await expect(actions.getByRole('button', { name: /^Expand details for 2022 Ford Maverick/ })).toHaveAttribute('aria-expanded', 'false')
     await expectNoOverflow(page)
   }
 })
@@ -621,6 +646,9 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
   await expect(footer.locator(':scope > td')).toHaveCount(1)
   await expect(footer.locator(':scope > td')).toHaveAttribute('colspan', '2')
   await expect(main.locator('[data-column="vehicle"]')).toBeVisible()
+  await expect(vehicleRows.getByRole('button', { name: /^Expand details for / })).toHaveAttribute('aria-expanded', 'false')
+  await expect(evidence.getByRole('region', { name: /^History source evidence/ })).toHaveCount(0)
+  await expandJoinedRecord(main)
   const historySource = evidence.getByRole('region', { name: /^History source evidence/ })
   const equipmentSource = evidence.getByRole('region', { name: /^Factory equipment source evidence/ })
   const oasisSource = evidence.getByRole('region', { name: /^OASIS source evidence/ })
@@ -633,8 +661,9 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
   await expect(actions.locator(':scope > .inv-desk-action').nth(1)).toHaveAccessibleName(/Save DEMO-H01 to shortlist/)
   const footerActionOrder = await actions.locator(':scope > .inv-desk-action').evaluateAll(elements => elements.map(element => element.getAttribute('data-row-action')))
   expect(footerActionOrder.slice(0, 3), 'Records, Save, and Listing precede operational controls').toEqual(['records', 'shortlist', 'listing'])
-  await expect(main.locator('[data-column="vehicle"] .inv-desk-configuration__fact > span').first()).toBeVisible()
-  await expect(equipmentSource).toContainText('CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER')
+  await expect(evidence.locator('.inv-desk-configuration__values > span').first()).toBeVisible()
+  await expect(equipmentSource).toContainText('3 captured entries')
+  await expect(evidence.getByRole('button', { name: /View all .* equipment items/ })).toContainText('Class IV Trailer tow package')
   await expect(historySource).toContainText('95')
   const vehicleCell = main.locator('[data-column="vehicle"]')
   await expect(vehicleCell.getByRole('button', { name: 'Copy stock number: DEMO-H01', exact: true })).toBeVisible()
@@ -644,9 +673,9 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
   await expect(vehicleCell.getByRole('group', { name: 'Copy identifiers for 2024 Ford F-150 Lariat' })).toBeVisible()
   await expect(vehicleCell.getByLabel('Registration calculator values')).toBeVisible()
   await expect(vehicleRows).toContainText('TESTDATAHWELL0001')
-  await expect(main).toContainText('3.5L EcoBoost V6')
+  await expect(evidence.getByRole('group', { name: 'Configuration for 2024 Ford F-150 Lariat', exact: true })).toContainText('3.5L EcoBoost V6')
   // The identity band now labels the captured color explicitly.
-  await expect(vehicleRows.getByText(/^Interior\s*Black$/)).toBeVisible()
+  await expect(evidence.locator('.inv-desk-vehicle__comparison > span').filter({ hasText: 'Black' })).toHaveText('Blackinterior')
   await expect(main).toContainText('43 days listed')
   await expect(main.getByLabel('18 vehicle photos')).toBeAttached()
   // The joined native table also remains active at 1024px; these checkpoints
@@ -663,12 +692,14 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
     await showAllLocationsAndVehicles()
     await page.setViewportSize({ width, height: 900 })
     await page.getByRole('heading', { name: 'All locations inventory' }).scrollIntoViewIfNeeded()
+    await expandJoinedRecord(main)
+    await expandJoinedRecord(richMaverick)
     await page.evaluate(async () => { await document.fonts.ready })
     await expect(vehicleRows.getByRole('button', { name: /View change history/ })).toHaveCount(0)
     const measure = (row = main) => row.evaluate(row => {
-      const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-configuration__fact > span', '.inv-desk-hold > span:last-child']
+      const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-configuration__values > span', '.inv-desk-hold > span:last-child']
       const text = selectors.map(selector => {
-        const element = row.querySelector<HTMLElement>(selector)!
+        const element = row.closest('tbody')!.querySelector<HTMLElement>(selector)!
         const css = getComputedStyle(element)
         return {
           selector,
@@ -693,8 +724,8 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
       }
     })
     const heldBaselineDimensions = await measure(main)
-    const maverickEquipment = richMaverick.locator('[data-column="vehicle"] .inv-desk-equipment')
-    await expect(maverickEquipment).toHaveAttribute('title', expect.stringContaining('CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER'))
+    const maverickEquipment = richMaverick.locator('xpath=..').getByRole('button', { name: /View all .* equipment items/ })
+    await expect(maverickEquipment).toContainText('Class IV Trailer tow package')
     const maverickEvidence = richMaverick.locator('xpath=..').locator(':scope > tr.inv-desk-evidence')
     await expect(maverickEvidence.getByRole('region', { name: /^History source evidence/ }).locator('a[href="https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=synthetic&ac=synthetic"]')).toHaveAttribute('target', '_blank')
     await expect(maverickEvidence.getByRole('region', { name: /^Factory equipment source evidence/ }).locator('a[href="https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U"]')).toHaveAttribute('target', '_blank')
@@ -705,6 +736,8 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
     await showAllLocationsAndVehicles()
     await page.setViewportSize({ width, height: 900 })
     await page.getByRole('heading', { name: 'All locations inventory' }).scrollIntoViewIfNeeded()
+    await expandJoinedRecord(main)
+    await expandJoinedRecord(richMaverick)
     await page.evaluate(async () => { await document.fonts.ready })
     const dimensions = await measure()
     for (const group of [vehicleRows, richMaverick.locator('xpath=..')]) {
@@ -778,7 +811,7 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
     expect(dimensions.photo.width / dimensions.photo.height).toBeCloseTo(3 / 2, 1)
     expect(dimensions.image.naturalWidth).toBeGreaterThan(dimensions.photo.width * 2)
     expect(dimensions.image.naturalHeight).toBeGreaterThan(dimensions.photo.height * 2)
-    const equipment = main.locator('td[data-column="vehicle"] .inv-desk-equipment')
+    const equipment = vehicleRows.getByRole('button', { name: /View all .* equipment items/ })
     await expect(equipment).toBeVisible()
     await expect(equipment).toContainText('302A')
     await expect(equipment).toContainText(/\+\d+ more/)
@@ -796,10 +829,13 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
   await vehicleRows.getByRole('button', { name: /View change history/ }).click()
   await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Close vehicle details' }).click()
-  const equipmentTrigger = main.getByRole('button', { name: /View all .* equipment items/ })
+  const equipmentTrigger = vehicleRows.getByRole('button', { name: /View all .* equipment items/ })
   await expect(equipmentTrigger).toBeVisible()
   await equipmentTrigger.click()
   await expect(page.getByRole('tab', { name: 'Equipment', exact: true })).toHaveAttribute('aria-selected', 'true')
+  // Table previews shorten equipment labels; the captured wording remains
+  // complete when the employee opens the Equipment workspace.
+  await expect(page.getByRole('dialog')).toContainText('CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER')
   await page.getByRole('button', { name: 'Close vehicle details' }).click()
   await expect(equipmentTrigger).toBeFocused()
   const holdTrigger = main.getByRole('button', { name: /Review DealerMail handoff|Open hold details/ })
@@ -889,6 +925,18 @@ test('phone cards show exact equipment and document facts with direct detail act
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     await expect(card).toBeVisible()
+    const expansion = card.getByRole('button', { name: /^(?:Expand|Collapse) details for 2024 Ford F-150 Lariat$/ })
+    if (await expansion.getAttribute('aria-expanded') === 'true') await expansion.click()
+    await expect(expansion).toHaveAttribute('aria-expanded', 'false')
+    await expect(reportShortcuts).toBeHidden()
+    await expansion.click()
+    await expect(expansion).toHaveAttribute('aria-expanded', 'true')
+    const additionalDetails = card.getByRole('region', { name: 'Additional details for 2024 Ford F-150 Lariat', exact: true })
+    await expect(additionalDetails).toBeVisible()
+    await expect.poll(() => additionalDetails.evaluate(element => {
+      const clip = element.parentElement!
+      return clip.scrollHeight - clip.clientHeight
+    }), { message: 'Expanded details finish revealing their complete contents' }).toBeLessThanOrEqual(1)
     // Complete record ledgers stay in Records; the joined source summaries
     // remain after status and workflow controls in the same vehicle record.
     await expect(reportShortcuts.getByRole('region')).toHaveCount(3)
@@ -918,7 +966,7 @@ test('phone cards show exact equipment and document facts with direct detail act
       expect(box!.width, `${width}px copy control has a 44px touch target`).toBeGreaterThanOrEqual(44)
     }
     const actionControls = workflowActions.locator(':scope > button, :scope > a')
-    await expect(actionControls).toHaveCount(4)
+    await expect(actionControls).toHaveCount(5)
     const actionBoxes = await Promise.all((await actionControls.all()).map(async target => {
       await expect(target).toBeVisible()
       const box = await target.boundingBox()
@@ -928,8 +976,10 @@ test('phone cards show exact equipment and document facts with direct detail act
     }))
     expect(Math.abs(actionBoxes[0].y - actionBoxes[1].y), `${width}px first workflow row is aligned`).toBeLessThanOrEqual(2)
     expect(Math.abs(actionBoxes[2].y - actionBoxes[3].y), `${width}px second workflow row is aligned`).toBeLessThanOrEqual(2)
+    expect(Math.abs(actionBoxes[3].y - actionBoxes[4].y), `${width}px Details aligns with Save and Listing`).toBeLessThanOrEqual(2)
     expect(actionBoxes[0].x).toBeLessThan(actionBoxes[1].x)
     expect(actionBoxes[2].x).toBeLessThan(actionBoxes[3].x)
+    expect(actionBoxes[3].x).toBeLessThan(actionBoxes[4].x)
     expect(actionBoxes[0].y).toBeLessThan(actionBoxes[2].y)
     const clipping = await card.evaluate(element => {
       const nodes = Array.from(element.querySelectorAll<HTMLElement>('*'))

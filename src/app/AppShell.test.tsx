@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
+import { clearWorkspaceMemory, useWorkspaceScroll } from '../lib/workspace-memory'
 import { AppShell } from './AppShell'
 
 const { useAppDataMock } = vi.hoisted(() => ({ useAppDataMock: vi.fn() }))
@@ -33,6 +34,7 @@ describe('AppShell account and update controls', () => {
 
   afterEach(() => {
     cleanup()
+    clearWorkspaceMemory()
     document.body.style.removeProperty('overflow')
     document.body.style.removeProperty('overscroll-behavior')
     vi.restoreAllMocks()
@@ -374,6 +376,76 @@ describe('AppShell account and update controls', () => {
     fireEvent.click(routeLink)
 
     await waitFor(() => expect(main).toHaveFocus())
+  })
+
+  it('starts a newly opened pathname at top without resetting same-page selection or explicit workflow returns', () => {
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    function Navigation() {
+      const location = useLocation()
+      return <>
+        <Link to="/transfers?id=move-1">Open move</Link>
+        <Link to="/transfers?id=move-2">Select another move</Link>
+        <Link to="/inventory?vin=TESTDATA1&returnTo=%2Ftransfers%3Fid%3Dmove-2">Open vehicle</Link>
+        <Link to={new URLSearchParams(location.search).get('returnTo') ?? '/transfers'}>Return to move</Link>
+      </>
+    }
+    render(<MemoryRouter initialEntries={['/service']}><AppShell><Navigation /></AppShell></MemoryRouter>)
+    expect(scroll).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('link', { name: 'Open move' }))
+    expect(scroll).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' })
+    scroll.mockClear()
+    fireEvent.click(screen.getByRole('link', { name: 'Select another move' }))
+    expect(scroll).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('link', { name: 'Open vehicle' }))
+    expect(scroll).toHaveBeenCalledOnce()
+    scroll.mockClear()
+    fireEvent.click(screen.getByRole('link', { name: 'Return to move' }))
+    expect(scroll).not.toHaveBeenCalled()
+  })
+
+  it.each(['/service', '/inventory?vin=TESTDATA1&returnTo=%2Fservice'])('prioritizes deliberate shell entry over same-path and return-target exemptions from %s', async initialUrl => {
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    render(<MemoryRouter initialEntries={[initialUrl]}><AppShell><span>Workspace</span></AppShell></MemoryRouter>)
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('link', { name: 'Service status' }))
+    await waitFor(() => expect(scroll).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' }))
+  })
+
+  it('opens shell destinations at top after saved workspace restoration and preserves Back and Forward offsets', () => {
+    let y = 300
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => y)
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { frames.set(++frameId, callback); return frameId })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation((options?: ScrollToOptions | number, top?: number) => {
+      if (typeof options === 'object') y = options.top ?? y
+      else if (top !== undefined) y = top
+    })
+    const flush = () => act(() => { const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(0)) })
+    function Workspace() {
+      const location = useLocation(), navigate = useNavigate()
+      useWorkspaceScroll('employee:manager:Howell', location.pathname, { preserveRecordedPositionOnExit: true })
+      return <><button onClick={() => navigate(-1)}>Browser Back</button><button onClick={() => navigate(1)}>Browser Forward</button></>
+    }
+    render(<MemoryRouter initialEntries={['/transfers']}><AppShell><Workspace /></AppShell></MemoryRouter>)
+    flush()
+    window.dispatchEvent(new Event('scroll'))
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('link', { name: 'Service status' }))
+    flush()
+    expect(y).toBe(0)
+    y = 423; window.dispatchEvent(new Event('scroll'))
+    // Transfers already has a saved offset of 300. Shell entry must win.
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('link', { name: 'Vehicle moves' }))
+    flush()
+    expect(y).toBe(0)
+    expect(scroll).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' })
+    y = 275; window.dispatchEvent(new Event('scroll'))
+    fireEvent.click(screen.getByRole('button', { name: 'Browser Back' }))
+    flush()
+    expect(y).toBe(423)
+    fireEvent.click(screen.getByRole('button', { name: 'Browser Forward' }))
+    flush()
+    expect(y).toBe(275)
   })
 
   it('keeps an edited input focused while a search request is consumed with a same-URL state replacement', async () => {

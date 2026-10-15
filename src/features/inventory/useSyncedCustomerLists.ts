@@ -18,6 +18,7 @@ export interface SyncedCustomerListsOptions {
 
 const DEFAULT_LABEL = 'Customer shortlist'
 const POLL_MS = 25_000
+type MutationContinuation = { type: 'add-after-create'; vin: string } | { type: 'clear-list'; listId: string; remainingVins: string[] }
 
 function entryFor(vehicle: InventoryVehicle, addedAt: string): ShortlistEntry {
   return {
@@ -83,7 +84,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
   const pendingMutation = useRef<{
     input: Parameters<typeof mutateSavedVehicleList>[0]
     generation: number
-    continuation?: { type: 'add-after-create'; vin: string }
+    continuation?: MutationContinuation
   } | null>(null)
   const listsRef = useRef(lists)
   listsRef.current = lists
@@ -203,7 +204,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
 
   const applyMutation = useCallback(async (
     input: Parameters<typeof mutateSavedVehicleList>[0],
-    options: { retryPending?: boolean; continuation?: { type: 'add-after-create'; vin: string } } = {},
+    options: { retryPending?: boolean; continuation?: MutationContinuation } = {},
   ) => {
     if (!enabled || !ownerId || boundAccessKey.current !== accessKey || !initialReadConfirmed.current || mutationBusy.current || revoked.current || pendingMutation.current && !options.retryPending) return null
     const requestGeneration = generation.current
@@ -377,17 +378,25 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     await applyMutation({ action: 'remove', listId: activeList.id, expectedRevision: activeList.revision, vin })
   }, [activeList, applyMutation])
 
+  const clearRemaining = useCallback(async (list: SavedVehicleList, vins: string[], requestGeneration: number) => {
+    let confirmed = list
+    for (const [index, vin] of vins.entries()) {
+      if (requestGeneration !== generation.current || revoked.current) return
+      if (!confirmed.items.some(item => item.vin === vin)) continue
+      const result = await applyMutation({ action: 'remove', listId: list.id, expectedRevision: confirmed.revision, vin }, {
+        continuation: { type: 'clear-list', listId: list.id, remainingVins: vins.slice(index + 1) },
+      })
+      if (!result || 'deleted' in result) return
+      confirmed = result
+    }
+  }, [applyMutation])
+
   const clear = useCallback(() => {
     if (!activeList || saving) return
-    void (async () => {
-      let revision = activeList.revision
-      for (const item of activeList.items) {
-        const result = await applyMutation({ action: 'remove', listId: activeList.id, expectedRevision: revision, vin: item.vin })
-        if (!result || 'deleted' in result) break
-        revision = result.revision
-      }
-    })()
-  }, [activeList, applyMutation, saving])
+    // Retain only the VINs the employee confirmed. A retry must finish this
+    // operation without clearing vehicles added afterward on another device.
+    void clearRemaining(activeList, activeList.items.map(item => item.vin), generation.current)
+  }, [activeList, clearRemaining, saving])
 
   const isShortlisted = useCallback((vehicle: InventoryVehicle | string) => {
     if (typeof vehicle === 'string') return ids.has(vehicle)
@@ -455,14 +464,18 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
         if (pending?.generation === generation.current) void (async () => {
           const result = await applyMutation(pending.input, { retryPending: true, continuation: pending.continuation })
           if (!result || 'deleted' in result || generation.current !== pending.generation) return
-          if (pending.continuation?.type === 'add-after-create' && !result.items.some(item => item.vin === pending.continuation!.vin)) {
+          const continuation = pending.continuation
+          if (continuation?.type === 'add-after-create' && !result.items.some(item => item.vin === continuation.vin)) {
             const added = await applyMutation({
               action: 'add',
               listId: result.id,
               expectedRevision: result.revision,
-              vin: pending.continuation.vin,
+              vin: continuation.vin,
             })
             if (!added || 'deleted' in added) return
+          }
+          if (continuation?.type === 'clear-list' && result.id === continuation.listId) {
+            await clearRemaining(result, continuation.remainingVins, pending.generation)
           }
           if (!pendingMutation.current && generation.current === pending.generation && !revoked.current) setPendingSave(null)
         })()

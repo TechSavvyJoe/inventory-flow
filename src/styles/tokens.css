@@ -9,8 +9,8 @@
 :root {
   /* The approved navigation blue anchors every operational app surface.
      OEM colours remain reserved for dealership identity and assets. */
-  --ifx-brand-blue: #062b50;
-  --ifx-brand-blue-strong: var(--navy-950);
+  --ifx-brand-blue: #07356a;
+  --ifx-brand-blue-strong: #052951;
   --ifx-brand-blue-tint: color-mix(in srgb, var(--ifx-brand-blue) 6%, white);
   --blue-700: var(--ifx-brand-blue-strong);
   --blue-600: var(--ifx-brand-blue);
@@ -22,6 +22,7 @@
   --store-accent-strong: var(--ifx-brand-blue-strong);
   --store-accent-soft: var(--ifx-brand-blue-tint);
 
+  --ifx-layer-toolbar: 10;
   --ifx-layer-modal: 100;
   /* Vehicle workspace portals sit above list overlays; nested issue dialogs
      must remain above the workspace while its content is inert. */
@@ -70,7 +71,7 @@
   --ifx-neutral-300: #bbcad4;
   --ifx-neutral-400: #8ea2b0;
   --ifx-neutral-500: #5b6f82;
-  --ifx-neutral-600: #526778;
+  --ifx-neutral-600: #4b6072;
   --ifx-neutral-700: #354a5a;
   --ifx-neutral-800: #1d3343;
   --ifx-neutral-900: #0a1d2e;
@@ -201,18 +202,34 @@
 
   --ifx-border-subtle: var(--ifx-neutral-200);
   --ifx-border-control: var(--ifx-neutral-300);
-  /* Four distinct working surfaces keep dense records legible without adding
-     padding: recessed canvas, white panels, section bands, and action wells. */
-  --ifx-canvas: #f3f5f7;
+  /* Solid brand surfaces and neutral ledgers. A small cast shadow separates
+     controls from data without gradients, bevels or coloured base edges. */
+  --ifx-canvas: #f0f3f7;
   --ifx-panel-surface: #ffffff;
-  --ifx-panel-header: #f4f6f8;
-  --ifx-panel-border: #aabdd0;
+  --ifx-panel-header: #edf1f6;
+  --ifx-panel-border: #aebdce;
   --ifx-ledger-line: #d5e0eb;
-  --ifx-evidence-surface: #f6f8fa;
-  --ifx-action-well: #f0f3f6;
-  --ifx-panel-shadow: 0 1px 2px rgb(6 43 80 / 6%);
-  --ifx-control-shadow: 0 1px 2px rgb(6 43 80 / 9%);
-  --ifx-primary-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), 0 2px 5px rgb(6 43 80 / 20%);
+  --ifx-evidence-surface: #f4f6f9;
+  --ifx-action-well: #edf1f6;
+  --ifx-panel-shadow: 0 2px 8px rgb(7 28 52 / 8%);
+  --ifx-ledger-shadow: none;
+  --ifx-control-shadow: 0 1px 2px rgb(7 28 52 / 10%);
+  --ifx-control-shadow-hover: 0 2px 4px rgb(7 28 52 / 14%);
+  --ifx-primary-shadow: 0 1px 3px rgb(7 28 52 / 18%);
+  --ifx-primary-shadow-hover: 0 2px 5px rgb(7 28 52 / 22%);
+  --ifx-control-shadow-pressed: none;
+  --ifx-masthead-ink: #ffffff;
+  --ifx-masthead-muted: #cadcf0;
+  --ifx-masthead-hover: #104781;
+  --ifx-masthead-border: #416995;
+  --ifx-masthead-current: #50d992;
+  --ifx-masthead-stale: #ffc35a;
+  --ifx-masthead-incomplete: #ff8d99;
+  --ifx-hover-distance: -1px;
+  --ifx-shell-header-shadow: 0 1px 3px rgb(7 28 52 / 12%);
+  --ifx-shell-nav-shadow: none;
+  --ifx-shell-nav-active-surface: #14538f;
+  --ifx-shell-footer-shadow: 0 -1px 4px rgb(7 28 52 / 8%);
   --ifx-control-height-sm: 36px;
   --ifx-control-height-md: 44px;
   --ifx-control-height-lg: 48px;
@@ -220,11 +237,11 @@
   --ifx-focus-color: var(--blue-600);
   --ifx-control-border-hover: #8fa6b9;
 
-  --ifx-elevation-1: 0 1px 2px rgb(7 23 34 / 7%), 0 3px 8px rgb(7 23 34 / 4%);
-  --ifx-elevation-2: 0 7px 20px rgb(7 23 34 / 8%), 0 2px 5px rgb(7 23 34 / 5%);
+  --ifx-elevation-1: var(--ifx-panel-shadow);
+  --ifx-elevation-2: 0 4px 16px rgb(7 28 52 / 12%);
   --ifx-elevation-3: 0 16px 42px rgb(7 23 34 / 12%), 0 4px 10px rgb(7 23 34 / 6%);
   --ifx-elevation-4: 0 24px 72px rgb(7 23 34 / 18%), 0 8px 20px rgb(7 23 34 / 8%);
-  --ifx-elevation-action: 0 6px 16px rgb(53 70 219 / 22%), inset 0 1px rgb(255 255 255 / 20%);
+  --ifx-elevation-action: var(--ifx-primary-shadow);
 
   --ifx-motion-instant: 40ms;
   --ifx-motion-press: 100ms;
@@ -307,5 +324,36 @@
     --ifx-dialog-viewport-gap: var(--ifx-space-8);
     --ifx-dialog-field-columns: minmax(0, 1fr);
     --ifx-dialog-footer-button-flex: 1;
+  }
+}
+
+/* Paper and high-contrast mode preserve boundaries without cast shadows. */
+@media print, (forced-colors:active) {
+  :root {
+    --ifx-panel-shadow:none;
+    --ifx-ledger-shadow:none;
+    --ifx-control-shadow:none;
+    --ifx-control-shadow-hover:none;
+    --ifx-primary-shadow:none;
+    --ifx-primary-shadow-hover:none;
+    --ifx-control-shadow-pressed:none;
+    --ifx-shell-header-shadow:none;
+    --ifx-shell-nav-shadow:none;
+    --ifx-shell-footer-shadow:none;
+    --ifx-elevation-1:none;
+    --ifx-elevation-2:none;
+    --ifx-elevation-3:none;
+    --ifx-elevation-4:none;
+    --ifx-elevation-action:none;
+  }
+}
+@media print {
+  :root {
+    --ifx-masthead-ink:var(--navy-900);
+    --ifx-masthead-muted:var(--ink-600);
+    --ifx-canvas:var(--ifx-panel-surface);
+    --ifx-panel-header:var(--ifx-panel-surface);
+    --ifx-evidence-surface:var(--ifx-panel-surface);
+    --ifx-action-well:var(--ifx-panel-surface);
   }
 }

@@ -2,13 +2,18 @@
 :is(.service-page,.service-editor) * { box-sizing:border-box; }
 :is(.service-page,.service-editor) :is(button:not(:where(.ifx-button)),input,textarea) { font:inherit; }
 :is(.service-page,.service-editor) button:not(:where(.ifx-button)) { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; border:1px solid var(--ifx-neutral-300); border-radius:6px; background:var(--ifx-neutral-0); color:var(--ink-900); padding:8px 12px; font-weight:600; line-height:1.3; cursor:pointer; }
-:is(.service-page,.service-editor) button:not(:where(.ifx-button)):hover:not(:disabled) { border-color:var(--ifx-info); background:var(--ifx-neutral-50); }
+:is(.service-page,.service-editor) button:not(:where(.ifx-button)):not([aria-pressed=true]):hover:not(:disabled) { border-color:var(--ifx-info); background:var(--ifx-neutral-50); }
 :is(.service-page,.service-editor) button:not(:where(.ifx-button)):disabled { opacity:.55; cursor:not-allowed; }
 :is(.service-page,.service-editor) :is(button,a,input,textarea):focus-visible { outline:3px solid var(--ifx-info); outline-offset:3px; }
 .service-page-heading { margin-bottom:var(--ifx-space-2); }
 .service-page-heading .ifx-page-header__title { display:flex; align-items:center; gap:var(--ifx-space-2); }
 .service-heading-controls { display:flex; align-items:center; gap:12px; }
 .service-scope { display:flex; gap:6px; }
+.service-scope button { box-shadow:var(--ifx-control-shadow); transition:transform var(--ifx-motion-press) var(--ifx-ease-tactile), box-shadow var(--ifx-motion-fast) var(--ifx-ease-standard); }
+.service-scope button[aria-pressed=true] { box-shadow:var(--ifx-primary-shadow); }
+.service-page .service-scope button:hover:not(:disabled) { box-shadow:var(--ifx-control-shadow-hover); transform:translateY(var(--ifx-hover-distance)); }
+.service-scope button[aria-pressed=true]:hover:not(:disabled) { box-shadow:var(--ifx-primary-shadow-hover); }
+.service-scope button:active:not(:disabled),.service-scope button[aria-pressed=true]:active:not(:disabled) { box-shadow:var(--ifx-control-shadow-pressed); transform:translateY(var(--ifx-press-distance)); }
 :is(.service-page,.service-editor) [aria-pressed=true] { background:var(--ifx-info); border-color:var(--ifx-info); color:var(--ifx-neutral-0); }
 .service-tabs { display:flex; gap:0; margin-bottom:var(--ifx-space-2); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--ifx-panel-surface); }
 .service-page .service-tabs button { display:flex; align-items:center; justify-content:center; gap:var(--ifx-space-2); min-height:var(--ifx-control-height-md); border:0; border-bottom:var(--ifx-stroke-emphasis) solid transparent; border-radius:0; background:transparent; color:var(--ink-600); font-weight:var(--ifx-weight-semibold); }
@@ -23,7 +28,7 @@
 .service-search input { width:100%; min-width:0; height:44px; background:transparent; border:0; color:var(--ink-900); outline-offset:0; }
 .service-search button { display:grid; flex:none; width:44px; height:44px; place-items:center; margin-right:-12px; border:0; background:transparent; color:var(--ink-600); }
 .service-result-count { color:var(--ink-600); margin:0 0 10px; }
-.service-list { display:grid; gap:0; list-style:none; padding:0; margin:0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--surface); }
+.service-list { display:grid; gap:0; list-style:none; padding:0; margin:0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--surface); box-shadow:var(--ifx-panel-shadow); }
 .service-vehicle-entry { display:flex; flex-direction:column; min-width:0; border:0; border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:0; overflow:hidden; }
 .service-vehicle-entry:last-child { border-bottom:0; }
 .service-page .service-vehicle-row { display:grid; grid-template-columns:112px minmax(180px,1fr) minmax(120px,.48fr) minmax(150px,.6fr); gap:14px; width:100%; padding:12px; text-align:left; border:0; border-radius:0; align-items:center; }
@@ -32,8 +37,8 @@
 .service-row-actions { order:2; padding:var(--ifx-space-1) var(--ifx-space-3); gap:var(--ifx-space-1); display:flex; align-items:center; flex-wrap:wrap; border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); background:var(--ifx-action-well); }
 .service-row-actions :is(a,button) { min-width:0; text-align:center; white-space:normal; }
 .service-row-actions svg { flex:none; }
-.service-row-supporting { order:1; padding:var(--ifx-space-2) var(--ifx-space-3); border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); background:var(--ifx-neutral-50); }
-.service-row-supporting .vehicle-quick-facts { gap:var(--ifx-space-2) var(--ifx-space-4); }
+.service-row-supporting { container:vehicle-fact-strip / inline-size; order:1; padding:var(--ifx-space-2) var(--ifx-space-3); border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); background:var(--ifx-neutral-50); }
+.service-row-supporting .vehicle-quick-facts { gap:0; }
 .service-photo { display:flex; align-items:center; justify-content:center; width:112px; aspect-ratio:3/2; overflow:hidden; border-radius:6px; background:var(--ifx-neutral-100); color:var(--ink-600); }
 .service-photo img { width:100%; height:100%; object-fit:cover; }
 .service-vehicle-info,.service-row-numbers,.service-status-badge { display:flex; flex-direction:column; gap:3px; min-width:0; }
@@ -51,7 +56,7 @@
 .service-has-selection .service-status-badge { grid-column:2 / -1; flex-direction:row; flex-wrap:wrap; gap:8px; }
 .service-has-selection .service-list-toolbar { flex-wrap:wrap; gap:10px; }
 .service-has-selection .service-search { flex:1 1 100%; }
-.service-editor { container-type:inline-size; position:sticky; top:84px; align-self:start; max-height:calc(100dvh - 104px); overflow:auto; overscroll-behavior:contain; min-width:0; padding:12px; border:1px solid var(--ifx-neutral-300); border-radius:6px; background:var(--ifx-neutral-0); scroll-margin-top:84px; }
+.service-editor { container:service-editor / inline-size; position:sticky; top:84px; align-self:start; max-height:calc(100dvh - 104px); overflow:auto; overscroll-behavior:contain; min-width:0; padding:12px; border:1px solid var(--ifx-panel-border); border-radius:6px; background:var(--ifx-evidence-surface); box-shadow:var(--ifx-ledger-shadow); scroll-margin-top:84px; }
 .service-editor h2:focus { outline:none; box-shadow:none; }
 .service-editor .service-back { display:inline-flex; align-items:center; justify-content:flex-start; gap:6px; min-height:44px; padding:0; border:0; color:var(--ifx-info); background:transparent; margin:0 0 2px; }
 /* The vehicle and setup panels use the same white, navy and blue hierarchy as inventory. */
@@ -286,6 +291,19 @@
 }
 .service-store-filter { margin:0 0 10px; }
 
+/* Copy identifiers share one row when the editor has enough actual width. */
+@media(min-width:851px) {
+ @container service-editor (min-width:420px) {
+  .service-editor-identifiers { grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr); gap:0; }
+  .service-editor-identifiers>div { position:relative; display:block; min-height:var(--ifx-control-height-md); padding-left:var(--ifx-space-1); }
+  .service-editor-identifiers>div+div { border-top:0; border-left:var(--ifx-stroke-hairline) solid var(--ifx-border-control); padding-left:var(--ifx-space-2); }
+  .service-editor-identifiers dt { position:absolute; top:var(--ifx-space-0-5); pointer-events:none; }
+  .service-editor-identifiers dd { display:block; }
+  .service-editor-identifiers .copyable-value { display:flex; align-items:center; min-height:var(--ifx-control-height-md); gap:0; }
+  .service-editor-identifiers .copyable-value__content { padding-top:var(--ifx-space-4); padding-bottom:var(--ifx-space-0-5); }
+ }
+}
+
 @media(max-width:850px) {
  .service-row-actions { order:1; }
  .service-row-supporting { order:2; }
@@ -312,4 +330,12 @@
  .service-state-summary { margin-bottom:var(--ifx-space-2); }
  .service-unconfirmed { margin-block:var(--ifx-space-2); }
  .service-editor .service-status-switch { margin-bottom:var(--ifx-space-2); }
+}
+
+@media(prefers-reduced-motion:reduce) {
+ .service-page .service-scope button:is(:hover,:active):not(:disabled) { transform:none; transition:none; }
+}
+@media(forced-colors:active) {
+ .service-page .service-scope button { border-color:CanvasText; }
+ .service-page .service-scope button[aria-pressed=true] { background:Highlight; color:HighlightText; border-color:Highlight; }
 }

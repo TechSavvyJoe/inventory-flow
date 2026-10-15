@@ -20,6 +20,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('maxey-role', 'group_manager')
     localStorage.setItem('maxey-home-store', 'Howell')
+    localStorage.removeItem('inventory-flow.inventory-detail-density')
   })
 })
 
@@ -29,21 +30,51 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     await page.goto('/inventory?scope=home')
     // Exercise both held and unheld records; the landing default is No hold.
     await page.getByRole('button', { name: /^All:/ }).click()
+    // Shared workflow tests can add movement events. Use the real sort UI to
+    // keep the ordinary Bronco first instead of depending on those events.
+    await page.getByRole('button', { name: /^Sort inventory\./ }).click()
+    const movementSort = page.getByRole('button', { name: 'Remove Last movement sort', exact: true })
+    if (await movementSort.count()) await movementSort.click()
+    await expect(page.getByRole('combobox', { name: 'Sort priority 1 field', exact: true })).toHaveValue('vehicle')
+    await expect(page.getByRole('button', { name: 'Vehicle: change to descending', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Close sort options', exact: true }).click()
     const rows = page.locator('.if-srp-mobile-row--scan')
     await expect(rows).toHaveCount(2)
     const firstVisible = rows.first()
-    expect((await firstVisible.boundingBox())!.y).toBeLessThanOrEqual(300)
+    // The approved phone workbench has five functional 44px rows. The first
+    // vehicle follows it within one control-height spacing unit, and its
+    // identity and actions must still fit above the dock.
+    const workbench = page.locator('.if-srp-workbench')
+    const workbenchBounds = (await workbench.boundingBox())!
+    const controlHeight = (await page.getByRole('button', { name: /^Filters(?: \d+)?$/ }).boundingBox())!.height
+    const rowGap = (await firstVisible.boundingBox())!.y - workbenchBounds.y - workbenchBounds.height
+    expect(rowGap).toBeGreaterThanOrEqual(-1)
+    expect(rowGap, `${width}px first vehicle follows the workbench without an empty band`).toBeLessThanOrEqual(controlHeight)
     const firstVisibleActions = firstVisible.getByRole('group', { name: /^Actions for / })
     const dock = page.getByRole('navigation', { name: 'Mobile primary' })
     await expect(firstVisibleActions).toBeVisible()
     await expect(dock).toBeVisible()
     const dockTop = (await dock.boundingBox())!.y
+    const identityBounds = (await firstVisible.getByRole('button', { name: /^Open details for / }).boundingBox())!
+    expect(identityBounds.y + identityBounds.height, `${width}px first vehicle identity remains above the mobile dock`).toBeLessThanOrEqual(dockTop)
     const firstActionBoxes = await Promise.all((await firstVisibleActions.locator('button, a').all()).map(target => target.boundingBox()))
     expect(firstActionBoxes.length).toBeGreaterThan(0)
     expect(Math.max(...firstActionBoxes.map(box => box!.y + box!.height)), `${width}px first visible vehicle actions remain above the mobile dock`).toBeLessThanOrEqual(dockTop)
-    // Default price ordering puts the Bronco before the F-150. Select the
+    // Vehicle ascending puts the Bronco before the F-150. Select the
     // intended rich-record fixture rather than coupling this test to row order.
     const first = rows.filter({ hasText: 'DEMO-H01' })
+    const expansion = first.getByRole('button', { name: /^(?:Expand|Collapse) details for 2024 Ford F-150 Lariat$/ })
+    const sources = first.getByLabel('Source evidence for 2024 Ford F-150 Lariat', { exact: true })
+    await expect(expansion).toHaveAttribute('aria-expanded', 'false')
+    await expect(sources).toBeHidden()
+    await expansion.click()
+    await expect(expansion).toHaveAttribute('aria-expanded', 'true')
+    const additionalDetails = first.getByRole('region', { name: 'Additional details for 2024 Ford F-150 Lariat', exact: true })
+    await expect(additionalDetails).toBeVisible()
+    await expect.poll(() => additionalDetails.evaluate(element => {
+      const clip = element.parentElement!
+      return clip.scrollHeight - clip.clientHeight
+    }), { message: 'Expanded details finish revealing their complete contents' }).toBeLessThanOrEqual(1)
     const initialHeight = (await first.boundingBox())!.height
     // Full visible identity, operational signals, direct workflow controls,
     // calculator facts, and source shortcuts intentionally make this rich row
@@ -54,7 +85,6 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     const signals = first.getByLabel('Operational vehicle signals')
     const actions = first.getByRole('group', { name: 'Actions for 2024 Ford F-150 Lariat' })
     const registration = first.getByLabel('Registration calculator values')
-    const sources = first.getByLabel('Source evidence for 2024 Ford F-150 Lariat', { exact: true })
     await expect(originalMsrp).toBeVisible()
     for (const [before, after] of [[details, originalMsrp], [originalMsrp, identifiers], [identifiers, registration], [registration, signals], [signals, actions], [actions, sources]]) {
       const follows = await before.evaluate((element, following) => Boolean(element.compareDocumentPosition(following as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await after.elementHandle())
@@ -73,7 +103,7 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
       expect(box!.height, `${width}px identifier/calculator copy target height`).toBeGreaterThanOrEqual(44)
     }
     const actionControls = actions.locator(':scope > button, :scope > a')
-    await expect(actionControls).toHaveCount(4)
+    await expect(actionControls).toHaveCount(5)
     const actionBoxes = await Promise.all((await actionControls.all()).map(async control => {
       await expect(control).toBeVisible()
       const box = await control.boundingBox()
@@ -83,6 +113,10 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     }))
     expect(Math.abs(actionBoxes[0].y - actionBoxes[1].y)).toBeLessThanOrEqual(2)
     expect(Math.abs(actionBoxes[2].y - actionBoxes[3].y)).toBeLessThanOrEqual(2)
+    expect(Math.abs(actionBoxes[3].y - actionBoxes[4].y)).toBeLessThanOrEqual(2)
+    expect(actionBoxes[0].x).toBeLessThan(actionBoxes[1].x)
+    expect(actionBoxes[2].x).toBeLessThan(actionBoxes[3].x)
+    expect(actionBoxes[3].x).toBeLessThan(actionBoxes[4].x)
     expect(actionBoxes[0].y).toBeLessThan(actionBoxes[2].y)
     const clipping = await first.evaluate(element => Array.from(element.querySelectorAll<HTMLElement>('*'))
       .filter(node => {
@@ -170,9 +204,24 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
       expect(copyBounds.height).toBeGreaterThanOrEqual(44)
       expect(textBounds.x + textBounds.width, `${label} text stays inside the phone`).toBeLessThanOrEqual(width)
       expect(textBounds.x + textBounds.width, `${label} text stays separate from its copy target`).toBeLessThanOrEqual(copyBounds.x)
-      await expect(text).toHaveCSS('white-space', 'nowrap')
-      const readable = await text.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
+      // Identifier rows may wrap at compact widths; every line must remain
+      // readable and separate from the 44px copy target.
+      const readable = await text.evaluate(element => {
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        return { client: element.clientWidth, scroll: element.scrollWidth,
+          clientHeight: element.clientHeight, scrollHeight: element.scrollHeight,
+          lines: Array.from(range.getClientRects()).map(line => ({ right: line.right, top: line.top, bottom: line.bottom, height: line.height })) }
+      })
       expect(readable.scroll, `full ${label} is readable without clipping`).toBeLessThanOrEqual(readable.client + 1)
+      expect(readable.scrollHeight, `all ${label} lines are readable without clipping`).toBeLessThanOrEqual(readable.clientHeight + 1)
+      expect(readable.lines.length, `${label} renders complete text lines`).toBeGreaterThan(0)
+      for (const line of readable.lines) {
+        expect(line.height).toBeGreaterThan(0)
+        expect(line.right, `${label} line remains separate from its copy target`).toBeLessThanOrEqual(copyBounds.x + 1)
+        expect(line.top).toBeGreaterThanOrEqual(textBounds.y - 1)
+        expect(line.bottom, `${label} line remains inside its visible text area`).toBeLessThanOrEqual(textBounds.y + textBounds.height + 1)
+      }
     }
   }
   for (const viewport of [{ width: 320, height: 568 }, { width: 844, height: 390 }, { width: 390, height: 420 }]) {

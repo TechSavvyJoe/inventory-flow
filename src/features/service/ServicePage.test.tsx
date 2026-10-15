@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { ServicePage } from './ServicePage'
 import { clearWorkspaceMemory } from '../../lib/workspace-memory'
 import { ApiError } from '../../lib/api'
@@ -18,6 +18,10 @@ function record(status: ServiceReadinessStatus = 'unknown', store: StoreName = '
 }
 function detail(status: ServiceReadinessStatus = 'unknown', overrides: Partial<ServiceReadinessDetail> = {}): ServiceReadinessDetail {
   return { ...record(status).serviceReadiness!, history: [], notes: null, ...overrides }
+}
+function VehicleReturnLink() {
+  const location = useLocation()
+  return <Link to={new URLSearchParams(location.search).get('returnTo')!}>Back to service workspace</Link>
 }
 function show(path = '/service') { return render(<MemoryRouter initialEntries={[path]}><ServicePage /></MemoryRouter>) }
 beforeEach(() => {
@@ -135,8 +139,8 @@ describe('Service readiness workspace', () => {
     const actions = await screen.findByRole('group', { name: 'Service actions' })
     const facts = screen.getByLabelText('Service decision facts')
     expect(actions.compareDocumentPosition(facts)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(screen.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001')
-    expect(screen.getByRole('link', { name: 'Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001')
+    expect(screen.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001%26scope%3Dhome')
+    expect(screen.getByRole('link', { name: 'Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001%26scope%3Dhome')
     expect(container.querySelector('.workflow-resource-row')).toBeNull()
     expect(screen.queryByRole('region', { name: 'Saved Ford service actions' })).not.toBeInTheDocument()
     expect(mocked.update).not.toHaveBeenCalled()
@@ -152,7 +156,7 @@ describe('Service readiness workspace', () => {
     expect(screen.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0001' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0001' }).closest('.service-editor-heading')).toBeNull()
     expect(screen.getByRole('button', { name: 'Copy stock number: SYNTHETIC-001' })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001')
+    expect(screen.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001%26scope%3Dhome')
     expect(screen.getByRole('link', { name: 'Records' })).toBeInTheDocument()
     expect(screen.queryByText('Current state')).not.toBeInTheDocument()
   })
@@ -167,7 +171,7 @@ describe('Service readiness workspace', () => {
     expect(source).toHaveTextContent('OASIS · At least 1 open service action · result incomplete')
     expect(source).toHaveTextContent('SYN-24 · Synthetic action')
     expect(source).toHaveTextContent('SYN-24')
-    expect(screen.getByRole('link', { name: 'Review service actions in Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001')
+    expect(screen.getByRole('link', { name: 'Review service actions in Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001%26scope%3Dhome')
     expect(screen.getByText('Current state').parentElement).toHaveTextContent('In service')
     expect(mocked.update).not.toHaveBeenCalled()
   })
@@ -223,6 +227,28 @@ describe('Service readiness workspace', () => {
       const url = new URL(link.getAttribute('href')!, 'https://inventory.invalid')
       expect(url.searchParams.get('returnTo')).toBe('/service?status=serviced&scope=group&store=Lincoln')
     })
+  })
+
+  it.each(['Vehicle details', 'Records'])('restores the selected editor and store filter after its %s round trip', async (action) => {
+    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [record('serviced', 'Howell', '001'), record('serviced', 'Lincoln', '003')] }
+    render(<MemoryRouter initialEntries={['/service?status=serviced&store=Lincoln']}><Routes>
+      <Route path="/service" element={<ServicePage />} />
+      <Route path="/inventory" element={<VehicleReturnLink />} />
+    </Routes></MemoryRouter>)
+    await screen.findByRole('button', { name: 'Clear service store filter: Lincoln' })
+    fireEvent.click(screen.getByRole('button', { name: 'Update service for Synthetic Ford 003' }))
+    const editor = await screen.findByRole('complementary', { name: 'Service for Synthetic Ford 003' })
+    const links = within(editor).getByRole('navigation', { name: 'Vehicle reference' })
+    const link = within(links).getByRole('link', { name: action })
+    const target = new URL(link.getAttribute('href')!, 'https://inventory.invalid')
+    const returnUrl = new URL(target.searchParams.get('returnTo')!, 'https://inventory.invalid')
+    expect(returnUrl.searchParams.get('vin')).toBe('TESTDATAHWELL0003')
+    expect(returnUrl.searchParams.get('store')).toBe('Lincoln')
+    fireEvent.click(link)
+    fireEvent.click(screen.getByRole('link', { name: 'Back to service workspace' }))
+    await screen.findByRole('button', { name: 'Clear service store filter: Lincoln' })
+    expect(screen.getByRole('complementary', { name: 'Service for Synthetic Ford 003' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Update service for Synthetic Ford 001' })).not.toBeInTheDocument()
   })
 
   it('opens service from the row action while preserving the current list state', async () => {

@@ -30,9 +30,9 @@ describe('Inventory and vehicle context continuity', () => {
     const add = screen.getByRole('button', { name: /Add .* to shortlist/ })
     fireEvent.click(add)
     fireEvent.click(screen.getByRole('button', { name: 'Back to inventory' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Shortlist (1)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shortlist (1) — Saved only' }))
     expect(rows().getAllByRole('button', { name: /Open vehicle details/ })).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Shortlist (1)' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Shortlist (1) — Saved only' })).toHaveAttribute('aria-pressed', 'true')
   })
   it('opens the records inspector from the table without losing stock or list context', () => {
     showPremiumInventory([first])

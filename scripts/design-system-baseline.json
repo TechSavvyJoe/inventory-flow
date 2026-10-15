@@ -15,15 +15,15 @@
   "files": {
     "src/styles/shell.css": {
       "smallText": 0,
-      "rawColors": 19,
-      "rgbHslColors": 19,
+      "rawColors": 14,
+      "rgbHslColors": 16,
       "important": 2,
       "idSelectors": 0
     },
     "src/styles/base.css": {
       "smallText": 0,
-      "rawColors": 7,
-      "rgbHslColors": 5,
+      "rawColors": 6,
+      "rgbHslColors": 1,
       "important": 15,
       "idSelectors": 6
     },
@@ -242,7 +242,7 @@
       "rawColors": 6,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 144
+      "idSelectors": 143
     },
     "src/features/transfers/transfer-workspace-v4.css": {
       "smallText": 1,

@@ -373,11 +373,15 @@ describe('focused vehicle workspace', () => {
     const ordered = [
       within(operations).getByRole('link', { name:'Start service' }),
       within(operations).getByRole('button', { name:'Request vehicle' }),
-      within(operations).getByRole('button', { name:'Hold status' }),
       within(operations).getByRole('link', { name:'Mark Ready' }),
+      within(operations).getByRole('button', { name:'Hold evidence' }),
       within(operations).getByRole('button', { name:'Place hold' }),
       within(operations).getByRole('button', { name:'Record disposition' }),
     ];
+    const workflow = within(operations).getByRole('group', { name:'Service and movement actions' });
+    const evidence = within(operations).getByRole('group', { name:'Hold evidence and Inventory Flow controls' });
+    ordered.slice(0, 3).forEach(action => expect(workflow).toContainElement(action));
+    ordered.slice(3).forEach(action => expect(evidence).toContainElement(action));
     ordered.forEach((action, index) => {
       expect(action).toBeVisible();
       if (index) expect(ordered[index - 1].compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -385,7 +389,7 @@ describe('focused vehicle workspace', () => {
     expect(within(operations).queryByRole('button', { name:'More' })).not.toBeInTheDocument();
     fireEvent.click(ordered[1]);
     expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(unit);
-    fireEvent.click(ordered[2]);
+    fireEvent.click(ordered[3]);
     expect(screen.getByRole('tab', { name:'Holds & moves' })).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -396,8 +400,8 @@ describe('focused vehicle workspace', () => {
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} canRequestVehicle={false} onRequestVehicle={vi.fn()} onClose={vi.fn()}
       dispositionContext={{ role:'sales', homeStore:'Howell', onChanged:vi.fn() }} />);
     const operations = screen.getByRole('group', { name:'Vehicle operations' });
-    expect(within(operations).getByRole('button', { name:'View hold' })).toBeVisible();
-    expect(within(operations).getByRole('button', { name:'Hold status' })).toBeVisible();
+    expect(within(operations).getByRole('button', { name:'Inventory Flow hold' })).toBeVisible();
+    expect(within(operations).getByRole('button', { name:'Hold evidence' })).toBeVisible();
     expect(within(operations).queryByRole('button', { name:/Request vehicle|Place hold|Manage hold|Record disposition|Change disposition/ })).not.toBeInTheDocument();
     expect(within(operations).queryByRole('button', { name:'More' })).not.toBeInTheDocument();
   });
@@ -921,10 +925,10 @@ describe('focused vehicle workspace', () => {
     } finally { HTMLElement.prototype.scrollIntoView = original; }
   });
 
-  it('opens Hold status on the hold evidence, with DealerMail as a secondary handoff after it', async () => {
+  it('opens Hold evidence on the hold evidence, with DealerMail as a secondary handoff after it', async () => {
     const user = userEvent.setup(); const openSpy = vi.spyOn(window, 'open');
     render(<VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: 'Hold status' }));
+    await user.click(screen.getByRole('button', { name: 'Hold evidence' }));
     const pane = screen.getByRole('tabpanel', { name: 'Holds & moves' });
     expect(pane).toBeVisible();
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveFocus());

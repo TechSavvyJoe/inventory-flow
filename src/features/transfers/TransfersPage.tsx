@@ -67,6 +67,7 @@ type TransferQueueFilter =
   | 'overdue-returns'
   | 'location-exceptions'
 type TransferQueueSort = 'urgency' | 'needed-by' | 'recent' | 'stock' | 'route'
+const QUEUE_FILTER_VALUES: readonly TransferQueueFilter[] = ['all', 'my-location', 'my-home-inventory', 'requested-by-my-store', 'away-from-home', 'awaiting-approval', 'ready-to-collect', 'at-requesting-store', 'driver-needed', 'moving', 'return-due', 'sold-pending', 'issues', 'overdue-returns', 'location-exceptions']
 
 const TERMINAL_TRANSFER_STATES = new Set(['closed', 'declined', 'canceled', 'expired'])
 // The two saved views Group operations offered managers, now filters on
@@ -406,7 +407,6 @@ export function TransfersPage() {
   const origin = readWorkspaceReturnPath(params.get('returnTo'))
   const safeReturnTo = origin ?? '/transfers'
   const currentPath = currentWorkspaceReturnPath(location)
-  const movePath = (path: string) => withWorkspaceReturnPath(path, origin ?? currentPath)
   const requestedId = params.get('id')
   const requestedVin = params.get('vin')?.toUpperCase()
   const [mobileDetail, setMobileDetail] = useState(() => window.matchMedia?.('(max-width: 760px)').matches ?? false)
@@ -432,34 +432,31 @@ export function TransfersPage() {
   const linkView = requestMode ? null : params.get('view')
   const linkStore = requestMode ? null : params.get('store')
   const linkRoute = requestMode ? null : [params.get('from'), params.get('to'), params.get('leg')].join('|')
+  const restoredView = params.get('queueView')
+  const restoredFilter = params.get('queueFilter')
+  const restoredScope = params.get('queueScope')
   useEffect(() => {
-    if (requestMode || (!params.has('from') && !params.has('to') && !params.has('leg'))) return
+    if (requestMode || (linkView === null && linkStore === null && !params.has('from') && !params.has('to') && !params.has('leg'))) return
     const route = readBoardRoute(params)
-    if (route) {
-      setQueueView('active')
-      setQueueFilter('all')
-      setStoreScope('group')
-      setLinkedRoute(route)
-    }
-    const next = new URLSearchParams(location.search)
-    for (const key of ['from', 'to', 'leg']) next.delete(key)
-    navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '', hash: location.hash }, { replace: true })
-  }, [linkRoute]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
-  useEffect(() => {
-    if (linkView === null && linkStore === null) return
     const filter = linkView ? LINK_QUEUE_FILTERS[linkView] : undefined
     const store = STORE_NAMES.includes(linkStore as StoreName) ? linkStore as StoreName : null
-    if (filter || store) setQueueView('active')
-    if (filter) setQueueFilter(filter)
-    if (store) {
-      setStoreScope('group')
-      setLinkedHomeStore(store)
+    const restoring = ['active', 'needs-action', 'history'].includes(restoredView ?? '')
+    if (restoring) {
+      setQueueView(restoredView as TransferQueueView)
+      if (QUEUE_FILTER_VALUES.includes(restoredFilter as TransferQueueFilter)) setQueueFilter(restoredFilter as TransferQueueFilter)
+      if (restoredScope === 'home' || restoredScope === 'group') setStoreScope(restoredScope)
+    } else {
+      if (route || filter || store) setQueueView('active')
+      if (route) setQueueFilter('all')
+      if (filter) setQueueFilter(filter)
+      if (route || store) setStoreScope('group')
     }
+    if (route) setLinkedRoute(route)
+    if (store) setLinkedHomeStore(store)
     const next = new URLSearchParams(location.search)
-    next.delete('view')
-    next.delete('store')
+    for (const key of ['from', 'to', 'leg', 'view', 'store', 'queueView', 'queueFilter', 'queueScope']) next.delete(key)
     navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '', hash: location.hash }, { replace: true })
-  }, [linkView, linkStore]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
+  }, [linkRoute, linkView, linkStore, restoredView, restoredFilter, restoredScope]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
 
   const details = useMemo(() => {
     if (!data) return []
@@ -469,6 +466,23 @@ export function TransfersPage() {
       detail: toTransferDetail(record, vehicles.get(record.vin), data.meta, role),
     }))
   }, [data, role])
+
+  // One-shot Overview filters live in this component. Carry them in links
+  // that leave the page so a return can restore the same queue after remount.
+  const returnParams = new URLSearchParams(location.search)
+  if (linkedHomeStore) returnParams.set('store', linkedHomeStore)
+  if (linkedRoute) {
+    returnParams.set('from', linkedRoute.from)
+    returnParams.set('to', linkedRoute.to)
+    returnParams.set('leg', linkedRoute.leg)
+  }
+  if (linkedHomeStore || linkedRoute) {
+    returnParams.set('queueView', queueView)
+    returnParams.set('queueFilter', queueFilter)
+    returnParams.set('queueScope', storeScope)
+  }
+  const workspaceReturnPath = currentWorkspaceReturnPath({ ...location, search: returnParams.size ? `?${returnParams.toString()}` : '' })
+  const movePath = (path: string) => withWorkspaceReturnPath(path, origin ?? workspaceReturnPath)
 
   const requestedSelection = requestedId || requestedVin ? selectRequestedTransfer(details, requestedId, requestedVin) : null
   const detailKey = requestedSelection ? `transfers.detail:id:${requestedSelection.record.id}`
@@ -838,7 +852,7 @@ export function TransfersPage() {
                 </span>
               </header>
             ) : null}
-            <TransferDetailLoader key={accessContext} selected={selected} data={data} role={role} homeStore={homeStore} onAction={handleAction} returnTo={currentWorkspaceReturnPath(location)} />
+            <TransferDetailLoader key={accessContext} selected={selected} data={data} role={role} homeStore={homeStore} onAction={handleAction} returnTo={workspaceReturnPath} />
           </div>
         </div>
       )}
