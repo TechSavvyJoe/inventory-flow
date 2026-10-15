@@ -1,5 +1,9 @@
 # Shared data deployment and activation checklist
 
+## Deployment - 2026-10-14 (pnpm cloud:release)
+
+- 2026-10-14T17:24:20.050Z | Commit: 58d4081aa4048b25d70cef7f02d0d66f66d3b1a5 | Tag: 58d4081 | App Version: abdcb410-449c-48b5-adf7-639a33ad0605 | Integrations Version: 4a89159b-84f8-41f7-b287-2dc720c86d61
+
 ## Historical deployment — 2026-10-07, 19:18 UTC
 
 - 2026-10-07T19:18:09.574Z | Commit: 108305e2a07c631a165eb13d2fb4a085629d911e | Tag: 108305e | App Version: 669625d0-c502-4c0c-9419-6008e2269ac1 | Integrations Version: aee172fa-13b8-488e-a66f-19a3f8363bd9
