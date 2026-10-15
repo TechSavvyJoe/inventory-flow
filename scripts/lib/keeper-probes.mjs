@@ -60,7 +60,8 @@ export async function probeMatchingTargets(targets, probe, classify, {
     // A target that consumes the overall budget must not open the next one.
     // Timer resolution can fire the timeout a few milliseconds early, which
     // would otherwise leave a sliver of budget and start another stalled probe.
-    const budgetLimited = attemptTimeoutMs < timeoutMs
+    // Equality matters: a full last-slot timeout can still fire early.
+    const budgetLimited = remainingMs <= timeoutMs
     let timer
     let result
     try {
@@ -79,7 +80,10 @@ export async function probeMatchingTargets(targets, probe, classify, {
     if (status === 'OK') return entry
     if (status === 'SESSION_EXPIRED') expiredFallback ??= entry
     else lastResult = entry
-    if (result?.probeTimedOut && budgetLimited) break
+    if (result?.probeTimedOut && budgetLimited) {
+      entry.budgetExhausted = true
+      break
+    }
   }
   return expiredFallback ?? lastResult ?? (targets.length ? { status: 'ERROR', result: { probeTimedOut: true } } : null)
 }
@@ -97,7 +101,9 @@ export async function probeServiceTargets(targets, probe, classify, {
     limits,
   )
   const existing = await run(targets)
-  if (!openTarget || existing?.status === 'OK' || existing?.status === 'SESSION_EXPIRED') return existing
+  // A budget-capped timeout has already used the keeper's probe window. Do not
+  // open a fresh target that would start another budget.
+  if (!openTarget || existing?.status === 'OK' || existing?.status === 'SESSION_EXPIRED' || existing?.budgetExhausted) return existing
 
   const target = await openTarget()
   let selected

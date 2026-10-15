@@ -77,8 +77,22 @@ describe('session keeper probe classification', () => {
     expect(signals).toHaveLength(1)
     expect(signals[0].aborted).toBe(true)
     expect(selected?.result).toEqual({ probeTimedOut: true })
+    expect(selected?.budgetExhausted).toBe(true)
     expect(KEEPER_FETCH_TIMEOUT_MS).toBeLessThan(KEEPER_TARGET_TIMEOUT_MS)
     expect(KEEPER_TARGET_TIMEOUT_MS).toBeLessThan(KEEPER_CDP_TIMEOUT_MS)
+  })
+
+  it('does not open a fallback target after a budget-capped timeout', async () => {
+    const openTarget = vi.fn(async () => ({ id: 'fresh' }))
+    const closeTarget = vi.fn(async () => {})
+    const selected = await probeServiceTargets([{ id: 'stalled' }], (_target, signal) => {
+      void signal
+      return new Promise(() => {})
+    }, () => 'ERROR', { openTarget, closeTarget, timeoutMs: 200, budgetMs: 75 })
+    expect(selected?.budgetExhausted).toBe(true)
+    expect(selected?.result).toEqual({ probeTimedOut: true })
+    expect(openTarget).not.toHaveBeenCalled()
+    expect(closeTarget).not.toHaveBeenCalled()
   })
 
   it('recognizes only a known identity host with a sign-in protocol path', () => {

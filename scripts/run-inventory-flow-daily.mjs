@@ -7,6 +7,7 @@ import { sanitizeManagerDispositionDocuments } from '../server/manager-dispositi
 import { cloudBundleSha256, cloudReleaseFrom, publishedManifestFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { writeAtomicFile, writeJsonAtomic } from './lib/atomic-write.mjs'
 import { assertRetainedPublication, readRetainedPublication } from './publication-followup-metadata.mjs'
 import { assessOasisCapture } from './lib/oasis-parser.mjs'
 import { acquirePublicationLock, assertInheritedPublicationLock, readPublicationReconciliation, receiptSourceHashes, releasePublicationLock } from './sync-cloud-release.mjs'
@@ -103,20 +104,14 @@ function fileInfo(filePath) {
 }
 
 function writeJson(filePath, value) {
-  mkdirSync(path.dirname(filePath), { recursive: true })
   // The local API re-imports the manifest every few minutes and the cloud sync
-  // reads it concurrently; a temp file plus rename never exposes a half-written
-  // document to either reader.
-  const temporary = `${filePath}.${process.pid}.tmp`
-  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' })
-  renameSync(temporary, filePath)
+  // reads it concurrently; fsync the temp bytes and directory before readers
+  // can observe the renamed path.
+  writeJsonAtomic(filePath, value)
 }
 
 function writeBuffer(filePath, value) {
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  const temporary = `${filePath}.${process.pid}.tmp`
-  writeFileSync(temporary, value)
-  renameSync(temporary, filePath)
+  writeAtomicFile(filePath, value)
 }
 
 function captureFileTransaction(filePaths) {
@@ -674,6 +669,22 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
   return oasis
 }
 
+function managerDispositionOverlayPath(reportDate) {
+  return path.join(WORK_ROOT, 'manager-supplied', 'sold-logs', `${reportDate.slice(0, 7)}-howell-operational.json`)
+}
+
+function managerDispositionOverlayReadable(reportDate) {
+  try {
+    readFileSync(managerDispositionOverlayPath(reportDate))
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    // An overlay that exists but cannot be read must fail the run; treating it
+    // as absent would publish without sold/delivered marks.
+    return true
+  }
+}
+
 function runManagerDisposition(reportDate, warnings, steps) {
   const month = reportDate.slice(0, 7)
   const csv = path.join(WORK_ROOT, 'sold-delivered', `${month}.csv`)
@@ -693,13 +704,19 @@ function runManagerDisposition(reportDate, warnings, steps) {
       })
     : { ok: false, output: ingest.output }
   if (!ingest.ok || !check.ok) {
+    // A present overlay that failed validation must block publish. Skipping it
+    // would ship a complete manifest without its sold/delivered marks.
+    if (managerDispositionOverlayReadable(reportDate)) {
+      warnings.push('Manager sold/delivered overlay did not validate; publishing was blocked so sold or delivered marks are not dropped.')
+      steps.push({ name: 'manager_disposition', status: 'failed_blocking', detail: safeDetail(check.output) })
+      return 'failed_blocking'
+    }
     warnings.push('Manager sold/delivered overlay did not validate; it was not used to change current inventory status.')
     steps.push({ name: 'manager_disposition', status: 'failed_non_blocking', detail: safeDetail(check.output) })
     return false
-  } else {
-    steps.push({ name: 'manager_disposition', status: 'complete' })
-    return true
   }
+  steps.push({ name: 'manager_disposition', status: 'complete' })
+  return true
 }
 
 function runResourceBuild(reportDate, warnings, steps) {
@@ -878,17 +895,21 @@ function countMessageRows(snapshot, key) {
 
 function managerBindingFor(reportDate, publicRows = []) {
   const month = reportDate.slice(0, 7)
-  const directory = path.join(WORK_ROOT, 'manager-supplied', 'sold-logs')
-  const target = path.join(directory, `${month}-howell-operational.json`)
-  if (!existsSync(target)) return null
-  // manager-supplied is a hand-dropped file, not build output: a stale or
-  // half-written overlay must not crash the daily manifest. Treat any parse
-  // or validation failure the same as "no overlay for this month."
+  const target = managerDispositionOverlayPath(reportDate)
+  // Missing overlay is fine. A present but unreadable or invalid file must
+  // fail the run: silently binding no overlay would drop sold/delivered marks.
+  // Read the path directly so an inaccessible directory is not treated as absent.
   let overlay
+  let sourceBytes
   try {
-    overlay = readJson(target)
-  } catch {
-    return null
+    sourceBytes = readFileSync(target)
+    overlay = JSON.parse(sourceBytes.toString('utf8'))
+    if (!overlay || typeof overlay !== 'object' || Array.isArray(overlay)) {
+      throw new Error('overlay must be a JSON object')
+    }
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw new Error(`MANAGER_DISPOSITION_OVERLAY_UNREADABLE: ${error.message}`, { cause: error })
   }
   const stats = overlay.summary ?? overlay
   const currentVehicles = publicRows.map((row) => ({
@@ -910,7 +931,6 @@ function managerBindingFor(reportDate, publicRows = []) {
   // Hash and copy the same bytes (no read-then-copy race), write atomically,
   // and repair a truncated or damaged copy: the folder name is the content
   // hash, so rewriting it with bytes that match that hash is always safe.
-  const sourceBytes = readFileSync(target)
   const sourceSha256 = createHash('sha256').update(sourceBytes).digest('hex').toUpperCase()
   const snapshotDirectory = path.join(WORK_ROOT, 'releases', reportDate, 'manager-disposition', sourceSha256.toLowerCase())
   const releaseSource = path.join(snapshotDirectory, path.basename(target))
@@ -2073,7 +2093,23 @@ async function runDailyUnlocked(options) {
   }
   let manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps })
   writeJson(manifestPath, manifest)
-  const managerDispositionValidated = runManagerDisposition(reportDate, warnings, steps)
+  const managerDispositionResult = runManagerDisposition(reportDate, warnings, steps)
+  if (managerDispositionResult === 'failed_blocking') {
+    manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated: false })
+    manifest.complete = false
+    manifest.validation_results = {
+      ...manifest.validation_results,
+      passed: false,
+      manager_disposition_validated: false,
+      ...oasisValidation,
+    }
+    writeJson(manifestPath, manifest)
+    const status = 'not_published_manager_disposition_validation_failed'
+    const summary = summarize({ reportDate, validation: {}, publishStatus: status, manifestPath, releasePath, warnings })
+    writeJson(summaryPath, { reportDate, status, summary, warnings, steps, checkedAt: new Date().toISOString() })
+    return { ok: false, failureCode: 'MANAGER_DISPOSITION_VALIDATION_FAILED', summary, manifestPath, releasePath }
+  }
+  const managerDispositionValidated = managerDispositionResult === true
   manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated })
   writeJson(manifestPath, manifest)
 
