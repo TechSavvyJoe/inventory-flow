@@ -3,10 +3,11 @@ export const KEEPER_FETCH_TIMEOUT_MS: 30000
 export const KEEPER_TARGET_TIMEOUT_MS: 32000
 export const KEEPER_CDP_TIMEOUT_MS: 35000
 export const KEEPER_PROBE_BUDGET_MS: 120000
-export type KeeperProbeResult<T, R> =
+export type KeeperProbeResult<T, R> = (
   | { target: T; result: R; status: KeeperProbeStatus }
   | { target?: T; result: { probeTimedOut: true }; status: 'ERROR' }
   | { target: T; result: { probeError: string }; status: 'ERROR' }
+) & { budgetExhausted?: boolean }
 
 export function matchingPageTargets<T extends { type?: string; url?: string }>(
   targets: T[],

@@ -9,6 +9,10 @@
 // projection must never carry one for any role. A positive control proves each
 // marker reaches an evidence role, so a seed that no longer lands anywhere fails
 // here instead of passing vacuously. Add fields; never drop one to make it pass.
+//
+// Vehicle-issue narrative is operational and readable by transport roles by
+// product rule (docs/VEHICLE_ISSUES.md); write denial and integration exclusion
+// are pinned here and in tests/unit/vehicle-issues.test.ts.
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
@@ -423,6 +427,33 @@ describe.each(['simple', 'advanced'])('role-matrix canary (disposition ledger, %
   })
 })
 
+
+describe('role-matrix canary (vehicle issues)', () => {
+  it('keeps issue narrative out of the integration projection and blocks transport writes', async () => {
+    const { release, service, seeded } = await harness('simple')
+    const vin = release.vehicles.find((row) => row.publicRecord?.store === 'Howell')?.vin
+    expect(vin).toBeTruthy()
+    const description = marker(seeded, 'issue description')
+    const howellSales = { role: 'sales', store: 'Howell', user: 'Canary Issue Sales', userId: 'canary-issue-sales' }
+    service.createVehicleIssue(vin, { category: 'cleaning', priority: 'normal', description }, howellSales, 'canary-issue-create')
+    const evidence = JSON.stringify(service.bootstrap(groupManager)).toLowerCase()
+    expect(evidence).toContain(description.toLowerCase())
+    for (const role of TRANSPORT_ROLES) {
+      expect(() => service.createVehicleIssue(vin, { category: 'cleaning', priority: 'normal', description: 'transport write' }, {
+        role, store: 'Howell', user: `Canary ${role}`, userId: `canary-${role}-issue`,
+      }, `canary-issue-${role}`)).toThrowError(expect.objectContaining({ status: 403 }))
+    }
+    for (const role of ['group_manager', 'manager', 'sales']) {
+      const principal = {
+        clientId: 'a'.repeat(32), userId: `canary-issue-${role}`, role, store: 'Howell', user: `Canary issue ${role}`,
+        stores: [...STORE_NAMES], scopes: ['inventory.read'],
+      }
+      const projected = integrationBootstrapFromSource(service.bootstrap(principal), release)
+      expectNoMarker(`${role} integration issue bootstrap`, projected)
+      expect(JSON.stringify(projected)).not.toContain('vehicleIssues')
+    }
+  })
+})
 
 describe('role-matrix canary (manual holds)', () => {
   it('retains private manual hold fields only in authorized detail and excludes app controls from integration', async () => {

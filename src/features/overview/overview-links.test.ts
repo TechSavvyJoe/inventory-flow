@@ -29,7 +29,7 @@ describe('Overview link contract (OVERVIEW_SPEC §8.4)', () => {
   it('links service counts, return overdue and the Action center category', () => {
     expect(serviceStatusHref('needs_service', 'Howell')).toBe('/service?status=needs_service&store=Howell')
     expect(serviceStatusHref('in_service', 'Lincoln')).toBe('/service?status=in_service&store=Lincoln')
-    expect(serviceStatusHref('serviced')).toBe('/service?status=serviced&scope=all')
+    expect(serviceStatusHref('serviced')).toBe('/service?status=serviced&scope=group')
     expect(returnOverdueHref('Fowlerville')).toBe('/transfers?view=return-overdue&store=Fowlerville')
     expect(actionCenterHref('inventory')).toBe('/attention?category=inventory')
     expect(actionCenterHref('inventory', 'group')).toBe('/attention?category=inventory&scope=group')

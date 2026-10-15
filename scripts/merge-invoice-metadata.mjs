@@ -1,7 +1,8 @@
 // Attach only exact-VIN Ford/Lincoln invoice availability to the daily resource
 // file. The PDF itself stays outside the release and is uploaded privately.
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { writeJsonAtomic } from './lib/atomic-write.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { isMainModule } from './lib/is-main.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
@@ -15,12 +16,6 @@ let resolvedRoot
 function workspaceRoot() {
   resolvedRoot ??= resolveWorkspaceRoot(import.meta.url)
   return resolvedRoot
-}
-
-function writeJsonAtomic(file, value) {
-  const temporary = `${file}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`)
-  renameSync(temporary, file)
 }
 
 function exactInvoiceRows(parsed) {
