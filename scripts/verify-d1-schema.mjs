@@ -15,6 +15,12 @@ import { isMainModule } from './lib/is-main.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 export const MIGRATIONS_DIRECTORY = path.join(root, 'cloudflare', 'migrations')
+const TENANT_IDENTITY_DDL = path.join(root, 'cloudflare', 'tenant-migrations', '0001_tenant_identity.sql')
+const TENANT_IDENTITY_OBJECTS = [
+  ['table', 'inventory_tenant_identity'],
+  ['trigger', 'inventory_tenant_identity_no_update'],
+  ['trigger', 'inventory_tenant_identity_no_delete'],
+]
 
 export const LIVE_SCHEMA_QUERY = 'SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type, name'
 export const LEDGER_QUERY = 'SELECT name FROM d1_migrations ORDER BY name'
@@ -445,6 +451,19 @@ function buildExpected(migrations) {
   }
 }
 
+function buildExpectedTenantIdentity() {
+  const database = new DatabaseSync(':memory:', { allowExtension: false })
+  try {
+    const sql = readFileSync(TENANT_IDENTITY_DDL, 'utf8')
+    database.exec(sql)
+    return readSchema(database)
+  } catch (error) {
+    throw new Error(`Tenant identity DDL failed in in-memory SQLite: ${error.message}`)
+  } finally {
+    database.close()
+  }
+}
+
 function analyzeMigration(sql) {
   const statements = splitStatements(tokenize(sql)).map(describeStatement)
   return { statements, dml: [...new Set(statements.filter((statement) => statement.kind === 'dml').map((statement) => statement.verb))] }
@@ -702,7 +721,7 @@ function describeDelta(facts) {
  * repository migrations. Throws VerifierInputError for any input it cannot
  * trust; never touches the network or D1.
  */
-export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirectory = MIGRATIONS_DIRECTORY, dataReviewed = [], printLedgerSql = false }) {
+export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirectory = MIGRATIONS_DIRECTORY, dataReviewed = [], printLedgerSql = false, tenantIdentity = false }) {
   const migrations = discoverMigrations(migrationsDirectory)
   const files = migrations.map((migration) => migration.file)
   const unknownReviewed = dataReviewed.filter((name) => !files.includes(name))
@@ -720,6 +739,7 @@ export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirector
   }
 
   const snapshots = buildExpected(migrations)
+  const expectedTenantIdentity = tenantIdentity ? buildExpectedTenantIdentity() : null
   const planned = planFacts(migrations, snapshots)
   const ledgerNames = ledgerRows ? ledgerRows.map((row) => row.name) : []
   const reviewed = new Set(dataReviewed)
@@ -761,9 +781,31 @@ export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirector
     throw new VerifierInputError(`--data-reviewed names a migration that is not DATA_REVIEW_REQUIRED: ${[...new Set(needsNoReview)].map(display).join(', ')}. Only these need review: ${required.join(', ')}.`)
   }
 
+  const tenantIdentityDifferences = []
+  if (tenantIdentity) {
+    for (const [type, name] of TENANT_IDENTITY_OBJECTS) {
+      const key = objectKey(type, name)
+      const expected = expectedTenantIdentity.get(key)
+      const actual = live.schema.get(key)
+      if (!actual) tenantIdentityDifferences.push({ object: `${type} ${name}`, result: 'missing', details: ['not in the live schema'] })
+      else if (!expected) tenantIdentityDifferences.push({ object: `${type} ${name}`, result: 'different', details: ['not present in the fixed tenant identity DDL'] })
+      else {
+        const differences = diffObject(expected, actual)
+        if (differences.length) tenantIdentityDifferences.push({ object: `${type} ${name}`, result: 'different', details: differences })
+      }
+    }
+    for (const key of expectedTenantIdentity.keys()) {
+      const [type, name] = key.split(':')
+      if (!TENANT_IDENTITY_OBJECTS.some(([expectedType, expectedName]) => objectKey(expectedType, expectedName) === key)) {
+        tenantIdentityDifferences.push({ object: `${type} ${name}`, result: 'different', details: ['unexpected object in the fixed tenant identity DDL'] })
+      }
+    }
+  }
+  const tenantIdentityOk = tenantIdentity && tenantIdentityDifferences.length === 0
   const extraLiveObjects = []
   for (const [key, object] of live.schema) {
-    if (!snapshots.some((snapshot) => snapshot.has(key))) extraLiveObjects.push({ type: object.type, name: object.name })
+    const knownTenantObject = TENANT_IDENTITY_OBJECTS.some(([type, name]) => objectKey(type, name) === key)
+    if (!snapshots.some((snapshot) => snapshot.has(key)) && !(tenantIdentityOk && knownTenantObject)) extraLiveObjects.push({ type: object.type, name: object.name })
   }
 
   const wranglerLedgerSql = normalizeSql(WRANGLER_D1_MIGRATIONS_TABLE_SQL)
@@ -781,7 +823,7 @@ export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirector
   if (missing.length) anomalies.push(`Migration names missing from the supplied ledger: ${missing.join(', ')}.`)
   if (recordedNotApplied.length) anomalies.push(`Recorded in the ledger but not APPLIED in the live schema: ${recordedNotApplied.join(', ')}.`)
 
-  const ok = reports.every((report) => report.status === 'APPLIED') && !extraLiveObjects.length && !anomalies.length
+  const ok = reports.every((report) => report.status === 'APPLIED') && !extraLiveObjects.length && !anomalies.length && (!tenantIdentity || tenantIdentityOk)
   const report = {
     ok,
     exitCode: ok ? 0 : 1,
@@ -790,6 +832,12 @@ export function verifyD1Schema({ liveJson, ledgerJson = null, migrationsDirector
     extraLiveObjects,
     ignoredLiveObjects: live.ignored,
     liveObjectCount: live.objectCount,
+    tenantIdentity: {
+      requested: tenantIdentity,
+      status: tenantIdentity ? (tenantIdentityOk ? 'verified' : 'failed') : 'not-requested',
+      schemaOnly: true,
+      differences: tenantIdentityDifferences,
+    },
     ledger: {
       supplied: Boolean(ledgerRows),
       liveTable: ledgerTableState,
@@ -848,6 +896,12 @@ export function formatReport(report) {
   const tableState = { absent: 'absent', 'matches-wrangler': "present and matches Wrangler's definition", differs: "present but DIFFERS from Wrangler's definition" }[report.ledger.liveTable]
   lines.push(`Ledger table in live schema: ${tableState}.`)
   lines.push(`Ledger rows: ${report.ledger.supplied ? `${report.ledger.recorded.length} names from --ledger` : 'none (no ledger table)'}.`)
+  if (report.tenantIdentity?.requested) {
+    lines.push(`Tenant identity schema: ${report.tenantIdentity.status === 'verified' ? 'VERIFIED' : 'FAILED'} (schema definitions only; singleton row and group identity were not verified).`)
+    for (const difference of report.tenantIdentity.differences) {
+      lines.push(`  ${difference.result.toUpperCase()} ${difference.object}: ${difference.details.join('; ')}`)
+    }
+  }
   lines.push('')
   const width = Math.max('MIGRATION'.length, ...report.migrations.map((migration) => migration.file.length))
   lines.push(`${'MIGRATION'.padEnd(width)}  ${'STATUS'.padEnd(8)}  ${'SCHEMA'.padEnd(7)}  ${'LEDGER'.padEnd(10)}  DATA REVIEW`)
@@ -886,6 +940,7 @@ export function formatReport(report) {
     const reasons = []
     if (notApplied.length) reasons.push(`${notApplied.length} migration(s) not APPLIED (${notApplied.map((migration) => `${migration.file.slice(0, 4)} ${migration.status}`).join(', ')})`)
     if (report.extraLiveObjects.length) reasons.push(`${report.extraLiveObjects.length} unexplained live object(s)`)
+    if (report.tenantIdentity?.requested && report.tenantIdentity.status !== 'verified') reasons.push('tenant identity schema not verified')
     if (report.ledger.anomalies.length) reasons.push(`${report.ledger.anomalies.length} ledger anomaly(ies)`)
     lines.push(`Result: FAIL - ${reasons.join('; ')} (exit 1).`)
   }
@@ -895,12 +950,17 @@ export function formatReport(report) {
   return `${lines.join('\n')}\n`
 }
 
-export const USAGE = `Usage: node scripts/verify-d1-schema.mjs --live <schema.json> [--ledger <ledger.json>] [--json]
+export const USAGE = `Usage: node scripts/verify-d1-schema.mjs --live <schema.json> [--ledger <ledger.json>] [--tenant-identity] [--json]
        [--print-ledger-sql [--data-reviewed <file>,<file>...]]
 
 Read-only. Compares the live D1 schema (saved by the operator) with
 cloudflare/migrations/*.sql. Never contacts the network, runs Wrangler, or
 writes to D1.
+
+--tenant-identity     also verify the fixed tenant identity table and both
+                      immutable triggers from cloudflare/tenant-migrations.
+                      This checks schema definitions only, not the singleton
+                      row or configured group identity.
 
 Produce the inputs with read-only queries:
   ${WRANGLER_READ} "${LIVE_SCHEMA_QUERY}" > schema.json
@@ -916,7 +976,7 @@ inconsistent; 1 verification found a difference; 2 unusable input.
 `
 
 function parseArguments(argv) {
-  const options = { live: null, ledger: null, json: false, printLedgerSql: false, dataReviewed: [], help: false }
+  const options = { live: null, ledger: null, tenantIdentity: false, json: false, printLedgerSql: false, dataReviewed: [], help: false }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     const equals = argument.startsWith('--') ? argument.indexOf('=') : -1
@@ -944,6 +1004,9 @@ function parseArguments(argv) {
       case '--ledger':
         if (options.ledger) throw new Error('--ledger may be given once.')
         options.ledger = value()
+        break
+      case '--tenant-identity':
+        options.tenantIdentity = toggle()
         break
       case '--json':
         options.json = toggle()
@@ -995,7 +1058,7 @@ export function runCli(argv, io = {}) {
   try {
     const liveJson = readInput(readFile, options.live, '--live')
     const ledgerJson = options.ledger ? readInput(readFile, options.ledger, '--ledger') : null
-    report = verifyD1Schema({ liveJson, ledgerJson, migrationsDirectory: io.migrationsDirectory, dataReviewed: options.dataReviewed, printLedgerSql: options.printLedgerSql })
+    report = verifyD1Schema({ liveJson, ledgerJson, migrationsDirectory: io.migrationsDirectory, dataReviewed: options.dataReviewed, printLedgerSql: options.printLedgerSql, tenantIdentity: options.tenantIdentity })
   } catch (error) {
     const prefix = error instanceof VerifierInputError ? 'D1 schema verification stopped (fail closed)' : 'D1 schema verification failed'
     stderr(safeText(`${prefix}: ${error.message}\n`))

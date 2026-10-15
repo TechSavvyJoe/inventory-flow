@@ -5,6 +5,7 @@ const messages = {
   ACCESS_TOKEN_INVALID: "Your session has expired or is invalid. Please sign in again.",
   EMPLOYEE_ACCESS_REQUIRED: "You must sign in with a valid employee account.",
   EMPLOYEE_NOT_AUTHORIZED: "You do not have access to the Inventory Flow app.",
+  EMPLOYEE_WRITES_DISABLED: "Saving changes is temporarily paused. You can still view inventory and saved activity.",
   TENANT_ACCESS_SUSPENDED: "This dealership account is suspended. Contact your account administrator.",
   TENANT_CONFIGURATION_REQUIRED: "This dealership connection needs administrator attention. Please try again later.",
   INVALID_PREVIEW_ROLE: "The requested preview role is not permitted.",

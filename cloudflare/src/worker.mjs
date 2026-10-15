@@ -315,11 +315,17 @@ export async function jsonRevalidated(request,data) {
   return new Response(body,{status:200,headers:responseHeaders})
 }
 async function readRelease(env) {return (await readReleaseWithIdentity(env)).release}
+function employeeWritesEnabled(env) {
+  // Deployment-only pause. A misspelled configured value must not reopen writes.
+  return env.EMPLOYEE_WRITES_DISABLED===undefined || env.EMPLOYEE_WRITES_DISABLED==='false'
+}
 export async function appReadiness(env) {
   // Readiness must prove the artifact can still be read and decrypted now,
   // so it never answers from the per-isolate cache.
   const {release,bundleSha256}=await readReleaseWithIdentity(env,{fresh:true})
-  return releaseReadiness(env,release,bundleSha256)
+  const readiness=await releaseReadiness(env,release,bundleSha256)
+  const writesEnabled=employeeWritesEnabled(env)
+  return {...readiness,employeeWritesEnabled:writesEnabled,ready:readiness.ready&&writesEnabled}
 }
 // Receipt reconciliation exercises the same read pipeline for its immutable
 // accepted release, without substituting or changing the current pointer.
@@ -494,6 +500,9 @@ async function appApi(request,url,env,context,claims) {
   if(write && request.headers.get('origin')!==url.origin) throw new AccessError('SAME_ORIGIN_REQUIRED',403)
   const expectedSavedListOwner=savedListsRoute?request.headers.get('x-inventory-saved-list-owner'):null
   if(savedListsRoute) assertSavedListOwner(context,expectedSavedListOwner)
+  // Preserve route, identity, origin and owner checks before refusing writes;
+  // stop before parsing bodies, uploading photos or mutating any repository.
+  if(write && !employeeWritesEnabled(env)) throw new HttpError('EMPLOYEE_WRITES_DISABLED',503)
   const idempotency=request.headers.get('idempotency-key')
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
   const input=write?await readJson(request,issueWriteRoute?ISSUE_BODY_BYTES:savedListsRoute?SAVED_LIST_BODY_BYTES:64*1024):null

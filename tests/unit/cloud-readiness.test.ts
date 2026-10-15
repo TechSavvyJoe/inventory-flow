@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { loadLatestCompletedRelease } from '../../server/importer.mjs'
 import { cloudReleaseFrom, encryptBundle } from '../../scripts/publish-cloud-release.mjs'
-import { appReadiness } from '../../cloudflare/src/worker.mjs'
+import { appReadiness, releaseReadiness } from '../../cloudflare/src/worker.mjs'
+import { buildSyntheticRelease } from '../../fixtures/synthetic-release.mjs'
 
 function encryptedFixture() {
   const fixture=createSyntheticWorkspace()
@@ -52,7 +53,8 @@ describe('machine-only full app readiness',()=>{
     const {env,first,batch,get}=harness({issuesEnabled,dispositionsEnabled,savedListsEnabled,manualHoldsEnabled})
     const result=await appReadiness(env)
     expect(first).toHaveBeenCalledOnce();expect(get).toHaveBeenCalledOnce();expect(batch).toHaveBeenCalledTimes(2)
-    expect(Object.keys(result).sort()).toEqual(['bootstrapBytes','bundleSha256','counts','dispositionStorage','manualHoldApprovalStorage','manualHoldStorage','ready','reportDate','savedListsStorage'])
+    expect(Object.keys(result).sort()).toEqual(['bootstrapBytes','bundleSha256','counts','dispositionStorage','employeeWritesEnabled','manualHoldApprovalStorage','manualHoldStorage','ready','reportDate','savedListsStorage'])
+    expect(result.employeeWritesEnabled).toBe(true)
     const stored = JSON.parse(await (await env.RELEASE_SNAPSHOTS.get('synthetic-private-release')).text())
     expect(result.bundleSha256).toBe(stored.bundleSha256)
     // All three feature schemas are required for deployment readiness, while their
@@ -70,6 +72,19 @@ describe('machine-only full app readiness',()=>{
   it('fails if the encrypted artifact cannot be read rather than reporting metadata-only readiness',async()=>{
     const {env}=harness();env.RELEASE_SNAPSHOTS.get=async()=>null
     await expect(appReadiness(env)).rejects.toMatchObject({code:'RELEASE_ARTIFACT_UNAVAILABLE'})
+  })
+  it.each(['true', '', 'FALSE', ' false ', '0', false, null])('reports a configured employee-write pause (%j) without misreporting storage or blocking receipt reconciliation',async value=>{
+    const {env}=harness({issuesEnabled:true,dispositionsEnabled:true,savedListsEnabled:true,manualHoldsEnabled:true})
+    env.EMPLOYEE_WRITES_DISABLED=value
+    expect(await appReadiness(env)).toMatchObject({ready:false,employeeWritesEnabled:false,dispositionStorage:true,savedListsStorage:true,manualHoldStorage:true,manualHoldApprovalStorage:true})
+    const receipt=await releaseReadiness(env,buildSyntheticRelease(),'a'.repeat(64))
+    expect(receipt.ready).toBe(true)
+    expect(receipt).not.toHaveProperty('employeeWritesEnabled')
+  })
+  it('reports active readiness only when the deployment explicitly re-enables employee writes',async()=>{
+    const {env}=harness({issuesEnabled:true,dispositionsEnabled:true,savedListsEnabled:true,manualHoldsEnabled:true})
+    env.EMPLOYEE_WRITES_DISABLED='false'
+    expect(await appReadiness(env)).toMatchObject({ready:true,employeeWritesEnabled:true})
   })
   it('fails if the shared ledger cannot be loaded rather than hiding a bootstrap failure',async()=>{
     const {env}=harness();env.INVENTORY_DB.batch=async()=>{throw new Error('Synthetic ledger failure')}
