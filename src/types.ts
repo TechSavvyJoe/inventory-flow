@@ -503,6 +503,12 @@ export interface ServiceReadiness {
 
 export interface ServiceReadinessDetail extends ServiceReadiness {
   history: ServiceReadiness[]
+  /**
+   * True when the VIN is no longer in the current public/DealerMail release
+   * but saved service events or durable intake remain. History is readable;
+   * canManage is false until the vehicle returns in a verified release.
+   */
+  archivedFromInventory?: boolean
 }
 
 export interface ServiceReadinessInput {

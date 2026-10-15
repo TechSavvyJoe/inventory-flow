@@ -8,6 +8,8 @@ A verified `new_arrival` event for a current public vehicle creates a durable `v
 
 Manager actions append to `vehicle_service_events` and override the intake baseline. They retain permissions, matching-store checks, optimistic concurrency, idempotent retry protection, private notes, and immutable history. A manager marking Ready records a real completion date; this yields basis `manager_updated`. Reopening work clears the current start/completion dates while preserving them in history.
 
+When a VIN leaves the current public/DealerMail release, `GET /api/vehicles/:vin/service` still returns saved manager history and durable intake with `archivedFromInventory: true` and `canManage: false`. Store identity for that projection comes from the latest manager event or home assignment, never from inventing a listing. New service writes still require the vehicle to be present in the current verified inventory release.
+
 Historical `unknown` events are not rewritten or deleted. They display as **Waiting for service** with basis `legacy_review`, preserving the unresolved manager action. New writes cannot select `unknown`. Clients normalize both a missing service field and an explicit historic `unknown` to Waiting. `unconfirmed` and `legacy_review` describe evidence; they do not add workflow states.
 
 The imported public listing, DealerMail hold, manager sold/delivered log, and provider reports do not currently supply an authoritative live reconditioning status. Existing manager service events are authoritative and preserved. The service never turns public availability, a clean history report, no open recalls, or a delivery signal into a completed-service claim.
