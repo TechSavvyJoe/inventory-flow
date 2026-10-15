@@ -42,6 +42,7 @@ export function findIssuePhotoOrphans(objects, referencedKeys, options = {}) {
   const orphans = []
   const retained = []
   const skippedRecent = []
+  const needsReview = []
   const ignored = []
 
   for (const object of objects) {
@@ -54,17 +55,26 @@ export function findIssuePhotoOrphans(objects, referencedKeys, options = {}) {
       retained.push({ key, reason: 'referenced_by_ledger' })
       continue
     }
-    const uploadedAt = object.uploadedAt ? new Date(object.uploadedAt) : null
-    if (uploadedAt && !Number.isNaN(uploadedAt.getTime()) && now.getTime() - uploadedAt.getTime() < graceMs) {
+    // Missing or invalid upload times are not deletion candidates. An in-flight
+    // write can land in R2 before D1, and without a timestamp the grace window
+    // cannot protect it.
+    const uploadedAt = object.uploadedAt == null || object.uploadedAt === ''
+      ? null
+      : new Date(object.uploadedAt)
+    if (!uploadedAt || Number.isNaN(uploadedAt.getTime())) {
+      needsReview.push({ key, reason: 'missing_or_invalid_uploaded_at' })
+      continue
+    }
+    if (now.getTime() - uploadedAt.getTime() < graceMs) {
       skippedRecent.push({ key, reason: 'inside_grace_window', uploadedAt: uploadedAt.toISOString() })
       continue
     }
     orphans.push({
       key,
       reason: 'unreferenced',
-      uploadedAt: uploadedAt && !Number.isNaN(uploadedAt.getTime()) ? uploadedAt.toISOString() : null,
+      uploadedAt: uploadedAt.toISOString(),
     })
   }
 
-  return { orphans, retained, skippedRecent, ignored }
+  return { orphans, retained, skippedRecent, needsReview, ignored }
 }

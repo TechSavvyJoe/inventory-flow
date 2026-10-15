@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { findIssuePhotoOrphans, issuePhotoObjectKey, referencedIssuePhotoKeys } from '../../scripts/lib/issue-photo-orphans.mjs'
-import { reportIssuePhotoOrphans } from '../../scripts/cleanup-issue-photo-orphans.mjs'
+import { loadLedgerRows, reportIssuePhotoOrphans } from '../../scripts/cleanup-issue-photo-orphans.mjs'
 
 const photoA = 'a'.repeat(64)
 const photoB = 'b'.repeat(64)
@@ -59,5 +59,45 @@ describe('issue photo orphan detection', () => {
       now: new Date('2026-10-14T12:00:00.000Z'),
     })
     expect(report.orphans.map((row) => row.key)).toEqual([issuePhotoObjectKey('TESTDATAHWELL0001', photoB)])
+  })
+
+  it('keeps objects without a valid upload time out of deletion candidates', () => {
+    const report = findIssuePhotoOrphans([
+      { key: issuePhotoObjectKey('TESTDATAHWELL0001', photoC) },
+      { key: issuePhotoObjectKey('TESTDATAHWELL0001', photoB), uploadedAt: 'not-a-date' },
+    ], new Set(), { now: new Date('2026-10-14T12:00:00.000Z'), graceMs: 0 })
+
+    expect(report.orphans).toEqual([])
+    expect(report.needsReview).toEqual([
+      { key: issuePhotoObjectKey('TESTDATAHWELL0001', photoC), reason: 'missing_or_invalid_uploaded_at' },
+      { key: issuePhotoObjectKey('TESTDATAHWELL0001', photoB), reason: 'missing_or_invalid_uploaded_at' },
+    ])
+  })
+
+  it('unwraps a Wrangler d1 --json ledger envelope before scanning references', () => {
+    const key = issuePhotoObjectKey('TESTDATAHWELL0001', photoA)
+    const rows = loadLedgerRows('photos.json', JSON.stringify([{
+      success: true,
+      results: [{ vin: 'TESTDATAHWELL0001', photos_json: JSON.stringify([{ id: photoA }]) }],
+    }]))
+    const report = reportIssuePhotoOrphans({
+      ledgerRows: rows,
+      objects: [
+        { key, uploadedAt: '2026-01-01T00:00:00.000Z' },
+        { key: issuePhotoObjectKey('TESTDATAHWELL0001', photoB), uploadedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+      graceHours: 0,
+      now: new Date('2026-10-14T12:00:00.000Z'),
+    })
+    expect(report.retained.map((row) => row.key)).toEqual([key])
+    expect(report.orphans.map((row) => row.key)).toEqual([issuePhotoObjectKey('TESTDATAHWELL0001', photoB)])
+  })
+
+  it('rejects a malformed Wrangler ledger envelope instead of treating it as zero references', () => {
+    expect(() => loadLedgerRows('photos.json', JSON.stringify([{ success: false, results: [] }]))).toThrow(/successful Wrangler result set/)
+    expect(() => loadLedgerRows('photos.json', JSON.stringify([
+      { success: true, results: [] },
+      { success: true, results: [] },
+    ]))).toThrow(/exactly one result set/)
   })
 })

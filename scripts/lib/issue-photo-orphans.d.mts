@@ -9,8 +9,9 @@ export function findIssuePhotoOrphans(
   referencedKeys: Iterable<string>,
   options?: { now?: Date; graceMs?: number },
 ): {
-  orphans: Array<{ key: string; reason: string; uploadedAt: string | null }>
+  orphans: Array<{ key: string; reason: string; uploadedAt: string }>
   retained: Array<{ key: string; reason: string }>
   skippedRecent: Array<{ key: string; reason: string; uploadedAt: string }>
+  needsReview: Array<{ key: string; reason: string }>
   ignored: Array<{ key: string; reason: string }>
 }

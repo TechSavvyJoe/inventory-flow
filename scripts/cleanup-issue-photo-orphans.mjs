@@ -4,13 +4,14 @@
  * photos in R2. Default is dry-run. Never deletes a key present in D1 history.
  *
  * Inputs are saved JSON files so this script never needs live credentials in
- * unit tests. Operator steps:
+ * unit tests. Operator steps (order matters):
  *
- * 1. Export D1 photo references (read-only):
+ * 1. List R2 keys under vehicle-issues/ into a JSON array of
+ *    { "key": "...", "uploadedAt": "ISO-8601" }. Capture this first so the
+ *    ledger snapshot can include any commit that lands after the upload.
+ * 2. Export D1 photo references (read-only) after that R2 list:
  *      wrangler d1 execute INVENTORY_DB --remote --config cloudflare/wrangler.jsonc --json --command \
  *        "SELECT i.vin AS vin, e.photos_json AS photos_json FROM vehicle_issue_events e JOIN vehicle_issues i ON i.id = e.issue_id WHERE e.photos_json != '[]'"
- * 2. List R2 keys under vehicle-issues/ into a JSON array of
- *    { "key": "...", "uploadedAt": "ISO-8601" }.
  * 3. Dry-run:
  *      node scripts/cleanup-issue-photo-orphans.mjs --ledger photos.json --objects r2.json
  * 4. Delete only after reviewing the report:
@@ -18,6 +19,8 @@
  *
  * Deletion itself is not implemented here — print the keys and require a
  * separate authorized R2 delete so a mistaken flag cannot wipe objects.
+ * Re-export a fresh ledger before deleting if the saved exports are older
+ * than the grace window.
  */
 import { readFileSync } from 'node:fs'
 import { findIssuePhotoOrphans, referencedIssuePhotoKeys } from './lib/issue-photo-orphans.mjs'
@@ -27,9 +30,10 @@ function usage() {
   return `Usage:
   node scripts/cleanup-issue-photo-orphans.mjs --ledger <photos.json> --objects <r2.json> [--grace-hours 24] [--delete --confirm-delete]
 
-photos.json: array of { vin, photos_json|photos }
-r2.json: array of { key, uploadedAt? }
-Default is dry-run. --delete prints keys only; it does not call R2.`
+photos.json: bare rows { vin, photos_json|photos } or a Wrangler d1 --json result set
+r2.json: array of { key, uploadedAt }
+Default is dry-run. --delete prints keys only; it does not call R2.
+List R2 first, then export the ledger, so in-flight commits are not treated as orphans.`
 }
 
 function parseArgs(argv) {
@@ -47,13 +51,47 @@ function parseArgs(argv) {
   return options
 }
 
-function loadJson(path) {
-  const raw = JSON.parse(readFileSync(path, 'utf8'))
-  // Wrangler d1 --json wraps results; accept either a bare array or the first result set.
-  if (Array.isArray(raw)) return raw
-  if (Array.isArray(raw?.results?.[0]?.results)) return raw.results[0].results
-  if (Array.isArray(raw?.result?.[0]?.results)) return raw.result[0].results
-  throw new Error(`${path} must be a JSON array of rows or a Wrangler d1 --json payload.`)
+function isWranglerResultSet(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && 'success' in value && 'results' in value
+}
+
+/** Unwrap Wrangler d1 --json envelopes; never treat the envelope as ledger rows. */
+export function loadLedgerRows(path, text = readFileSync(path, 'utf8')) {
+  let raw
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    throw new Error(`${path} is not valid JSON.`)
+  }
+  if (Array.isArray(raw)) {
+    if (raw.length === 1 && isWranglerResultSet(raw[0])) {
+      if (raw[0].success !== true || !Array.isArray(raw[0].results)) {
+        throw new Error(`${path} does not hold one successful Wrangler result set ("success": true with a "results" array).`)
+      }
+      return raw[0].results
+    }
+    if (raw.some(isWranglerResultSet)) {
+      throw new Error(`${path} looks like a Wrangler payload but does not hold exactly one result set.`)
+    }
+    return raw
+  }
+  if (Array.isArray(raw?.results?.[0]?.results) && raw.results[0].success === true) return raw.results[0].results
+  if (Array.isArray(raw?.result?.[0]?.results) && raw.result[0].success === true) return raw.result[0].results
+  throw new Error(`${path} must be a JSON array of ledger rows or a Wrangler d1 --json payload.`)
+}
+
+export function loadObjectRows(path, text = readFileSync(path, 'utf8')) {
+  let raw
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    throw new Error(`${path} is not valid JSON.`)
+  }
+  if (!Array.isArray(raw)) throw new Error(`${path} must be a JSON array of R2 objects.`)
+  if (raw.some(isWranglerResultSet)) {
+    throw new Error(`${path} looks like a Wrangler payload; R2 object lists must be a bare array of { key, uploadedAt }.`)
+  }
+  return raw
 }
 
 export function reportIssuePhotoOrphans({ ledgerRows, objects, graceHours = 24, now = new Date() }) {
@@ -84,8 +122,8 @@ function main(argv = process.argv.slice(2)) {
   }
 
   const report = reportIssuePhotoOrphans({
-    ledgerRows: loadJson(options.ledger),
-    objects: loadJson(options.objects),
+    ledgerRows: loadLedgerRows(options.ledger),
+    objects: loadObjectRows(options.objects),
     graceHours: options.graceHours,
   })
 
@@ -95,12 +133,14 @@ function main(argv = process.argv.slice(2)) {
     referencedCount: report.retained.length,
     orphanCount: report.orphans.length,
     skippedRecentCount: report.skippedRecent.length,
+    needsReviewCount: report.needsReview.length,
     ignoredCount: report.ignored.length,
     orphans: report.orphans,
     skippedRecent: report.skippedRecent,
+    needsReview: report.needsReview,
     note: options.delete
-      ? 'Candidates only — delete these keys with an authorized R2 tool after review. This script never calls R2.'
-      : 'Dry-run — no objects were deleted.',
+      ? 'Candidates only — delete these keys with an authorized R2 tool after review. This script never calls R2. Re-export a fresh ledger first if the saved files are older than the grace window.'
+      : 'Dry-run — no objects were deleted. Objects without a valid uploadedAt are listed under needsReview, not orphans.',
   }, null, 2))
   return 0
 }
