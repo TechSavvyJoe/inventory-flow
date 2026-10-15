@@ -948,6 +948,29 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.queryByRole('button', { name: 'Close the move' })).not.toBeInTheDocument();
   });
 
+  it('suggests and reveals completed moves while Active is selected', () => {
+    const data = bootstrap(2);
+    data.transfers[0].workflowMode = 'simple';
+    data.transfers[0].requestStatus = 'closed';
+    data.transfers[0].movementStatus = 'returned_home';
+    data.transfers[0].allowedActions = ['open-source'];
+    data.transfers[1].workflowMode = 'simple';
+    renderPage(data, '/transfers', { homeStore: 'Howell', role: 'group_manager' });
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    expect(screen.getByRole('button', { name: /Active/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: /2025 Ford F-150 1/ })).not.toBeInTheDocument();
+
+    const search = screen.getByRole('textbox', { name: 'Search vehicle moves' });
+    fireEvent.change(search, { target: { value: 'MOVE1' } });
+    expect(screen.getByRole('option', { name: /Suggestion:.*2025 Ford F-150 1/ })).toBeInTheDocument();
+    expect(screen.getByText('Matching moves are outside this view')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show matching moves' }));
+
+    expect(screen.getByRole('button', { name: /Completed/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toBeInTheDocument();
+    expect(search).toHaveValue('MOVE1');
+  });
+
   it.each([
     ['TESTDATAHWELL0001', false],
     ['1FTFW1E80RFA00001', true],

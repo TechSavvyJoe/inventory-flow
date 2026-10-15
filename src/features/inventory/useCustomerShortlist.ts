@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import type { InventoryVehicle } from "./types";
 
 export interface ShortlistEntry {
@@ -70,6 +70,13 @@ export function clearCustomerShortlist() {
   activeContext = "";
   publish(EMPTY);
 }
+
+function adoptContext(next: string) {
+  if (activeContext === next) return;
+  activeContext = next;
+  publish(EMPTY);
+}
+
 function vehicleEntry(vehicle: InventoryVehicle, addedAt = Date.now()): ShortlistEntry {
   return {
     id: vehicle.id, vin: vehicle.vin, stockNumber: vehicle.stockNumber,
@@ -96,10 +103,11 @@ export const ShortlistContext = createContext<ShortlistContextValue | null>(null
 export function useCustomerShortlist(accessContext?: string, authorizedVehicles?: InventoryVehicle[]): ShortlistContextValue {
   const inherited = useContext(ShortlistContext);
   const context = accessContext ?? inherited?.context ?? "standalone";
-  if (activeContext !== context) {
-    activeContext = context;
-    entries = EMPTY;
-  }
+  // Reset in layout so paint never shows another context's vehicles, without
+  // mutating module state during render (unsafe under concurrent React).
+  useLayoutEffect(() => {
+    adoptContext(context);
+  }, [context]);
   const snapshot = useCallback(() => activeContext === context ? entries : EMPTY, [context]);
   const stored = useSyncExternalStore(subscribe, snapshot, () => EMPTY);
   const visible = useMemo(() => {
