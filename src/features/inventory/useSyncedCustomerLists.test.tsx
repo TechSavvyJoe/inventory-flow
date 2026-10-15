@@ -76,12 +76,15 @@ describe('useSyncedCustomerLists', () => {
     expect(result.current.management?.activeLabel).toBe('New membership')
   })
 
-  it('discards a sheet whose list read was superseded while inventory refreshed', async () => {
+  it('finishes an explicit sheet on the newer list when a poll wins the first read', async () => {
     let finishInventory!: (value: InventoryVehicle[]) => void
-    const refreshVehicles = vi.fn(() => new Promise<InventoryVehicle[]>(resolve => { finishInventory = resolve }))
+    const refreshVehicles = vi.fn()
+      .mockImplementationOnce(() => new Promise<InventoryVehicle[]>(resolve => { finishInventory = resolve }))
+      .mockResolvedValueOnce([vehicle])
     api.get.mockResolvedValueOnce({ lists:[list()] })
       .mockResolvedValueOnce({ lists:[{ ...list(2), label:'Older sheet list' }] })
       .mockResolvedValueOnce({ lists:[{ ...list(3), label:'Newer poll list' }] })
+      .mockResolvedValueOnce({ lists:[{ ...list(4), label:'Newer poll list' }] })
     const { result } = renderHook(() => useSyncedCustomerLists({ ...options, refreshVehicles }))
     await waitFor(() => expect(result.current.count).toBe(1))
     let pending!: Promise<unknown>
@@ -89,9 +92,14 @@ describe('useSyncedCustomerLists', () => {
     await waitFor(() => expect(refreshVehicles).toHaveBeenCalledOnce())
     act(() => window.dispatchEvent(new Event('focus')))
     await waitFor(() => expect(result.current.management?.activeLabel).toBe('Newer poll list'))
-    await act(async () => { finishInventory([vehicle]); expect(await pending).toBeNull() })
+    await act(async () => {
+      finishInventory([vehicle])
+      expect(await pending).toMatchObject({ label:'Newer poll list', vehicles:[vehicle] })
+    })
+    expect(refreshVehicles).toHaveBeenCalledTimes(2)
     expect(result.current.management?.activeLabel).toBe('Newer poll list')
     expect(result.current.management?.preparingSheet).toBe(false)
+    expect(result.current.management?.error).toBeNull()
   })
 
   it('requires naming a legacy list before adding through reopened list management', async () => {

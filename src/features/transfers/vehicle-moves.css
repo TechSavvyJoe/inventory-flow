@@ -56,6 +56,7 @@
 .transfer-list-top .priority-urgent, .transfer-list-top .priority-critical { background: var(--red-bg); color: var(--red); }
 .transfer-location svg { color: #4f6f8c; }
 .transfer-list-no-results { margin: 12px 3px; color: #627284; font-size: 13px; line-height: 1.45; }
+.transfer-list-no-results-actions { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .transfer-detail-surface { background: white; }
 
 .transfer-request-page { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-panel); background: white; }

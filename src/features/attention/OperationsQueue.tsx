@@ -13,6 +13,7 @@ import type { AttentionEventInput, AttentionItem, BootstrapData, StoreName, User
 import { actionCategory, belongsToActionStore, groupByVehicle, INFORMATIONAL_REASON_LABELS, isActionable, isTaskOverdue, taskLinkLabel, taskTitle, type ActionCategory, type ActionRow } from './action-center'
 import { currentWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
+import { emptyFilterResetLabel } from '../../lib/workflow-view-reset'
 import { FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
 import './OperationsQueue.css'
 import { VehicleIssueLedger } from '../issues/VehicleIssueLedger'
@@ -143,7 +144,7 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
     </div>
     <div className="action-list" role="list" aria-label="Attention items"><div className="action-list-head" aria-hidden="true"><span>Vehicle / reference</span><span>Task / responsible</span><span>Configuration</span></div>
       {visible.map(row => <TaskRow key={row.key} row={row} vehicle={vehicleMap.get(row.lead.vin ?? '')} returnTo={returnTo} reportDate={reportDate} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/>)}
-      {!visible.length ? <div className="workflow-empty"><CheckCircle2 aria-hidden="true"/><h2>{query || category !== 'all' ? alsoWorthKnowing.length ? 'No actionable tasks match this view' : 'No tasks match this view' : status === 'reviewed' ? 'No reviewed tasks yet' : 'Your store is caught up'}</h2><p>{alsoWorthKnowing.length ? `${alsoWorthKnowing.length} informational ${alsoWorthKnowing.length === 1 ? 'item matches' : 'items match'} below.` : status === 'open' ? 'New follow-ups appear here when there is a next step to take.' : 'Completed reviews will appear here.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { if (confirmUnsavedWork()) { setQuery(''); setCategory('all') } }}>Clear filters</button> : null}</div> : null}
+      {!visible.length ? <div className="workflow-empty"><CheckCircle2 aria-hidden="true"/><h2>{query || category !== 'all' ? alsoWorthKnowing.length ? 'No actionable tasks match this view' : 'No tasks match this view' : status === 'reviewed' ? 'No reviewed tasks yet' : 'Your store is caught up'}</h2><p>{alsoWorthKnowing.length ? `${alsoWorthKnowing.length} informational ${alsoWorthKnowing.length === 1 ? 'item matches' : 'items match'} below.` : status === 'open' ? 'New follow-ups appear here when there is a next step to take.' : 'Completed reviews will appear here.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { if (confirmUnsavedWork()) { setQuery(''); setCategory('all') } }}>{emptyFilterResetLabel({ query, filtersActive: category !== 'all' })}</button> : null}</div> : null}
     </div>
     {alsoWorthKnowing.length ? <details className="action-also">
       <summary>Also worth knowing<span className="action-also-count">{alsoWorthKnowing.length}</span></summary>

@@ -35,6 +35,7 @@ import { readBoardRoute, transferMatchesBoardRoute, type BoardRoute } from '../o
 import { simpleTransferActions } from './SimpleTransferTracker'
 import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath, workspaceReturnLabel } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
+import { WORKFLOW_RESET_LABELS } from '../../lib/workflow-view-reset'
 import { flowButtonClassName, FlowButton, FlowIconButton, FlowPageHeader } from '../../design-system'
 import { isReturnOverdue, slaLabel, type SlaStatus } from '../../lib/sla-label'
 import './transfers-page.css'
@@ -221,6 +222,38 @@ function isSoldPendingNotDelivered(record: TransferRecord): boolean {
 
 function transferPriorityScore(record: TransferRecord): number {
   return { urgent: 4, high: 3, normal: 2, low: 1 }[record.priority] ?? 0
+}
+
+function moveSearchValues(record: TransferRecord, detail: TransferDetail): unknown[] {
+  return [
+    record.stockNumber,
+    record.vin,
+    record.vehicleName,
+    record.homeStore,
+    record.requestingStore,
+    record.currentLocation,
+    record.destination,
+    record.requestedBy,
+    record.approvedBy,
+    record.custodian,
+    record.transportAssignee,
+    record.nextAction,
+    record.nextActionOwner,
+    record.dealStatus,
+    record.deliveryStatus,
+    record.movementStatus,
+    detail.requestReason,
+  ]
+}
+
+function moveSearchCandidate({ record, detail }: { record: TransferRecord; detail: TransferDetail }) {
+  return {
+    id: record.id,
+    label: record.vehicleName,
+    detail: `#${record.stockNumber} · ${record.currentLocation}`,
+    value: record.stockNumber,
+    searchValues: moveSearchValues(record, detail),
+  }
 }
 
 function dateScore(value?: string, fallback = Number.POSITIVE_INFINITY): number {
@@ -500,25 +533,7 @@ export function TransfersPage() {
       if (activeFilter === 'location-exceptions' && !isLocationException(record)) return false
       if (linkedHomeStore && record.homeStore !== linkedHomeStore) return false
       if (linkedRoute && !transferMatchesBoardRoute(record, linkedRoute)) return false
-      return searchFieldsMatch(query, [
-        record.stockNumber,
-        record.vin,
-        record.vehicleName,
-        record.homeStore,
-        record.requestingStore,
-        record.currentLocation,
-        record.destination,
-        record.requestedBy,
-        record.approvedBy,
-        record.custodian,
-        record.transportAssignee,
-        record.nextAction,
-        record.nextActionOwner,
-        record.dealStatus,
-        record.deliveryStatus,
-        record.movementStatus,
-        detail.requestReason,
-      ])
+      return searchFieldsMatch(query, moveSearchValues(record, detail))
     })
     .sort((left, right) => {
       if (queueSort === 'needed-by') {
@@ -552,7 +567,22 @@ export function TransfersPage() {
     active: scopedDetails.filter(({ record }) => !isTerminalTransfer(record)).length,
     history: scopedDetails.filter(({ record }) => isTerminalTransfer(record)).length,
   }
+  // Suggestions search the authorized store-scoped set so a Completed move can
+  // still surface while Active/Needs me is selected. The list itself stays filtered.
+  const searchCandidates = scopedDetails.map(moveSearchCandidate)
+  const queryMatchedScoped = query.trim()
+    ? scopedDetails.filter(({ record, detail }) => searchFieldsMatch(query, moveSearchValues(record, detail)))
+    : []
+  const matchesOutsideView = queryMatchedScoped.filter((match) =>
+    !filteredDetails.some((row) => row.record.id === match.record.id))
   const requestVehicle = requestedVin ? data.vehicles.find((vehicle) => vehicle.vin === requestedVin) : undefined
+
+  function revealSearchMatchesOutsideView() {
+    setQueueFilter('all')
+    setLinkedHomeStore(null)
+    setLinkedRoute(null)
+    setQueueView(matchesOutsideView.every(({ record }) => isTerminalTransfer(record)) ? 'history' : 'active')
+  }
 
   function handleAction(action: TransferActionKind, detail: TransferDetail) {
     const record = data?.transfers.find((item) => item.id === detail.id)
@@ -710,7 +740,7 @@ export function TransfersPage() {
         >
           <aside className="transfer-list" aria-label="Vehicle moves">
             <div className="transfer-list-toolbar">
-              <PredictiveSearchInput className="transfer-list-search" value={query} onChange={setQuery} ariaLabel="Search vehicle moves" clearLabel="Clear move search" placeholder={simple ? 'Search stock, vehicle, salesperson, or store' : 'Search stock, VIN, vehicle, store, or driver'} candidates={filteredDetails.map(({ record, detail }) => ({ id: record.id, label: record.vehicleName, detail: `#${record.stockNumber} · ${record.currentLocation}`, value: record.stockNumber, searchValues: [record.stockNumber, record.vin, record.vehicleName, record.homeStore, record.requestingStore, record.currentLocation, record.destination, record.requestedBy, record.approvedBy, record.custodian, record.transportAssignee, record.nextAction, record.nextActionOwner, record.dealStatus, record.deliveryStatus, record.movementStatus, detail.requestReason] }))} />
+              <PredictiveSearchInput className="transfer-list-search" value={query} onChange={setQuery} ariaLabel="Search vehicle moves" clearLabel="Clear move search" placeholder={simple ? 'Search stock, vehicle, salesperson, or store' : 'Search stock, VIN, vehicle, store, or driver'} candidates={searchCandidates} />
               <div className="transfer-list-views" role="group" aria-label="Move queue view">
                 {([
                   ['active', 'Active'],
@@ -809,7 +839,7 @@ export function TransfersPage() {
                   </button>
                 )
               })}
-              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || activeFilter !== 'all' || linkedHomeStore || linkedRoute ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all'); setLinkedHomeStore(null); setLinkedRoute(null) }}>Reset view</button> : null}</div> : null}
+              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{matchesOutsideView.length ? 'Matching moves are outside this view' : queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{matchesOutsideView.length ? `${matchesOutsideView.length} matching ${matchesOutsideView.length === 1 ? 'move is' : 'moves are'} in another queue view or filter.` : queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores, or reset search and queue filters.' : 'Reset the view to show active moves.'}</p><span className="transfer-list-no-results-actions">{matchesOutsideView.length ? <button type="button" onClick={revealSearchMatchesOutsideView}>Show matching moves</button> : null}{query || queueView !== 'active' || activeFilter !== 'all' || linkedHomeStore || linkedRoute ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all'); setLinkedHomeStore(null); setLinkedRoute(null) }}>{WORKFLOW_RESET_LABELS.resetView}</button> : null}{storeScope === 'home' ? <button type="button" onClick={() => { setStoreScope('group'); setLinkedHomeStore(null) }}>{WORKFLOW_RESET_LABELS.viewAllStores}</button> : null}</span></div> : null}
             </div>
           </aside>
           <div className="transfer-detail-surface" id="transfer-detail-workspace">

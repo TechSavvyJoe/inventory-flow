@@ -1,5 +1,6 @@
 .copyable-value {
   min-width: 0;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -84,29 +85,6 @@
   height: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
-}
-
-.inventory-table-copy-value {
-  max-width: 100%;
-}
-
-.inventory-table-copy-value .copyable-value__content {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.inventory-equipment-copy-value {
-  width: 100%;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.inventory-workspace-identity__copy-values {
-  display: flex !important;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 3px;
 }
 
 @media (max-width: 760px) {

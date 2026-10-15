@@ -843,12 +843,6 @@
     text-overflow: ellipsis;
   }
 
-  .store-switch-status {
-    top: calc(100% + 8px);
-    right: 0;
-    left: auto;
-  }
-
   .freshness-chip {
     display: none;
   }

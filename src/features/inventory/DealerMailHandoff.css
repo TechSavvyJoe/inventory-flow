@@ -8,14 +8,12 @@
   font-size: 14px;
   line-height: 1.5;
 }
-.inventory-workspace.inventory-workspace--compact-v3 .inventory-dealermail-handoff.inventory-workspace-dealermail-rail { padding: 18px; }
 .inventory-dealermail-handoff h3 { margin: 0; font-size: 17px; }
 .inventory-dealermail-handoff p { margin: 6px 0 12px; }
 .inventory-dealermail-handoff__identity { display: grid; gap: 10px; margin: 14px 0; }
 .inventory-dealermail-handoff__identity > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: baseline; gap: 10px; }
 .inventory-dealermail-handoff__identity dt { font-size: 13px; color: var(--v10-support); }
 .inventory-dealermail-handoff__identity dd { margin: 0; font: 600 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; user-select: text; overflow-wrap: anywhere; }
-.inventory-dealermail-handoff__note { color: var(--v10-support); }
 /* A secondary, outlined handoff: the hold evidence above it is the content. */
 .inventory-dealermail-handoff .inventory-dealermail-handoff__launch {
   display: inline-flex;
@@ -41,9 +39,6 @@
 .inventory-dealermail-handoff .inventory-dealermail-handoff__launch:disabled { background: var(--surface-muted); border-color: var(--border-strong); color: var(--ink-600); cursor: not-allowed; }
 .inventory-dealermail-handoff__feedback { padding: 12px; margin-top: 12px; border: 1px solid var(--v10-border); border-radius: 6px; background: var(--v10-surface-subtle); }
 .inventory-dealermail-handoff__feedback a { display: inline-block; color: var(--v10-blue-strong); text-decoration: underline; }
-.inventory-hold-evidence-views { display: flex; flex-wrap: wrap; gap: 6px; grid-column: 1 / -1; }
-.inventory-hold-evidence-views button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--v10-border); border-radius: 6px; background: var(--v10-surface); color: var(--v10-ink-strong); font: inherit; font-size: 14px; }
-.inventory-hold-evidence-views button[aria-pressed="true"] { background: var(--blue-050); border-color: var(--v10-blue); color: var(--v10-blue-strong); font-weight: 600; }
 .inventory-captured-messages { min-width: 0; padding: 16px; border: 1px solid var(--v10-border); border-radius: 8px; background: var(--v10-surface); }
 .inventory-captured-messages h3 { margin: 0 0 6px; font-size: 17px; }
 .inventory-captured-messages > p { color: var(--v10-support); font-size: 14px; line-height: 1.5; }

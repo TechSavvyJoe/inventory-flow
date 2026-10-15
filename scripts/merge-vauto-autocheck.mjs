@@ -1,9 +1,10 @@
 // Merge exact-VIN vAuto AutoCheck fallback facts after the Python resource
 // builder. A dealership-website report always wins and removes the fallback.
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { validateServiceHistoryEvidence } from '../server/provider-evidence.mjs'
 import { VAUTO_AUTOCHECK_SERVICE_SOURCE, VAUTO_AUTOCHECK_MECHANICAL_DESCRIPTIONS } from './capture-vauto-autocheck.mjs'
+import { writeJsonAtomic } from './lib/atomic-write.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { isMainModule } from './lib/is-main.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
@@ -19,12 +20,6 @@ const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'))
-}
-
-function writeJsonAtomic(file, value) {
-  const temporary = `${file}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`)
-  renameSync(temporary, file)
 }
 
 function websiteHasAutoCheck(vehicle) {

@@ -698,15 +698,27 @@ function renderFreshness() {
   const meta = state.data.meta
   const stale = isStale()
   const problem = meta.publicFreshness !== 'current' || meta.dealerMailFreshness !== 'current'
+  // Non-auth refresh failures keep the last authorized snapshot (503 / offline).
+  // Make that unmistakable so staff do not treat holds as freshly verified.
+  const refreshFailed = Boolean(state.error) && !state.loading
+  const checkLine = state.loading
+    ? ' · refreshing…'
+    : refreshFailed
+      ? ' · refresh failed — recheck before hold decisions'
+      : ` · checked ${fmt.formatRelative(state.fetchedAt)}${stale ? ' · update needed' : ''}`
   ui.freshText.append(
     state.workspace.demo ? el('span', { class: 'demo-disclosure', text: 'Demo · synthetic records & illustrations' }) : '',
-    el('span', { class: `dot ${state.error ? 'is-off' : problem ? 'is-stale' : ''}`.trim() }),
+    el('span', { class: `dot ${state.error || (stale && !state.loading) ? 'is-off' : problem ? 'is-stale' : ''}`.trim() }),
     `${fmt.formatReportDate(meta.reportDate)} release`,
     meta.dealerMailCapturedAt ? ` · holds captured ${fmt.formatDateTime(meta.dealerMailCapturedAt)}` : ' · daily hold snapshot',
     problem ? ' · review needed' : '',
-    ` · ${state.loading ? 'refreshing…' : `checked ${fmt.formatRelative(state.fetchedAt)}`}${stale && !state.loading ? ' · update needed' : ''}`,
+    checkLine,
   )
-  ui.freshText.title = 'Inventory status'
+  ui.freshText.title = refreshFailed
+    ? 'Last refresh failed. Recheck Inventory Flow before relying on holds.'
+    : stale && !state.loading
+      ? 'Inventory may be out of date. Refresh before relying on holds.'
+      : 'Inventory status'
 }
 
 /* Compare set ----------------------------------------------------------- */

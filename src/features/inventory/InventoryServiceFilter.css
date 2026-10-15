@@ -123,9 +123,10 @@
 .if-srp .inventory-scan-entry { display:none; flex:none; margin:0; }
 .if-srp .if-srp-controls { display:flex; align-items:center; flex-wrap:wrap; gap:0 var(--ifx-space-2); margin:0; padding:var(--ifx-space-1) var(--ifx-space-2); border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); border-radius:0 0 var(--ifx-radius-sm) var(--ifx-radius-sm); background:var(--ifx-panel-header); }
 .if-srp :is(.if-srp-control-heading,.if-srp-service-heading) { flex:none; margin:0 var(--ifx-space-1) 0 0; color:var(--ink-600); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); }
-.if-srp .if-srp-service-filters { flex:0 1 calc(var(--ifx-space-16) * 4); width:calc(var(--ifx-space-16) * 4); min-width:calc(var(--ifx-space-16) * 3 + var(--ifx-space-6)); max-width:calc(var(--ifx-space-16) * 4); padding-left:var(--ifx-space-2); border-left:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
+.if-srp .if-srp-service-filters { flex:0 1 calc(var(--ifx-space-16) * 4); width:calc(var(--ifx-space-16) * 4); min-width:0; max-width:calc(var(--ifx-space-16) * 4); padding-left:var(--ifx-space-2); border-left:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
 .if-srp .if-srp-service-filters > .if-srp-service-choice { display:none; }
-.if-srp .if-srp-service-select { display:block; flex:1; width:0; min-width:0; height:var(--ifx-control-height-md); min-height:var(--ifx-control-height-md); margin:0; padding:var(--ifx-space-1) var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:var(--ifx-radius-xs); background:var(--surface); color:var(--ink-900); font:var(--ifx-weight-medium) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); box-shadow:var(--ifx-ledger-shadow); }
+.if-srp .if-srp-service-select-slot { display:block; width:100%; min-width:0; max-width:100%; overflow:hidden; }
+.if-srp .if-srp-service-select { display:block; width:100%; min-width:0; max-width:100%; height:var(--ifx-control-height-md); min-height:var(--ifx-control-height-md); margin:0; padding:var(--ifx-space-1) var(--ifx-space-2); border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); border-radius:var(--ifx-radius-xs); background:var(--surface); color:var(--ink-900); font:var(--ifx-weight-medium) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); box-shadow:var(--ifx-ledger-shadow); }
 .if-srp .if-srp-chip-rows { display:contents; }
 .if-srp .if-srp-secondary-views { flex-basis:100%; border-top:var(--ifx-stroke-hairline) solid var(--ifx-ledger-line); }
 .if-srp .inventory-view-context { margin:0; padding:var(--ifx-space-0-5) var(--ifx-space-2); color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); }
@@ -210,8 +211,12 @@
   .if-srp .inventory-scope-switch__compact { display:flex; flex-direction:column; align-items:center; }
   .if-srp .if-srp-scope b { padding-left:0; }
   .if-srp .if-srp-tools .inv-btn { padding-inline:var(--ifx-space-1); gap:var(--ifx-space-0-5); }
-  .if-srp .if-srp-quickviews { display:grid; grid-template-columns:max-content repeat(4,minmax(var(--ifx-control-height-md),1fr)); gap:var(--ifx-space-0-5); }
-  .if-srp .if-srp-quickviews > button { flex-direction:column; gap:0; height:var(--ifx-control-height-md); padding:0; }
+  .if-srp .if-srp-quickviews { display:grid; grid-template-columns:max-content repeat(4,minmax(var(--ifx-control-height-md),1fr)); gap:var(--ifx-space-0-5); max-width:100%; }
+  .if-srp .if-srp-quickviews > button { flex-direction:column; gap:0; height:var(--ifx-control-height-md); padding:0; min-width:var(--ifx-control-height-md); }
+  .if-srp .if-srp-workbench { max-width:100%; }
+  .if-srp .if-srp-service-filters { display:grid; grid-template-columns:auto minmax(0,1fr); width:auto; max-width:100%; min-width:0; }
+  .if-srp .if-srp-service-select-slot { display:block; width:100%; max-width:100%; min-width:0; overflow:hidden; }
+  .if-srp .if-srp-service-select { width:100%; min-width:0; max-width:100%; }
 }
 
 /* At 320px the saved label wraps inside its track rather than covering Scan. */

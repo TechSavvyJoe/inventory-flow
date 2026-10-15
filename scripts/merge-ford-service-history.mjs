@@ -1,9 +1,10 @@
 // Merge exact-VIN Ford PTS service history after the Python resource builder.
 // This keeps current DealerMail-only inventory in the same Ford/Lincoln source
 // workflow as vehicles that are already listed on a dealership website.
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { validateVinDocumentEnrichment } from '../server/importer.mjs'
+import { writeJsonAtomic } from './lib/atomic-write.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { isMainModule } from './lib/is-main.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
@@ -23,12 +24,6 @@ function workspaceRoot() {
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'))
-}
-
-function writeJsonAtomic(file, value) {
-  const temporary = `${file}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`)
-  renameSync(temporary, file)
 }
 
 function optionalText(value) {

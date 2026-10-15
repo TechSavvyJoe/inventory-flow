@@ -3,6 +3,7 @@ import { foldSearchText } from "../../lib/search";
 import {
   buildInventorySearchIndex,
   buildInventorySearchIndexes,
+  isPersistableInventorySearchQuery,
   rankInventorySearch,
   rankInventorySearchWithAuthorizedFallback,
 } from "./inventory-search";
@@ -131,5 +132,20 @@ describe("predictive inventory search", () => {
     expect(rankInventorySearch(index, "*").map((match) => match.vehicle.id)).toEqual(["literal"]);
     expect(rankInventorySearch(index, "?")).toHaveLength(0);
     expect(rankInventorySearch(index, "|")).toHaveLength(0);
+  });
+
+  it("persists recent searches only for public inventory fields, not salesperson or customer text", () => {
+    const record = vehicle({
+      holdEvidence: [{
+        id: "hold-1",
+        salesperson: "Synthetic Private Salesperson",
+        customerOrReason: "Synthetic Private Customer",
+      }],
+    });
+    const indexes = buildInventorySearchIndexes([record]);
+    expect(isPersistableInventorySearchQuery(indexes, record.stockNumber)).toBe(true);
+    expect(isPersistableInventorySearchQuery(indexes, "F-150")).toBe(true);
+    expect(isPersistableInventorySearchQuery(indexes, "Synthetic Private Salesperson")).toBe(false);
+    expect(isPersistableInventorySearchQuery(indexes, "Synthetic Private Customer")).toBe(false);
   });
 });

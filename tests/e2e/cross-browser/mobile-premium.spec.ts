@@ -122,6 +122,7 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
         if (!node.getClientRects().length || ['IMG', 'SVG'].includes(node.tagName)) return false
         if (node.matches('.copyable-value__button-label, .inventory-sr-only')) return false
         const style = getComputedStyle(node)
+        if (style.display === 'inline' || style.display === 'contents') return false
         const bounds = node.getBoundingClientRect()
         return !(bounds.width <= 1 && bounds.height <= 1 && (style.clip !== 'auto' || style.clipPath !== 'none'))
       })

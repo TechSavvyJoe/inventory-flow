@@ -37,7 +37,6 @@
 .platform-record > button { flex: none; font-size: var(--ifx-text-sm); }
 .platform-record a { font-size: var(--ifx-text-sm); }
 .platform-audit-section { margin-top:var(--ifx-space-3); padding:0; border:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); background:var(--ifx-panel-surface); }
-.platform-audit-marker { padding: var(--ifx-space-2); background: var(--ifx-neutral-50); border-radius: var(--ifx-radius-sm); color: var(--ifx-neutral-600); display: grid; place-items: center; }
 .platform-spaced { margin-top: var(--ifx-space-4); }
 .platform-audit-row { padding-block: var(--ifx-space-3); border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
 .platform-audit-row p { margin-block: var(--ifx-space-1); }
@@ -199,7 +198,6 @@
  .platform-fields { grid-template-columns: 1fr; }
  .platform-change-row { grid-template-columns: 1fr auto 1fr; }
  .platform-change-row > strong { grid-column: 1/-1; }
- .platform-audit-marker { display: none; }
  .platform-app .platform-people-row { grid-template-columns:minmax(0,1fr) auto; gap:var(--ifx-space-1) var(--ifx-space-2); }
  .platform-people-row > div:first-child { grid-column:1; grid-row:1; }
  .platform-people-row > .platform-person-assignment { grid-column:1; grid-row:2; }
