@@ -376,6 +376,20 @@ describe('extension working-store workflow and identity reset', () => {
     expect(document.querySelector('#workspace-links').hidden).toBe(true)
   })
 
+  it('keeps inventory visible and marks freshness when a non-auth refresh fails', async () => {
+    const { PanelApiError } = await import('../../extension/sidepanel/lib/api.mjs')
+    const { storage } = await import('../../extension/sidepanel/lib/host.mjs')
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    api.bootstrap.mockRejectedValueOnce(new PanelApiError('offline'))
+    document.querySelector('#refresh').click()
+    await waitForText('#fresh-text', 'refresh failed — recheck before hold decisions')
+    expect(document.querySelector('#rows').textContent).toContain('DEMO-H01')
+    expect(document.querySelector('#fresh-text .dot')?.classList.contains('is-off')).toBe(true)
+    expect(document.querySelector('#fresh-text')?.getAttribute('title')).toContain('Recheck Inventory Flow before relying on holds')
+    expect(storage.clearCache).not.toHaveBeenCalled()
+  })
+
   it.each(['signin', 'forbidden'])('clears cached private details and pending reads after detail %s denial', async (kind) => {
     const { PanelApiError } = await import('../../extension/sidepanel/lib/api.mjs')
     const { storage } = await import('../../extension/sidepanel/lib/host.mjs')
