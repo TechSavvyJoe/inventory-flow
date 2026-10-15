@@ -27,4 +27,11 @@ describe('atomic-write', () => {
     writeAtomicFile(target, bytes)
     expect(readFileSync(target)).toEqual(bytes)
   })
+
+  it('creates nested dated release directories before writing', () => {
+    root = mkdtempSync(path.join(tmpdir(), 'inventory-flow-atomic-'))
+    const target = path.join(root, 'releases', '2026-10-15', 'manager-disposition', 'abcd', 'overlay.json')
+    writeJsonAtomic(target, { status: 'complete' })
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ status: 'complete' })
+  })
 })
