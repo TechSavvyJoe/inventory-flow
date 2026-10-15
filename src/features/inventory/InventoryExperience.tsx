@@ -62,6 +62,7 @@ import type {
 } from "./types";
 import { OVERVIEW_VIEW_LABELS } from "../overview/overview-links";
 import { FlowPageHeader } from "../../design-system";
+import { emptyFilterResetLabel, WORKFLOW_RESET_LABELS } from "../../lib/workflow-view-reset";
 import "./inventory.css";
 import "./inventory-modern.css";
 import "./InventoryServiceFilter.css";
@@ -868,8 +869,8 @@ export function InventoryExperience({
               <h2>No matching vehicles</h2>
               <p>{quickView === "no-hold" ? "No vehicles match both the location and recorded hold evidence. Check All to include held vehicles and unverified locations." : "Clear a filter or look across all locations."}</p>
               <div>
-                <button type="button" className="inventory-button inv-btn inv-btn--secondary" onClick={query.trim() ? clearEmptyState : clearFilters}>{query.trim() ? filterCount > 0 ? "Clear search and filters" : "Clear search" : "Clear filters"}</button>
-                {scope === "home" ? <button type="button" className="inventory-button inventory-button--primary inv-btn inv-btn--primary" onClick={() => setScope("group")}>View all locations</button> : null}
+                <button type="button" className="inventory-button inv-btn inv-btn--secondary" onClick={query.trim() ? clearEmptyState : clearFilters}>{emptyFilterResetLabel({ query, filtersActive: filterCount > 0 })}</button>
+                {scope === "home" ? <button type="button" className="inventory-button inventory-button--primary inv-btn inv-btn--primary" onClick={() => setScope("group")}>{WORKFLOW_RESET_LABELS.viewAllLocations}</button> : null}
               </div>
             </div>
           )}
