@@ -20,6 +20,8 @@ import { providerHoldLabel } from '../inventory/provider-evidence-utils'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
 import { serviceEvidenceSummary, SourceServiceHistory } from './SourceServiceHistory'
 import { searchFieldsMatch } from '../../lib/search'
+import { WORKFLOW_RESET_LABELS } from '../../lib/workflow-view-reset'
+import { parseStoreScope, type StoreScope } from '../../lib/store-scope'
 import { FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
 import './ServiceDesk.css'
 
@@ -243,6 +245,54 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
   </aside>
 }
 
+function useArchivedService(vin: string | null, role: UserRole, store: StoreName) {
+  const [attempt, setAttempt] = useState(0)
+  const [load, setLoad] = useState<{ vin: string; status: 'loading' | 'archived' | 'missing' | 'error'; detail: ServiceReadinessDetail | null; error: string } | null>(null)
+  useEffect(() => {
+    if (!vin) return
+    let canceled = false
+    setLoad({ vin, status: 'loading', detail: null, error: '' })
+    void getServiceReadiness(vin, role, store).then((value) => {
+      if (canceled) return
+      setLoad(value.archivedFromInventory
+        ? { vin, status: 'archived', detail: value, error: '' }
+        : { vin, status: 'missing', detail: null, error: '' })
+    }).catch((caught: unknown) => {
+      if (canceled) return
+      const missing = caught instanceof ApiError && caught.status === 404
+      setLoad({ vin, status: missing ? 'missing' : 'error', detail: null, error: missing ? '' : caught instanceof Error ? caught.message : 'Unable to load service history.' })
+    })
+    return () => { canceled = true }
+  }, [vin, role, store, attempt])
+  const current = vin && load?.vin === vin ? load : { status: vin ? 'loading' as const : 'missing' as const, detail: null, error: '' }
+  return { ...current, retry: () => setAttempt((value) => value + 1) }
+}
+
+function ArchivedServiceHistory({ detail, onBack }: { detail: ServiceReadinessDetail; onBack: () => void }) {
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { headingRef.current?.focus({ preventScroll: true }) }, [detail.vin])
+  const historyEntry = (entry: ServiceReadinessDetail['history'][number]) => <li key={`${entry.version}:${entry.updatedAt ?? ''}`}><strong>{serviceStatusLabel(entry)}</strong><span>{entry.updatedBy} · {displayDate(entry.updatedAt)}</span>{entry.serviceEnteredAt && <span>Entered service {displayDate(entry.serviceEnteredAt)}</span>}{entry.completedAt && <span>Completed {displayDate(entry.completedAt)}</span>}{entry.notes && <p>{entry.notes}</p>}</li>
+  return <aside className="service-editor" aria-label={`Saved service history for ${detail.vin}`}>
+    <button className={flowButtonClassName({ variant: 'quiet', className: 'service-back' })} type="button" onClick={onBack}><ArrowLeft size={18} />Back to service list</button>
+    <header className="service-editor-heading">
+      <div className="service-editor-identity">
+        <h2 ref={headingRef} tabIndex={-1}>Saved service history</h2>
+        <p>{detail.store ?? 'Store not confirmed'}</p>
+      </div>
+    </header>
+    <p className="service-permission">This vehicle is no longer in the current inventory. Saved service history is read-only and is not a current listing.</p>
+    <dl className="service-editor-identifiers" aria-label="Vehicle identification"><div className="service-editor-vin"><dt>VIN</dt><dd><CopyableValue label="VIN" text={detail.vin} compact>{detail.vin}</CopyableValue></dd></div></dl>
+    <section className="service-state-summary" aria-label="Recorded service status">
+      <p className={`service-current service-current--${serviceWorkflowStatus(detail)}`}><span className="service-current-label">Current state</span><strong>{serviceWorkflowStatus(detail) === 'serviced' && <CheckCircle2 size={18} aria-hidden="true" />}{serviceStatusLabel(detail)}</strong></p>
+      {(detail.serviceEnteredAt || detail.completedAt) && <div className="service-recorded-dates">{detail.serviceEnteredAt && <span>Entered service<strong>{displayDate(detail.serviceEnteredAt)}</strong></span>}{detail.completedAt && <span>Completed<strong>{displayDate(detail.completedAt)}</strong></span>}</div>}
+    </section>
+    {detail.notes && <section className="service-current-note" aria-label="Current service note"><h4>Current service note</h4><p>{detail.notes}</p></section>}
+    <section className="service-history" aria-labelledby="archived-service-history-title"><h3 id="archived-service-history-title">Status updates</h3>
+      {detail.history.length ? <ol>{detail.history.map(historyEntry)}</ol> : <p>Detailed service history is limited to sales staff and managers.</p>}
+    </section>
+  </aside>
+}
+
 export function ServicePage() {
   const { data, homeStore, role, currentUser, refresh } = useAppData()
   const [params, setParams] = useSearchParams()
@@ -251,7 +301,10 @@ export function ServicePage() {
   const returnTo = readWorkspaceReturnPath(params.get('returnTo'))
   const accessContext = `${currentUser}:${role}:${homeStore}`
   useWorkspaceScroll(accessContext, 'service')
-  const [scope, setScope] = useWorkspaceState<'my_store' | 'all'>(accessContext, 'service.scope', 'my_store')
+  // Workspace may still hold legacy my_store/all from an earlier session.
+  const [scopeState, setScopeState] = useWorkspaceState<string>(accessContext, 'service.scope', 'home')
+  const scope: StoreScope = parseStoreScope(scopeState) ?? 'home'
+  const setScope = (next: StoreScope) => setScopeState(next)
   const [search, setSearch] = useWorkspaceState(accessContext, 'service.search', '')
   // An Overview count (`?store=`) narrows the list to one service store for
   // this visit only; the parameter is read once and stripped.
@@ -260,13 +313,14 @@ export function ServicePage() {
   const scopeParam = params.get('scope')
   useEffect(() => {
     if (storeParam === null && scopeParam === null) return
-    if (scopeParam === 'all' || scopeParam === 'my_store') {
-      setScope(scopeParam)
+    const linkedScope = parseStoreScope(scopeParam)
+    if (linkedScope) {
+      setScope(linkedScope)
       setStoreFilter(null)
     }
     if (STORE_NAMES.includes(storeParam as StoreName)) {
       const linked = storeParam as StoreName
-      setScope(linked === homeStore ? 'my_store' : 'all')
+      setScope(linked === homeStore ? 'home' : 'group')
       setStoreFilter(linked === homeStore ? null : linked)
     }
     setParams((current) => { const next = new URLSearchParams(current); next.delete('store'); next.delete('scope'); return next }, { replace: true })
@@ -275,10 +329,11 @@ export function ServicePage() {
   const actionParam = params.get('action') as ServiceWorkflowStatus
   const selectedVin = params.get('vin')
   const selected = data?.vehicles.find((vehicle) => vehicle.vin === selectedVin)
+  const archived = useArchivedService(selected ? null : selectedVin, role, homeStore)
   const status = STATUSES.includes(statusParam) ? statusParam : selected ? serviceWorkflowStatus(selected.serviceReadiness) : 'needs_service'
   const scoped = useMemo(() => (data?.vehicles ?? []).filter((vehicle) => {
     const serviceStore = vehicle.serviceReadiness?.store ?? vehicle.homeStore
-    return scope === 'all' ? !storeFilter || serviceStore === storeFilter : serviceStore === homeStore
+    return scope === 'group' ? !storeFilter || serviceStore === storeFilter : serviceStore === homeStore
   }), [data, scope, homeStore, storeFilter])
   const counts = useMemo(() => Object.fromEntries(STATUSES.map((value) => [value, scoped.filter((vehicle) => serviceWorkflowStatus(vehicle.serviceReadiness) === value).length])) as Record<ServiceWorkflowStatus, number>, [scoped])
   const statusVehicles = scoped.filter((vehicle) => serviceWorkflowStatus(vehicle.serviceReadiness) === status)
@@ -291,22 +346,25 @@ export function ServicePage() {
   if (!data) return null
   const returnParams = new URLSearchParams(location.search)
   returnParams.set('scope', scope)
-  if (scope === 'all' && storeFilter) returnParams.set('store', storeFilter)
+  if (scope === 'group' && storeFilter) returnParams.set('store', storeFilter)
   else returnParams.delete('store')
   const returnPath = currentWorkspaceReturnPath({ ...location, search: returnParams.size ? `?${returnParams.toString()}` : '' })
-  return <section className={`service-page${selected ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
+  const archivedDetail = archived.status === 'archived' ? archived.detail : null
+  return <section className={`service-page${selected || archivedDetail ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
     <SourceWarning meta={data.meta} />
     <FlowPageHeader className="service-page-heading" icon={<Wrench aria-hidden="true" size={20} />} title="Service status">
-      <div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => { setScope('my_store'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all' && !storeFilter} onClick={() => { setScope('all'); setStoreFilter(null) }}>All stores</button></div></div>
+      <div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'home'} onClick={() => { setScope('home'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'group' && !storeFilter} onClick={() => { setScope('group'); setStoreFilter(null) }}>All stores</button></div></div>
     </FlowPageHeader>
     <div className="service-tabs" role="group" aria-label="Service status">
       {STATUSES.map((value) => <button key={value} type="button" aria-pressed={status === value} onClick={() => setParams({ status: value, ...(returnTo ? { returnTo } : {}) })}>{SERVICE_LABELS[value]}{' '}<span>{counts[value]}</span></button>)}
     </div>
-    {selectedVin && !selected && <p role="status" className="service-permission">This vehicle is not in the current inventory. Select a vehicle below to review service status.</p>}
+    {selectedVin && !selected && archived.status === 'loading' && <p role="status" className="service-permission">Loading saved service history…</p>}
+    {selectedVin && !selected && archived.status === 'missing' && <p role="status" className="service-permission">This vehicle is not in the current inventory. Select a vehicle below to review service status.</p>}
+    {selectedVin && !selected && archived.status === 'error' && <div className="service-error" role="alert"><p>{archived.error}</p><button type="button" onClick={archived.retry}>Try again</button></div>}
     <div className="service-content"><div className="service-list-panel">
       <div className="service-list-toolbar"><p>{STATUS_HELP[status]}</p><PredictiveSearchInput className="service-search" inputType="search" value={search} onChange={setSearch} ariaLabel="Search service vehicles" clearLabel="Clear service search" placeholder="Search stock, VIN, model" candidates={statusVehicles.map(vehicle => ({ id: vehicle.vin, label: vehicle.vehicleName, detail: `#${vehicle.stockNumber}`, value: vehicle.stockNumber, searchValues: [vehicle.vehicleName, vehicle.stockNumber, vehicle.vin, vehicle.searchText] }))} /></div>
-      <p className="service-result-count" role="status">{vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'} · {scope === 'all' ? storeFilter ?? 'All stores' : homeStore}</p>
-      {scope === 'all' && storeFilter ? <button type="button" className="service-store-filter" aria-label={`Clear service store filter: ${storeFilter}`} onClick={() => setStoreFilter(null)}>Store: {storeFilter}<X size={14} aria-hidden="true" /></button> : null}
+      <p className="service-result-count" role="status">{vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'} · {scope === 'group' ? storeFilter ?? 'All stores' : homeStore}</p>
+      {scope === 'group' && storeFilter ? <button type="button" className="service-store-filter" aria-label={`Clear service store filter: ${storeFilter}`} onClick={() => setStoreFilter(null)}>Store: {storeFilter}<X size={14} aria-hidden="true" /></button> : null}
       {vehicles.length ? <ul className="service-list">{vehicles.map((vehicle) => {
         const serviceAction = vehicle.serviceReadiness?.canManage ? 'Update service' : 'View service'
         return <li key={vehicle.vin} className="service-vehicle-entry"><button className="service-vehicle-row" type="button" aria-pressed={selectedVin === vehicle.vin} onClick={() => selectVin(vehicle.vin)}>
@@ -318,7 +376,7 @@ export function ServicePage() {
           <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-open-vehicle" })} aria-label={`Open vehicle for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { returnTo: returnPath })}><CarFront size={18} aria-hidden="true" />Open vehicle</Link>
           <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-records" })} aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={18} aria-hidden="true" />Records</Link>
         </nav><div className="service-row-supporting"><VehicleQuickFacts vehicle={vehicle} /></div></li>
-      })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
-    </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
+      })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>{WORKFLOW_RESET_LABELS.clearSearch}</button> : scope === 'home' ? <button type="button" onClick={() => setScope('group')}>{WORKFLOW_RESET_LABELS.viewAllStores}</button> : null}</div>}
+    </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}{archivedDetail && <ArchivedServiceHistory key={archivedDetail.vin} detail={archivedDetail} onBack={() => selectVin(null)} />}</div>
   </section>
 }

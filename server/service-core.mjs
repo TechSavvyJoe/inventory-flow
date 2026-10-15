@@ -28,7 +28,7 @@ import {
   listSavedVehicleLists as listSavedVehicleListRows,
   mutateSavedVehicleList as persistSavedVehicleListMutation,
 } from './repository-dispatch.mjs'
-import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
+import { archivedServiceVehicle, buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
 import { buildManualHoldEvent, manualHoldDetail, manualHoldView, inventoryDecision } from './manual-holds.mjs'
 import { buildDispositionEvent, dispositionDetail, dispositionView } from './vehicle-disposition.mjs'
 import { buildVehicleIssue, buildVehicleIssueEvent, canReportVehicleIssue, vehicleIssueView, VEHICLE_ISSUE_CATEGORIES, VEHICLE_ISSUE_STATUSES } from './vehicle-issues.mjs'
@@ -1937,12 +1937,21 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
     return vehicle
   }
 
-  function serviceDetail(vehicle, rows, context, selectedRow = rows.at(-1)) {
-    return {
+  function serviceDetail(vehicle, rows, context, { selectedRow = rows.at(-1), archivedFromInventory = false } = {}) {
+    const history = context.canViewPrivateEvidence
+      ? [...rows].reverse().map((row) => serviceReadinessView(vehicle, row, context, { includeNotes: true }))
+      : []
+    const detail = {
       ...serviceReadinessView(vehicle, selectedRow, context, { includeNotes: true }),
-      history: context.canViewPrivateEvidence
-        ? [...rows].reverse().map((row) => serviceReadinessView(vehicle, row, context, { includeNotes: true }))
-        : [],
+      history,
+    }
+    // Off-feed history is read-only: writes still require a current inventory vehicle.
+    if (!archivedFromInventory) return detail
+    return {
+      ...detail,
+      archivedFromInventory: true,
+      canManage: false,
+      history: history.map((row) => ({ ...row, canManage: false })),
     }
   }
 
@@ -2095,8 +2104,25 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const vin = normalizedVin(vinInput)
       const source = state.sources.find((candidate) => candidate.vin === vin)
       const vehicle = source && vehicleFromSnapshot(state, source)
-      if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
-      return serviceDetail(vehicle, state.serviceEventsByVin.get(vin) ?? [], state.context)
+      const rows = state.serviceEventsByVin.get(vin) ?? []
+      if (vehicle) return serviceDetail(vehicle, rows, state.context)
+      const intake = state.serviceIntakeByVin.get(vin) ?? null
+      // Saved manager events and durable intake outlive the public/DealerMail
+      // feed. Return that history explicitly as archived; do not invent a listing.
+      if (!rows.length && !intake) {
+        throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
+      }
+      return serviceDetail(
+        archivedServiceVehicle({
+          vin,
+          rows,
+          homeStore: state.indexes.homeByVin.get(vin)?.home_store_id ?? null,
+          serviceIntake: intake,
+        }),
+        rows,
+        state.context,
+        { archivedFromInventory: true },
+      )
     },
 
     listSavedVehicleLists(contextInput = {}) {

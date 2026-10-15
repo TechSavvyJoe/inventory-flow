@@ -36,12 +36,14 @@ export function PredictiveSearchInput({
   const inputRef = useRef<HTMLInputElement>(null)
   const inputId = useId()
   const listboxId = useId()
+  const hintId = useId()
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const suggestions = useMemo(() => value.trim()
     ? candidates.filter(candidate => searchFieldsMatch(value, candidate.searchValues)).slice(0, 6)
     : [], [candidates, value])
   const expanded = open && suggestions.length > 0
+  const hasQuery = value.trim().length > 0
 
   const select = (candidate: PredictiveSearchCandidate) => {
     onChange(candidate.value ?? candidate.label)
@@ -65,9 +67,15 @@ export function PredictiveSearchInput({
         : current <= 0 ? suggestions.length - 1 : current - 1)
       return
     }
-    if (event.key === 'Enter' && activeIndex >= 0) {
-      const candidate = suggestions[activeIndex]
-      if (candidate) { event.preventDefault(); select(candidate) }
+    if (event.key === 'Enter') {
+      if (activeIndex >= 0) {
+        const candidate = suggestions[activeIndex]
+        if (candidate) { event.preventDefault(); select(candidate) }
+      } else if (hasQuery && expanded) {
+        // Match InventoryPredictiveSearch: keep the typed query and close the list.
+        setOpen(false)
+        setActiveIndex(-1)
+      }
     }
   }
   const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
@@ -85,6 +93,7 @@ export function PredictiveSearchInput({
       id={inputId}
       autoFocus={autoFocus}
       type={inputType}
+      role="combobox"
       value={value}
       onChange={event => { onChange(event.target.value); setOpen(true); setActiveIndex(-1) }}
       onFocus={() => setOpen(true)}
@@ -95,10 +104,14 @@ export function PredictiveSearchInput({
       aria-expanded={expanded}
       aria-controls={listboxId}
       aria-activedescendant={expanded && activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
+      aria-describedby={hintId}
       autoComplete="off"
       spellCheck={false}
     />
     {value ? <button type="button" onClick={() => { onChange(''); setOpen(false); setActiveIndex(-1); inputRef.current?.focus() }} aria-label={clearLabel}><X aria-hidden="true" /></button> : null}
+    <span className="sr-only" id={hintId}>
+      Use the arrow keys to review suggestions, Enter to choose or keep the typed query, and Escape to close.
+    </span>
     {expanded ? <ul id={listboxId} className="predictive-search-input__list" role="listbox" aria-label={`${ariaLabel} suggestions`}>
       {suggestions.map((candidate, index) => <li
         id={`${listboxId}-${index}`}

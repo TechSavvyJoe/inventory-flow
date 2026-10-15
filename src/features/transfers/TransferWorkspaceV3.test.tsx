@@ -227,12 +227,12 @@ describe('transfer workspace v3 layout', () => {
   it('keeps search, store scope and sorting when returning from a move to its queue', () => {
     renderPage(bootstrap(4), '/transfers', {}, true);
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search vehicle moves' }), { target: { value: 'MOVE2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search vehicle moves' }), { target: { value: 'MOVE2' } });
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort vehicle moves' }), { target: { value: 'stock' } });
     fireEvent.click(screen.getByRole('button', { name: /MOVE2.*Assign a driver/ }));
     expect(screen.getByTestId('router-location')).toHaveTextContent('returnTo=%2Ftransfers');
     fireEvent.click(screen.getByRole('link', { name: 'Back to vehicle moves' }));
-    expect(screen.getByRole('textbox', { name: 'Search vehicle moves' })).toHaveValue('MOVE2');
+    expect(screen.getByRole('combobox', { name: 'Search vehicle moves' })).toHaveValue('MOVE2');
     expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toHaveValue('stock');
     expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true');
   });
@@ -273,11 +273,11 @@ describe('transfer workspace v3 layout', () => {
   it('resets an empty persisted move view while preserving its sort', () => {
     renderPage(bootstrap(4));
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort vehicle moves' }), { target: { value: 'stock' } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search vehicle moves' }), { target: { value: 'missing vehicle' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search vehicle moves' }), { target: { value: 'missing vehicle' } });
     fireEvent.click(screen.getByRole('button', { name: /Completed/ }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), { target: { value: 'issues' } });
     fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    expect(screen.getByRole('textbox', { name: 'Search vehicle moves' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Search vehicle moves' })).toHaveValue('');
     expect(screen.getByRole('button', { name: /Active/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toHaveValue('all');
     expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toHaveValue('stock');
@@ -287,7 +287,7 @@ describe('transfer workspace v3 layout', () => {
     const data = bootstrap(0);
     data.vehicles = [inventoryVehicle('Howell')];
     renderPage(data, '/transfers/new', { role: 'group_manager' });
-    const search = screen.getByRole('textbox', { name: 'Search inventory to move' });
+    const search = screen.getByRole('combobox', { name: 'Search inventory to move' });
     fireEvent.change(search, { target: { value: 'Bronco Howell' } });
     expect(screen.getAllByText('2023 Ford Bronco Outer Banks')).toHaveLength(2);
     fireEvent.change(search, { target: { value: 'missing vehicle' } });
@@ -418,7 +418,7 @@ describe('transfer workspace v3 layout', () => {
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1, name: 'Start a move' })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Search inventory to move' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Search inventory to move' })).toBeInTheDocument();
     expect(screen.getByText('No matching vehicles')).toBeInTheDocument();
   });
 
@@ -948,6 +948,29 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.queryByRole('button', { name: 'Close the move' })).not.toBeInTheDocument();
   });
 
+  it('suggests and reveals completed moves while Active is selected', () => {
+    const data = bootstrap(2);
+    data.transfers[0].workflowMode = 'simple';
+    data.transfers[0].requestStatus = 'closed';
+    data.transfers[0].movementStatus = 'returned_home';
+    data.transfers[0].allowedActions = ['open-source'];
+    data.transfers[1].workflowMode = 'simple';
+    renderPage(data, '/transfers', { homeStore: 'Howell', role: 'group_manager' });
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    expect(screen.getByRole('button', { name: /Active/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: /2025 Ford F-150 1/ })).not.toBeInTheDocument();
+
+    const search = screen.getByRole('combobox', { name: 'Search vehicle moves' });
+    fireEvent.change(search, { target: { value: 'MOVE1' } });
+    expect(screen.getByRole('option', { name: /Suggestion:.*2025 Ford F-150 1/ })).toBeInTheDocument();
+    expect(screen.getByText('Matching moves are outside this view')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show matching moves' }));
+
+    expect(screen.getByRole('button', { name: /Completed/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toBeInTheDocument();
+    expect(search).toHaveValue('MOVE1');
+  });
+
   it.each([
     ['TESTDATAHWELL0001', false],
     ['1FTFW1E80RFA00001', true],
@@ -1254,7 +1277,7 @@ describe('transfer workspace v3 layout', () => {
   it('counts one move in the singular', () => {
     renderPage(bootstrap(2));
     expect(screen.getByText('2 moves shown')).toBeInTheDocument();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search vehicle moves' }), { target: { value: 'MOVE2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search vehicle moves' }), { target: { value: 'MOVE2' } });
     expect(screen.getByText('1 move shown')).toBeInTheDocument();
   });
 

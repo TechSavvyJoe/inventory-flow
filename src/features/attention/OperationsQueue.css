@@ -143,10 +143,6 @@
 :where(.action-queue) .workflow-notice { padding:var(--ifx-space-2) var(--ifx-space-3); border-left:3px solid var(--ifx-warning); background:var(--ifx-neutral-50); color:var(--ifx-neutral-700); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-body); }
 :where(.action-queue) .workflow-quick-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-1); }
 :where(.action-queue) .workflow-quick-actions a:not(:where(.ifx-button)) { display:inline-flex; align-items:center; justify-content:center; min-height:var(--ifx-control-height-md); padding:var(--ifx-space-1); border:1px solid var(--ifx-border-subtle); border-radius:var(--ifx-radius-xs); background:var(--ifx-neutral-0); color:var(--blue-700); font-size:var(--ifx-text-sm); font-weight:var(--ifx-weight-semibold); text-decoration:none; }
-:where(.action-queue) .workflow-resource-row { grid-column:1 / -1; margin-top:var(--ifx-space-1); padding:var(--ifx-space-1); border:1px solid var(--ifx-border-subtle); border-radius:var(--ifx-radius-sm); background:var(--ifx-neutral-50); }
-:where(.action-queue) .workflow-resource-row .vehicle-resources--inline { display:grid; grid-template-columns:repeat(auto-fit,minmax(9.375rem,1fr)); gap:0; }
-:where(.action-queue) .workflow-resource-row .vehicle-resource-inline-item { max-width:none; padding:var(--ifx-space-1) var(--ifx-space-2); border-left:1px solid var(--ifx-border-subtle); }
-:where(.action-queue) .workflow-resource-row .vehicle-resource-inline-item:first-child { border-left:0; }
 .action-list { overflow:hidden; border:1px solid var(--ifx-border-control); border-radius:var(--ifx-radius-sm); background:var(--ifx-neutral-50); }
 .action-list-head,.action-row-content { display:grid; grid-template-columns:minmax(15.625rem,1.3fr) minmax(12.5rem,1.2fr) minmax(8.75rem,.65fr) 9.0625rem; align-items:center; gap:var(--ifx-space-3); }
 .action-list-head { padding:var(--ifx-space-2); background:var(--ifx-brand-blue); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); color:var(--ifx-neutral-0); font-size:var(--ifx-text-sm); font-weight:var(--ifx-weight-semibold); }

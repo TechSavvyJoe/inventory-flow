@@ -14,6 +14,7 @@ import { clearWorkspaceMemory } from '../lib/workspace-memory'
 import { confirmUnsavedWork } from '../lib/useUnsavedChanges'
 import { clearCustomerShortlist } from '../features/inventory/useCustomerShortlist'
 import { clearRecentSearches } from '../features/inventory/InventoryPredictiveSearch'
+import { readPreviewPreference, writePreviewPreference } from '../lib/preview-preference-storage'
 import {
   STORE_NAMES,
   type AttentionEventInput,
@@ -25,6 +26,9 @@ import {
   type TransferRequestInput,
   type UserRole,
 } from '../types'
+
+const ROLE_PREFERENCE_KEY = 'maxey-role'
+const HOME_STORE_PREFERENCE_KEY = 'maxey-home-store'
 
 interface AppDataContextValue {
   data: BootstrapData | null
@@ -91,30 +95,15 @@ function accessFailureStatus(caught: unknown): 401 | 403 | null {
 // sits (App.tsx only wraps AppShell, not the provider around it). A thrown
 // SecurityError here (Safari private browsing, storage blocked by policy)
 // would take down the whole app to a blank page with nothing able to catch
-// it, so these reads must never throw.
-function readStorage(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function writeStorage(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // Best-effort only; the app must keep working with the in-memory value.
-  }
-}
-
+// it, so these reads must never throw. Preview prefs are not auth: hosted
+// builds keep them session-only; the synthetic demo may keep them durable.
 function readHomeStore(): StoreName {
-  const stored = readStorage('maxey-home-store')
+  const stored = readPreviewPreference(HOME_STORE_PREFERENCE_KEY)
   return STORE_NAMES.includes(stored as StoreName) ? (stored as StoreName) : 'Howell'
 }
 
 function readRole(): UserRole {
-  const stored = readStorage('maxey-role')
+  const stored = readPreviewPreference(ROLE_PREFERENCE_KEY)
   // Only the three customer-facing roles remain selectable. Legacy transport
   // memberships are still honored when the server returns one, but an old
   // preview saved in this browser must not silently restore a removed option.
@@ -225,8 +214,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         const authenticatedStore = nextData.access?.store ?? homeStore
         const authenticatedContext = `${authenticatedRole}:${authenticatedStore}`
         if (authenticatedRole !== role || authenticatedStore !== homeStore) {
-          writeStorage('maxey-role', authenticatedRole)
-          writeStorage('maxey-home-store', authenticatedStore)
+          writePreviewPreference(ROLE_PREFERENCE_KEY, authenticatedRole)
+          writePreviewPreference(HOME_STORE_PREFERENCE_KEY, authenticatedStore)
           latestAccessContextRef.current = authenticatedContext
           setRoleState(authenticatedRole)
           setHomeStoreState(authenticatedStore)
@@ -301,7 +290,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     clearClientWorkspace()
     accessErrorRef.current = null
     latestAccessContextRef.current = `${role}:${store}`
-    writeStorage('maxey-home-store', store)
+    writePreviewPreference(HOME_STORE_PREFERENCE_KEY, store)
     setHomeStoreState(store)
     setBootstrapState(emptyBootstrap(`${role}:${store}`))
   }, [cancelRead, homeStore, role])
@@ -313,7 +302,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     clearClientWorkspace()
     accessErrorRef.current = null
     latestAccessContextRef.current = `${nextRole}:${homeStore}`
-    writeStorage('maxey-role', nextRole)
+    writePreviewPreference(ROLE_PREFERENCE_KEY, nextRole)
     setRoleState(nextRole)
     setBootstrapState(emptyBootstrap(`${nextRole}:${homeStore}`))
   }, [cancelRead, homeStore, role])

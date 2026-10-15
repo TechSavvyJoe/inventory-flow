@@ -263,6 +263,16 @@ export function rankInventorySearchWithAuthorizedFallback(
   return matches.slice(0, Math.max(0, limit));
 }
 
+/** Recent-search persistence: only keep queries that match public inventory
+ *  fields. Authorized-only hits (salesperson, customer/reason, comments) stay
+ *  searchable but must not linger in sessionStorage. */
+export function isPersistableInventorySearchQuery(
+  indexes: InventorySearchIndexes,
+  query: string,
+): boolean {
+  return rankInventorySearch(indexes.direct, query, 1).length > 0;
+}
+
 const entryCache = new WeakMap<InventoryVehicle, InventorySearchIndexEntry>();
 
 export function inventoryVehicleMatchesSearch(vehicle: InventoryVehicle, query: string): boolean {

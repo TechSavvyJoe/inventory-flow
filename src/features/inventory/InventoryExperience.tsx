@@ -62,6 +62,7 @@ import type {
 } from "./types";
 import { OVERVIEW_VIEW_LABELS } from "../overview/overview-links";
 import { FlowPageHeader } from "../../design-system";
+import { emptyFilterResetLabel, WORKFLOW_RESET_LABELS } from "../../lib/workflow-view-reset";
 import "./inventory.css";
 import "./inventory-modern.css";
 import "./InventoryServiceFilter.css";
@@ -784,12 +785,25 @@ export function InventoryExperience({
               {SERVICE_FILTERS.map(([value, label]) => <button className="if-srp-service-choice" key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
                 <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
               </button>)}
-              <select className="if-srp-service-select" aria-label="Inventory service status" value={filters.serviceReadiness ?? "all"} onChange={event => setFilters(current => ({ ...current, serviceReadiness: event.target.value as ServiceFilter }))}>
-                {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value}>{label}: {serviceCounts[value]} {serviceCounts[value] === 1 ? "vehicle" : "vehicles"}</option>)}
-              </select>
+              <div className="if-srp-service-select-slot">
+                <select className="if-srp-service-select" aria-label="Inventory service status" value={filters.serviceReadiness ?? "all"} onChange={event => setFilters(current => ({ ...current, serviceReadiness: event.target.value as ServiceFilter }))}>
+                  {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value}>{label}: {serviceCounts[value]} {serviceCounts[value] === 1 ? "vehicle" : "vehicles"}</option>)}
+                </select>
+              </div>
             </div>
             {filtersOpen ? <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
-              {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[Extract<QuickView, 'moving' | 'new' | 'price'>, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={value === 'moving' ? filters.movement === 'active' : quickView === value} onClick={() => toggleSecondaryView(value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
+              {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[Extract<QuickView, 'moving' | 'new' | 'price'>, string]>).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={`${label}: ${quickViewCounts[value]} vehicles`}
+                  aria-pressed={value === 'moving' ? filters.movement === 'active' : quickView === value}
+                  onClick={() => toggleSecondaryView(value)}
+                >
+                  <span aria-hidden="true">{label}</span>
+                  <span aria-hidden="true">{quickViewCounts[value]}</span>
+                </button>
+              ))}
             </div> : null}
           </div>
 
@@ -855,8 +869,8 @@ export function InventoryExperience({
               <h2>No matching vehicles</h2>
               <p>{quickView === "no-hold" ? "No vehicles match both the location and recorded hold evidence. Check All to include held vehicles and unverified locations." : "Clear a filter or look across all locations."}</p>
               <div>
-                <button type="button" className="inventory-button inv-btn inv-btn--secondary" onClick={query.trim() ? clearEmptyState : clearFilters}>{query.trim() ? filterCount > 0 ? "Clear search and filters" : "Clear search" : "Clear filters"}</button>
-                {scope === "home" ? <button type="button" className="inventory-button inventory-button--primary inv-btn inv-btn--primary" onClick={() => setScope("group")}>View all locations</button> : null}
+                <button type="button" className="inventory-button inv-btn inv-btn--secondary" onClick={query.trim() ? clearEmptyState : clearFilters}>{emptyFilterResetLabel({ query, filtersActive: filterCount > 0 })}</button>
+                {scope === "home" ? <button type="button" className="inventory-button inventory-button--primary inv-btn inv-btn--primary" onClick={() => setScope("group")}>{WORKFLOW_RESET_LABELS.viewAllLocations}</button> : null}
               </div>
             </div>
           )}

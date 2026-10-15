@@ -16,7 +16,6 @@
 .mif-transfer-feature.simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__title img, .mif-transfer-feature.simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__title .simple-move-photo-placeholder { width: var(--ifx-transfer-list-thumbnail-width); height: var(--ifx-transfer-list-thumbnail-height); flex: 0 0 var(--ifx-transfer-list-thumbnail-width); border-radius: var(--ifx-radius-xs); object-fit: cover; }
 #root .simple-move-photo-placeholder { display: grid; place-items: center; background: var(--ifx-neutral-100); color: var(--ifx-neutral-600); }
 .simple-transfer-tracker .simple-move-heading .simple-move-photo-placeholder { display: grid; place-items: center; }
-#root .simple-move-heading > .simple-move-identity { flex: 1; min-width: 0; }
 .mif-transfer-feature.simple-transfer-tracker .simple-move-heading h2 { display:flex; align-items:flex-start; gap:var(--ifx-space-3); color:var(--ifx-neutral-900); font-size:var(--ifx-text-lg); font-weight:var(--ifx-weight-bold); line-height:var(--ifx-leading-heading); }
 #root .simple-move-heading > .move-vehicle-context { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 12px; padding-top:4px; border-top:1px solid var(--ifx-neutral-200); }
 #root .simple-move-identifiers { display:flex; flex-wrap:wrap; gap:4px 18px; }
@@ -64,9 +63,6 @@
 #root .simple-move-issue { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--ifx-warning); border-radius: 6px; background: var(--ifx-warning-surface); }
 #root .simple-move-issue > svg { flex-shrink: 0; margin-top: 2px; color: var(--ifx-warning); }
 #root .simple-move-issue p { margin-top: 4px; font-size: 14px; }
-#root .transfer-workspace-v4.is-simple .transfers-layout { height: auto; min-height: 0; }
-#root .transfer-workspace-v4.is-simple .transfer-list-items { max-height: min(850px, 100dvh); }
-#root .transfer-workspace-v4.is-simple .transfer-list-stage { font-size: 13px; }
 .transfer-action-dialog .action-availability-confirmation { display: flex; align-items: flex-start; gap: 10px; padding: 16px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-50); }
 .transfer-action-dialog .action-availability-confirmation input { flex: 0 0 20px; width: 20px; height: 20px; margin-top: 2px; accent-color: var(--ifx-info); }
 .transfer-action-dialog .action-availability-confirmation strong { display: block; font-size: 15px; line-height: 1.5; }
@@ -94,15 +90,6 @@
 #root .vehicle-location-results footer { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 12px; }
 #root .vehicle-location-results footer > span { margin-right: auto; color: var(--ifx-neutral-700); font-size: 13px; }
 #root .vehicle-location-results footer button { min-height: 36px; padding: 6px 10px; border: 1px solid var(--ifx-neutral-300); border-radius: 5px; color: var(--ifx-info); background: var(--ifx-neutral-0); font: 500 14px/1.4 var(--font-app); cursor: pointer; }
-@media (max-width: 760px) {
-  /* Opening a move replaces the queue; do not stack queue controls above it. */
-  #root .transfer-workspace-v4[data-mobile-detail-open="true"] > :is(.transfers-page-header,.vehicle-location-overview),
-  #root .transfer-workspace-v4[data-mobile-detail-open="true"] .transfer-list { display: none !important; }
-  #root .transfer-workspace-v4[data-mobile-detail-open="true"] .transfer-detail-surface { display: block !important; width: 100%; margin: 0; overflow: visible; scroll-margin-top: var(--top-height,60px); }
-  #root .transfer-workspace-v4[data-mobile-detail-open="false"] .transfer-detail-surface { display: none !important; }
-  #root .transfer-workspace-v4[data-mobile-detail-open="true"] .transfer-mobile-detail-bar { display: grid; min-height: 58px; grid-template-columns: 44px minmax(0,1fr); align-items: center; }
-  #root .transfer-workspace-v4.is-simple .transfer-list-items { max-height: none; }
-}
 @media (max-width: 700px) {
   .mif-transfer-feature.simple-transfer-tracker { gap: var(--ifx-space-4); padding: var(--ifx-space-4); }
   #root .simple-move-heading h2 { font-size: 20px; }

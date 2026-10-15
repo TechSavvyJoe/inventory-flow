@@ -528,8 +528,7 @@
 .ov-chips button span { font-variant-numeric: tabular-nums; }
 
 .ov-result,
-.ov-footnote,
-.ov-basis {
+.ov-footnote {
   color: var(--ifx-neutral-600);
   font-size: var(--ifx-text-sm);
 }
@@ -860,7 +859,7 @@
   .ov-columns,
   .ov-column { gap: var(--ifx-space-2); }
   .ov-asof { font-size: var(--ifx-text-xs); }
-  .ov-scope-prefix, .ov-print-label, .ov-scope-suffix { display:none; }
+  .ov-scope-suffix { display:none; }
   .ov-header { column-gap:var(--ifx-space-1); }
   .ov-header .ov-print { min-width:var(--ifx-control-height-md); padding:0; }
   .ov-header .ov-scope button { padding-inline:var(--ifx-space-2); }
