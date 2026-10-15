@@ -206,7 +206,7 @@
       "smallText": 1,
       "rawColors": 6,
       "rgbHslColors": 0,
-      "important": 1,
+      "important": 0,
       "idSelectors": 0
     },
     "src/features/service/ServiceDesk.css": {
@@ -246,16 +246,16 @@
     },
     "src/features/transfers/transfer-workspace-v4.css": {
       "smallText": 1,
-      "rawColors": 107,
-      "rgbHslColors": 8,
-      "important": 62,
-      "idSelectors": 7
+      "rawColors": 54,
+      "rgbHslColors": 2,
+      "important": 13,
+      "idSelectors": 0
     },
     "src/features/transfers/transfer-workspace-v3.css": {
-      "smallText": 47,
-      "rawColors": 122,
-      "rgbHslColors": 9,
-      "important": 29,
+      "smallText": 29,
+      "rawColors": 27,
+      "rgbHslColors": 3,
+      "important": 14,
       "idSelectors": 0
     },
     "src/features/transfers/transfers-page.css": {
@@ -276,13 +276,13 @@
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,
-      "important": 4,
-      "idSelectors": 101
+      "important": 1,
+      "idSelectors": 91
     },
     "src/features/transfers/transfers.css": {
-      "smallText": 22,
-      "rawColors": 57,
-      "rgbHslColors": 6,
+      "smallText": 17,
+      "rawColors": 55,
+      "rgbHslColors": 5,
       "important": 13,
       "idSelectors": 0
     },
@@ -294,15 +294,15 @@
       "idSelectors": 3
     },
     "src/features/inventory/inventory-modern.css": {
-      "smallText": 50,
-      "rawColors": 175,
-      "rgbHslColors": 38,
+      "smallText": 48,
+      "rawColors": 164,
+      "rgbHslColors": 33,
       "important": 1,
       "idSelectors": 0
     },
     "src/features/inventory/inventory.css": {
-      "smallText": 17,
-      "rawColors": 30,
+      "smallText": 16,
+      "rawColors": 29,
       "rgbHslColors": 8,
       "important": 13,
       "idSelectors": 0
@@ -326,14 +326,14 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 118
+      "idSelectors": 111
     },
     "src/features/inventory/VehicleWorkspace.focused.css": {
       "smallText": 0,
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 309
+      "idSelectors": 252
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,

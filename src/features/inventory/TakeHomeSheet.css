@@ -61,7 +61,6 @@ body.takehome-open { overflow: hidden; }
 .th-price .th-price-main { grid-column: 1 / -1; padding-bottom: 7pt; border-bottom: 1px solid var(--th-rule); }
 .th-price-main dt { color: var(--th-blue); font-weight: 700; }
 .th-price-main dd { font-size: 23pt; line-height: 1; color: var(--blue-700); }
-.th-save dd { color: var(--green); }
 .th-quick { min-height: 0; padding: 8pt 0 0; border-top: 2pt solid var(--th-blue); }
 .th-quick b { color: var(--ink-700); font-size: 8pt; text-transform: uppercase; letter-spacing: .04em; }
 .th-quick ul { margin: 5pt 0 0; padding: 0; list-style: none; color: var(--ink-700); font-size: 8.5pt; line-height: 1.25; }
