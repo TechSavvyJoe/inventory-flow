@@ -71,8 +71,15 @@ companion API do not gain access to staff issue notes or photos.
 R2 storage precedes the audited ledger commit. If storage fails, the report is
 not committed. If the ledger commit fails after storage, an unreferenced
 encrypted object may remain; it cannot be retrieved through the employee API.
-Content-addressed object keys make retries safe. Any future cleanup must retain
-every object referenced by issue history and allow for in-flight writes.
+Content-addressed object keys make retries safe. Operator cleanup must retain
+every object referenced by issue history and allow for in-flight writes. Use
+`node scripts/cleanup-issue-photo-orphans.mjs` with saved R2 object and D1
+photo-reference JSON exports (list R2 first, then export the ledger so
+in-flight commits are visible): dry-run by default, skip objects inside the
+grace window, hold objects without a valid upload time for review instead of
+deletion, never treat a ledger-referenced key as an orphan, and never call R2
+delete from the script itself — it only reports candidate keys for an
+authorized follow-up delete.
 
 ## API and release boundary
 
@@ -116,13 +123,11 @@ existing role-matrix canary now seeds the assignment marker. Migration
 Legacy events have no fingerprint, so a retry using an old key is refused
 rather than guessed. No historical audit row is rewritten.
 
-A separate P2 confirmed gap remains: `server/service-core.mjs:2021`, the
-service-readiness detail endpoint, looks
-up the current source vehicle before returning its saved history. If that VIN
-leaves the feed, the endpoint returns `404` even though the service events remain
-in the database. A follow-up should add a deliberate archived-vehicle history
-view and a durable vehicle identity for service records. Vehicle issues already
-preserve that identity and remain accessible after source removal.
+Service-readiness detail now returns archived history when a VIN leaves the
+current feed but manager events or durable intake remain
+(`archivedFromInventory: true`, `canManage: false`). New service writes still
+require a current inventory vehicle. Vehicle issues continue to preserve their
+own durable identity and remain accessible after source removal.
 
 The two employee save routes, HTTP upload/failure/retry behavior and the
 unmocked synthetic browser workflow are now connected and tested. Physical

@@ -784,9 +784,11 @@ export function InventoryExperience({
               {SERVICE_FILTERS.map(([value, label]) => <button className="if-srp-service-choice" key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
                 <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
               </button>)}
-              <select className="if-srp-service-select" aria-label="Inventory service status" value={filters.serviceReadiness ?? "all"} onChange={event => setFilters(current => ({ ...current, serviceReadiness: event.target.value as ServiceFilter }))}>
-                {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value}>{label}: {serviceCounts[value]} {serviceCounts[value] === 1 ? "vehicle" : "vehicles"}</option>)}
-              </select>
+              <div className="if-srp-service-select-slot">
+                <select className="if-srp-service-select" aria-label="Inventory service status" value={filters.serviceReadiness ?? "all"} onChange={event => setFilters(current => ({ ...current, serviceReadiness: event.target.value as ServiceFilter }))}>
+                  {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value}>{label}: {serviceCounts[value]} {serviceCounts[value] === 1 ? "vehicle" : "vehicles"}</option>)}
+                </select>
+              </div>
             </div>
             {filtersOpen ? <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
               {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[Extract<QuickView, 'moving' | 'new' | 'price'>, string]>).map(([value, label]) => (
