@@ -960,7 +960,7 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByRole('button', { name: /Active/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('button', { name: /2025 Ford F-150 1/ })).not.toBeInTheDocument();
 
-    const search = screen.getByRole('textbox', { name: 'Search vehicle moves' });
+    const search = screen.getByRole('combobox', { name: 'Search vehicle moves' });
     fireEvent.change(search, { target: { value: 'MOVE1' } });
     expect(screen.getByRole('option', { name: /Suggestion:.*2025 Ford F-150 1/ })).toBeInTheDocument();
     expect(screen.getByText('Matching moves are outside this view')).toBeInTheDocument();
