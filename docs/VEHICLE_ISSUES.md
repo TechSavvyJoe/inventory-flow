@@ -116,13 +116,11 @@ existing role-matrix canary now seeds the assignment marker. Migration
 Legacy events have no fingerprint, so a retry using an old key is refused
 rather than guessed. No historical audit row is rewritten.
 
-A separate P2 confirmed gap remains: `server/service-core.mjs:2021`, the
-service-readiness detail endpoint, looks
-up the current source vehicle before returning its saved history. If that VIN
-leaves the feed, the endpoint returns `404` even though the service events remain
-in the database. A follow-up should add a deliberate archived-vehicle history
-view and a durable vehicle identity for service records. Vehicle issues already
-preserve that identity and remain accessible after source removal.
+Service-readiness detail now returns archived history when a VIN leaves the
+current feed but manager events or durable intake remain
+(`archivedFromInventory: true`, `canManage: false`). New service writes still
+require a current inventory vehicle. Vehicle issues continue to preserve their
+own durable identity and remain accessible after source removal.
 
 The two employee save routes, HTTP upload/failure/retry behavior and the
 unmocked synthetic browser workflow are now connected and tested. Physical

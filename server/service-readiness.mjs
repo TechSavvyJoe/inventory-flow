@@ -93,6 +93,24 @@ export function serviceStore(vehicle) {
   return STORE_NAMES.includes(vehicle.homeStore) ? vehicle.homeStore : null
 }
 
+/**
+ * Minimal vehicle used only to project saved service history after the VIN
+ * leaves the current public/DealerMail release. The durable home assignment
+ * is the vehicle's store. A service event's store is the recording actor's
+ * store, so it is only a fallback. This never invents a listing.
+ */
+export function archivedServiceVehicle({ vin, rows = [], homeStore = null, serviceIntake = null }) {
+  const latestStore = rows.at(-1)?.store_id
+  const vehicle = {
+    vin,
+    homeStore: STORE_NAMES.includes(homeStore) ? homeStore
+      : STORE_NAMES.includes(latestStore) ? latestStore
+      : null,
+  }
+  if (serviceIntake) Object.defineProperty(vehicle, 'serviceIntake', { value: serviceIntake })
+  return vehicle
+}
+
 export function serviceReadinessView(vehicle, row, context, { includeNotes = false } = {}) {
   const store = serviceStore(vehicle)
   const canManage = context.role === 'group_manager' || (context.role === 'manager' && store === context.store)

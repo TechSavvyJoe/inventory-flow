@@ -465,4 +465,38 @@ describe('Service readiness workspace', () => {
     expect(mocked.update).toHaveBeenCalledOnce()
   })
 
+  it('shows read-only saved service history when the VIN has left current inventory', async () => {
+    const vin = 'TESTDATAHWELL0099'
+    mocked.get.mockResolvedValue(detail('serviced', {
+      vin, archivedFromInventory: true, canManage: false, store: 'Lincoln', version: 2,
+      serviceEnteredAt: '2026-08-28', completedAt: '2026-08-30', notes: 'SYNTHETIC ARCHIVED SERVICE NOTE',
+      history: [
+        detail('serviced', { vin, version: 2, canManage: false, updatedBy: 'Synthetic Manager', updatedAt: '2026-08-30T12:00:00Z' }),
+        detail('in_service', { vin, version: 1, canManage: false, notes: 'SYNTHETIC ARCHIVED SERVICE NOTE', updatedBy: 'Synthetic Manager', updatedAt: '2026-08-28T12:00:00Z' }),
+      ],
+    }))
+    show(`/service?vin=${vin}`)
+    const panel = await screen.findByRole('complementary', { name: `Saved service history for ${vin}` })
+    expect(panel).toHaveTextContent('no longer in the current inventory')
+    expect(panel).toHaveTextContent('Ready')
+    expect(panel).toHaveTextContent('Lincoln')
+    expect(panel).toHaveTextContent(vin)
+    expect(panel).toHaveTextContent('SYNTHETIC ARCHIVED SERVICE NOTE')
+    expect(within(panel).getByRole('heading', { name: 'Saved service history' })).toHaveFocus()
+    expect(within(panel).queryByRole('button', { name: 'Save service status' })).not.toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: /Update service|Waiting|In service|Ready/ })).not.toBeInTheDocument()
+    expect(within(panel).queryByRole('link', { name: /Open vehicle|Vehicle details|Records/ })).not.toBeInTheDocument()
+    expect(mocked.update).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to service list' }))
+    expect(screen.queryByRole('complementary', { name: `Saved service history for ${vin}` })).not.toBeInTheDocument()
+  })
+
+  it('keeps a VIN with no saved history out of the current inventory', async () => {
+    mocked.get.mockRejectedValue(new ApiError('Vehicle was not found.', 404, 'VEHICLE_NOT_FOUND'))
+    show('/service?vin=TESTDATAHWELL0099')
+    expect(await screen.findByText('This vehicle is not in the current inventory. Select a vehicle below to review service status.')).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: /Saved service history/ })).not.toBeInTheDocument()
+    expect(mocked.update).not.toHaveBeenCalled()
+  })
+
 })
