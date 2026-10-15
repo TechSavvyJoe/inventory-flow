@@ -10,7 +10,7 @@ import { createInventoryServiceCore } from '../../server/service-core.mjs'
 import { createInventoryServer } from '../../server/api.mjs'
 import { loadD1Repository, RepositoryConflictError } from '../../cloudflare/src/repository.mjs'
 import { applySyntheticSchema, sqliteD1 } from '../../scripts/run-recovery-drill.mjs'
-import { serviceReadinessView, serviceStore } from '../../server/service-readiness.mjs'
+import { archivedServiceVehicle, serviceReadinessView, serviceStore } from '../../server/service-readiness.mjs'
 import { serviceIntakeRows } from '../../server/service-intake.mjs'
 
 const databases = []
@@ -123,6 +123,14 @@ describe('manager service readiness ledger', () => {
     const restored = reload().getServiceReadiness(VIN, manager)
     expect(restored).toMatchObject({ status: 'serviced', version: 2, canManage: true })
     expect(restored).not.toHaveProperty('archivedFromInventory')
+  })
+
+  it('keeps a durable home store when the last archived event was recorded at another store', () => {
+    const recordedAtHowell = [{ store_id: 'Howell', status: 'serviced', version: 1 }]
+    expect(archivedServiceVehicle({ vin: VIN, rows: recordedAtHowell, homeStore: 'Lincoln' }).homeStore).toBe('Lincoln')
+    expect(serviceStore(archivedServiceVehicle({ vin: VIN, rows: recordedAtHowell, homeStore: 'Lincoln' }))).toBe('Lincoln')
+    expect(archivedServiceVehicle({ vin: VIN, rows: recordedAtHowell, homeStore: null }).homeStore).toBe('Howell')
+    expect(archivedServiceVehicle({ vin: VIN, rows: [], homeStore: 'not-a-store' }).homeStore).toBeNull()
   })
 
   it('does not treat listing age, hold status, or non-arrival feed changes as service work', () => {
