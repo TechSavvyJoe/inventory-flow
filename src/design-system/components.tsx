@@ -4,6 +4,7 @@ import "./components.css";
 
 export interface FlowPageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   title: ReactNode;
+  tone?: "default" | "brand";
   titleId?: string;
   titleLabel?: string;
   titleRef?: Ref<HTMLHeadingElement>;
@@ -14,8 +15,8 @@ export interface FlowPageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, "
   facts?: ReactNode;
 }
 
-export function FlowPageHeader({ title, titleId, titleLabel, titleRef, titleTabIndex, description, icon, actions, facts, children, className = "", ...props }: FlowPageHeaderProps) {
-  return <header {...props} className={`ifx-page-header ${className}`.trim()}>
+export function FlowPageHeader({ tone = "default", title, titleId, titleLabel, titleRef, titleTabIndex, description, icon, actions, facts, children, className = "", ...props }: FlowPageHeaderProps) {
+  return <header {...props} className={`ifx-page-header${tone === "brand" ? " ifx-page-header--brand" : ""} ${className}`.trim()}>
     <div className="ifx-page-header__row">
       {icon ? <span className="ifx-page-header__icon" aria-hidden="true">{icon}</span> : null}
       <div className="ifx-page-header__identity">

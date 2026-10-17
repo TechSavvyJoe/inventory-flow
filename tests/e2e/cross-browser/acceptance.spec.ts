@@ -1,3 +1,4 @@
+import { chooseInventoryView } from '../inventory-controls'
 import { test as base, expect, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 
@@ -113,16 +114,24 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
   const serviceControls = [serviceSelect]
   await expect(serviceSelect).toBeVisible()
   await expect(serviceSelect.getByRole('option')).toHaveText([
-    /^All service · \d+$/, /^Waiting · \d+$/, /^In service · \d+$/, /^Ready · \d+$/,
+    /^All · \d+$/, /^Waiting · \d+$/, /^In service · \d+$/, /^Ready · \d+$/,
   ])
+  if (width <= 760) {
+    const quickView = quickFilters.getByRole('combobox', { name: 'Inventory quick view' })
+    await expect(quickView.getByRole('option')).toHaveText([
+      /^No hold · \d+$/, /^All · \d+$/, /^Held · \d+$/, /^(?:Offsite|Away) · \d+$/,
+    ])
+  }
   const sections = [
     page.getByRole('combobox', { name: 'Search inventory' }),
     scope.getByRole('button', { name: /^Howell inventory, \d+ of \d+ group vehicles$/ }),
     scope.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }),
+    ...(width <= 760 ? [quickFilters.getByRole('combobox', { name: 'Inventory quick view' })] : [
     quickFilters.getByRole('button', { name: /^No hold: \d+ vehicles$/ }),
     quickFilters.getByRole('button', { name: /^All: \d+ vehicles$/ }),
     quickFilters.getByRole('button', { name: /^Held: \d+ vehicles$/ }),
     quickFilters.getByRole('button', { name: /^(?:Offsite|Away from home): \d+ vehicles$/ }),
+    ]),
     ...serviceControls,
     page.getByRole('button', { name: /^Filters/ }),
     page.getByRole('button', { name: /^Sort inventory\./ }),
@@ -307,7 +316,7 @@ async function loadInventory(page: Page) {
   await expect(page).toHaveURL(/\/inventory/)
   await expect(page.getByRole('heading', { name: 'Howell inventory' })).toBeVisible()
   // These coverage cases exercise held and unheld records together.
-  await page.getByRole('button', { name: /^All:/ }).click()
+  await chooseInventoryView(page, 'all')
   await expect(page.getByRole('button', { name: 'All locations, 8 group vehicles' })).toBeVisible()
   // This invariant prevents this suite from accidentally running against real data.
   const bootstrap = await page.request.get('/api/bootstrap?role=manager&homeStore=Howell')
@@ -505,7 +514,7 @@ test('ordinary joined records keep readable facts and two useful vehicles in the
   test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
   await loadInventory(page)
   await page.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }).click()
-  await page.getByRole('button', { name: /^All: \d+ vehicles$/ }).click()
+  await chooseInventoryView(page, 'all')
   await page.getByRole('button', { name: /^Sort inventory\./ }).click()
   const movementSort = page.getByRole('button', { name: 'Remove Last movement sort', exact: true })
   if (await movementSort.count()) await movementSort.click()
@@ -616,7 +625,7 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
     await route.fulfill({ response, json: payload })
   })
   await page.goto('/inventory')
-  await page.getByRole('button', { name: /^All:/ }).click()
+  await chooseInventoryView(page, 'all')
   // Assert against the rich-record fixture, independent of default price sorting.
   const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
   const richMaverick = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-F02"]')
@@ -682,7 +691,7 @@ test('two primary columns keep complete vehicle evidence and direct actions in o
   // exercise its wider desktop layouts after the responsive transition.
   const showAllLocationsAndVehicles = async () => {
     await page.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }).click()
-    await page.getByRole('button', { name: /^All: \d+ vehicles$/ }).click()
+    await chooseInventoryView(page, 'all')
   }
   for (const width of [1280, 1440, 1800]) {
     // First capture H01 without a change summary. The exact same record and
@@ -852,7 +861,7 @@ test.describe('touch-capable desktop', () => {
     test.skip(isMobile, 'The phone uses its dedicated vehicle list; this covers a touch laptop or landscape tablet.')
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/inventory')
-    await page.getByRole('button', { name: /^All:/ }).click()
+    await chooseInventoryView(page, 'all')
     expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true)
     const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
     const actionTargets = main.locator('xpath=..').getByRole('group', { name: /^Actions for 2024 Ford F-150 Lariat$/ }).locator('button, a')
@@ -1064,7 +1073,7 @@ test('larger page sizes expand the results and pagination changes the visible ve
     await route.fulfill({ response, json: payload })
   })
   await page.goto('/inventory?scope=group')
-  await page.getByRole('button', { name: /^All:/ }).click()
+  await chooseInventoryView(page, 'all')
   await expect(page.getByRole('button', { name: 'All locations, 48 group vehicles' })).toBeVisible()
   await page.getByRole('button', { name: 'All locations, 48 group vehicles' }).click()
   await page.getByLabel('Rows per page').selectOption('10')

@@ -1,3 +1,4 @@
+import { chooseInventoryView } from './inventory-controls'
 import { expect, test } from '@playwright/test'
 
 test('scanner is phone/tablet-only and finds vehicles despite conflicting filters', async ({ page }) => {
@@ -13,7 +14,8 @@ test('scanner is phone/tablet-only and finds vehicles despite conflicting filter
     } })
   })
   await page.goto('/inventory')
-  await expect(page.getByRole('button', { name: /^No hold:/ })).toHaveAttribute('aria-pressed', 'true')
+  if ((page.viewportSize()?.width ?? 0) <= 760) await expect(page.getByRole('combobox', { name: 'Inventory quick view' })).toHaveValue('no-hold')
+  else await expect(page.getByRole('button', { name: /^No hold:/ })).toHaveAttribute('aria-pressed', 'true')
   const trigger = page.getByRole('button', { name: 'Scan vehicle', exact: true })
   if ((page.viewportSize()?.width ?? 0) > 1100) {
     await expect(trigger).not.toBeVisible()
@@ -21,7 +23,7 @@ test('scanner is phone/tablet-only and finds vehicles despite conflicting filter
     expect(await page.evaluate(() => (window as unknown as { __syntheticCameraRequests: number }).__syntheticCameraRequests)).toBe(0)
     return
   }
-  await page.getByRole('button', { name: /^Held:/ }).click()
+  await chooseInventoryView(page, 'held')
   await trigger.click()
   const dialog = page.getByRole('dialog', { name: 'Scan vehicle', exact: true })
   // This suite serves React development mode: StrictMode replays setup after

@@ -716,7 +716,7 @@ export function TransfersPage() {
       data-mobile-detail-open={(requestedId || requestedVin) && selected ? 'true' : 'false'}
     >
       <SourceWarning meta={data.meta} />
-      <FlowPageHeader className="transfers-page-header" icon={<ArrowLeftRight aria-hidden="true" />} title="Vehicle moves"
+      <FlowPageHeader tone="brand" className="transfers-page-header" icon={<ArrowLeftRight aria-hidden="true" />} title="Vehicle moves"
         description={storeScope === 'home' ? `Vehicles requested by, owned by, or currently at ${homeStore}.` : 'Moves you can access across the group.'}
         actions={<>{(requestedId || requestedVin || origin) ? <Link className={flowButtonClassName({ variant: 'secondary', size: 'md' })} to={safeReturnTo}><ArrowLeft size={18} aria-hidden="true" />{workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}</Link> : null}<FlowButton className="transfer-header-create" variant="primary" size="md" aria-label="Start a vehicle move" onClick={() => navigate(withWorkspaceReturnPath('/transfers/new', currentPath))} iconBefore={<Plus aria-hidden="true" />}>Start a move</FlowButton></>}>
       <div className="move-store-scope" role="group" aria-label="Vehicle move stores">

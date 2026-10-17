@@ -1,10 +1,11 @@
+import { chooseInventoryView } from './inventory-controls'
 import { expect, test, type Page } from '@playwright/test'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 // Inventory -> save -> open the toolbar list -> keep the page in place.
 async function saveVehicles(page: Page) {
   await page.goto('/inventory?scope=group')
-  await page.getByRole('button', { name: /^All:/ }).click()
+  await chooseInventoryView(page, 'all')
   for (const stock of ['DEMO-H02', 'DEMO-H01', 'DEMO-F02', 'DEMO-L02']) {
     const save = page.getByRole('button', { name: `Save ${stock} to shortlist`, exact: true })
     if (await save.count()) await save.click()

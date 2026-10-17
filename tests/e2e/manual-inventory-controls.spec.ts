@@ -1,3 +1,4 @@
+import { chooseInventoryView } from './inventory-controls'
 import { expect, test } from '@playwright/test'
 import type { BootstrapData } from '../../src/types'
 
@@ -66,7 +67,7 @@ test('phone pagination and row size remain clear of the saved-vehicle launcher',
     }] } })
   })
   await page.goto('/inventory')
-  await page.getByRole('button', { name: /^No hold:/ }).click()
+  await chooseInventoryView(page, 'no-hold')
   const pages = page.getByRole('navigation', { name: 'Inventory pages' })
   await expect(pages).toContainText('Showing 1–1 of 1')
   const launcher = page.getByRole('button', { name: /^Saved vehicles:/ })

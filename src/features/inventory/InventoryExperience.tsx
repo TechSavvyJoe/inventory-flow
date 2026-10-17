@@ -506,6 +506,14 @@ export function InventoryExperience({
   const chooseQuickView = (view: QuickView) => applyViewState(view === 'new' || view === 'price'
     ? toggleSecondaryQuickView(viewState, view)
     : selectQuickView(viewState, view));
+  const primaryQuickViews: Array<[QuickView, string, string]> = [
+    ["no-hold", "No hold", "No hold"], ["all", "All", "All"], ["held", "Held", "Held"],
+    ["offsite", locationScope === "home" ? "Offsite" : "Away from home", locationScope === "home" ? "Offsite" : "Away"],
+  ];
+  const isPrimaryViewSelected = (value: QuickView) => value === 'held' ? filters.dealerMail === 'held'
+    : value === 'all' ? quickView === 'all' && filters.dealerMail === 'all' : quickView === value;
+  const selectedPrimaryViews = primaryQuickViews.filter(([value]) => isPrimaryViewSelected(value));
+  const compactQuickView = selectedPrimaryViews.length === 1 ? selectedPrimaryViews[0][0] : 'custom';
   const toggleSecondaryView = (view: Extract<QuickView, 'moving' | 'new' | 'price'>) => applyViewState(toggleSecondaryQuickView(viewState, view));
   const setSearchQuery = (nextQuery: string) => {
     // Filtering must move to the first result page in the same update. Leaving
@@ -757,13 +765,15 @@ export function InventoryExperience({
         <div className="if-srp-controls">
           <div className="if-srp-quickviews" role="group" aria-label="Inventory quick filters">
             <strong className="if-srp-control-heading">Hold</strong>
-            {([
-              ["no-hold", "No hold", "No hold"],
-              ["all", "All", "All"],
-              ["held", "Held", "Held"],
-              ["offsite", locationScope === "home" ? "Offsite" : "Away from home", locationScope === "home" ? "Offsite" : "Away"],
-            ] as Array<[QuickView, string, string]>).map(([value, label, compactLabel]) => (
-              <button key={value} type="button" className={(value === 'held' ? filters.dealerMail === 'held' : value === 'all' ? quickView === 'all' && filters.dealerMail === 'all' : quickView === value) ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={value === 'held' ? filters.dealerMail === 'held' : value === 'all' ? quickView === 'all' && filters.dealerMail === 'all' : quickView === value} onClick={() => chooseQuickView(value)}>
+            <label className="if-srp-quickview-select-slot">
+              <span aria-hidden="true">View</span>
+              <select aria-label="Inventory quick view" value={compactQuickView} onChange={event => chooseQuickView(event.target.value as QuickView)}>
+                {compactQuickView === 'custom' ? <option value="custom" disabled>Custom view</option> : null}
+                {primaryQuickViews.map(([value, label, compactLabel]) => <option key={value} value={value} aria-label={`${label}: ${quickViewCounts[value]} vehicles`}>{compactLabel} · {quickViewCounts[value]}</option>)}
+              </select>
+            </label>
+            {primaryQuickViews.map(([value, label, compactLabel]) => (
+              <button key={value} type="button" className={isPrimaryViewSelected(value) ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={isPrimaryViewSelected(value)} onClick={() => chooseQuickView(value)}>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--full" aria-hidden="true">{label}</span>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--compact" aria-hidden="true">{compactLabel}</span>
                 <span className="inventory-quick-filter-count" aria-hidden="true">{quickViewCounts[value]}</span>
@@ -781,7 +791,7 @@ export function InventoryExperience({
               </button>)}
               <div className="if-srp-service-select-slot">
                 <select className="if-srp-service-select" aria-label="Inventory service status" value={filters.serviceReadiness ?? "all"} onChange={event => setFilters(current => ({ ...current, serviceReadiness: event.target.value as ServiceFilter }))}>
-                  {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value} aria-label={`${label}: ${serviceCounts[value]} ${serviceCounts[value] === 1 ? "vehicle" : "vehicles"}`}>{value === "needs_service" ? "Waiting" : label} · {serviceCounts[value]}</option>)}
+                  {SERVICE_FILTERS.map(([value, label]) => <option key={value} value={value} aria-label={`${label}: ${serviceCounts[value]} ${serviceCounts[value] === 1 ? "vehicle" : "vehicles"}`}>{value === "needs_service" ? "Waiting" : value === "all" ? "All" : label} · {serviceCounts[value]}</option>)}
                 </select>
               </div>
             </div>
@@ -801,22 +811,24 @@ export function InventoryExperience({
             </div> : null}
           </div>
 
-          <div className="if-srp-tools">
-            <div className="inventory-toolbar__left">
-              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen || filterCount > 0 ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} title="Filters" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
-                <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
-              </button>
-            </div>
+          <div className="if-srp-utilities">
+            <div className="if-srp-tools">
+              <div className="inventory-toolbar__left">
+                <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen || filterCount > 0 ? " is-active" : ""}`} aria-label={`Filters${filterCount > 0 ? ` ${filterCount}` : ""}`} title="Filters" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
+                  <Filter size={16} strokeWidth={1.8} aria-hidden="true" /><span className="inventory-tool-label">Filters</span>{filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
+                </button>
+              </div>
 
-            <div className="inventory-toolbar__right">
-              <SortComposer sorts={sorts} onChange={setSorts} />
+              <div className="inventory-toolbar__right">
+                <SortComposer sorts={sorts} onChange={setSorts} />
+              </div>
+            {shortlist.count > 0 || onlyShortlisted ? <button type="button" className="inventory-shortlist-filter" aria-label={`Shortlist (${shortlist.count}) — Saved only`} title="Show saved vehicles only" aria-pressed={onlyShortlisted} onClick={() => setOnlyShortlisted(!onlyShortlisted)}>
+              <Heart aria-hidden="true" /><span className="inventory-tool-label">Saved only</span><span aria-hidden="true">{shortlist.count}</span>
+            </button> : null}
             </div>
-          {shortlist.count > 0 || onlyShortlisted ? <button type="button" className="inventory-shortlist-filter" aria-label={`Shortlist (${shortlist.count}) — Saved only`} title="Show saved vehicles only" aria-pressed={onlyShortlisted} onClick={() => setOnlyShortlisted(!onlyShortlisted)}>
-            <Heart aria-hidden="true" /><span className="inventory-tool-label">Saved only</span><span aria-hidden="true">{shortlist.count}</span>
-          </button> : null}
+            <InventoryExpansionControl className="inv-btn inv-btn--secondary inventory-expansion-control" />
+            <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" title="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan</span></button></span>
           </div>
-          <InventoryExpansionControl className="inv-btn inv-btn--secondary inventory-expansion-control" />
-          <span className="inventory-scan-entry"><button type="button" className="button button-secondary" aria-label="Scan vehicle" title="Scan vehicle" ref={scanTriggerRef} onClick={() => setScannerOpen(true)}><ScanLine size={18} aria-hidden="true" /><span className="inventory-tool-label">Scan</span></button></span>
         </div>
         </div>
 

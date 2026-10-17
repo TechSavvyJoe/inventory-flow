@@ -1,3 +1,4 @@
+import { chooseInventoryView } from './inventory-controls'
 import { expect, test } from '@playwright/test'
 
 // The synthetic demo vehicle that carries factory-equipment and AutoCheck
@@ -10,7 +11,7 @@ test('browser history restores the app after leaving nested take-home and vehicl
   await page.goto('/overview')
   await page.getByRole('link', { name:'Inventory', exact:true }).filter({ visible:true }).click()
   await expect(page.getByRole('combobox', { name:'Search inventory' })).toBeVisible()
-  await page.getByRole('button', { name:/^All:/ }).click()
+  await chooseInventoryView(page, 'all')
   await page.getByRole('combobox', { name:'Search inventory' }).fill(VIN)
   if (testInfo.project.name === 'mobile') {
     await page.locator('.if-srp-mobile-list .inventory-mobile-row__open', { hasText:NAME }).click()
@@ -39,7 +40,7 @@ test('inventory search opens the VIN-specific premium document workspace', async
   await expect(page.getByRole('heading', { name: /Howell inventory/i })).toBeVisible({ timeout: 15_000 })
   // The rich document fixture is deliberately held. Select All before checking
   // result controls, which are absent when the default No hold view is empty.
-  await page.getByRole('button', { name: /^All:/ }).click()
+  await chooseInventoryView(page, 'all')
   await expect(page.getByLabel('Rows per page').locator('option')).toHaveText([
     '10',
     '15',

@@ -1,3 +1,4 @@
+import { chooseInventoryView } from '../inventory-controls'
 import { expect, test as base, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -190,7 +191,7 @@ test('a saved customer list reopens, persists edits, refreshes comparison facts 
   })
 
   await page.goto('/inventory?scope=group')
-  await page.getByRole('button', { name: /^All:/ }).click()
+  await chooseInventoryView(page, 'all')
   const launcher = page.getByRole('button', { name: /^Saved vehicles:/ })
   await launcher.click()
   const panel = page.getByRole('region', { name: /^Saved vehicles \d+$/ })

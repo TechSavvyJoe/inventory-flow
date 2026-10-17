@@ -353,8 +353,8 @@ export function ServicePage() {
   const archivedDetail = archived.status === 'archived' ? archived.detail : null
   return <section className={`service-page${selected || archivedDetail ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
     <SourceWarning meta={data.meta} />
-    <FlowPageHeader className="service-page-heading" icon={<Wrench aria-hidden="true" size={20} />} title="Service status">
-      <div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'home'} onClick={() => { setScope('home'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'group' && !storeFilter} onClick={() => { setScope('group'); setStoreFilter(null) }}>All stores</button></div></div>
+    <FlowPageHeader tone="brand" className="service-page-heading" icon={<Wrench aria-hidden="true" size={20} />} title="Service status">
+      <div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button className={flowButtonClassName({ variant: scope === 'home' ? 'primary' : 'secondary' })} type="button" aria-pressed={scope === 'home'} onClick={() => { setScope('home'); setStoreFilter(null) }}>My store · {homeStore}</button><button className={flowButtonClassName({ variant: scope === 'group' && !storeFilter ? 'primary' : 'secondary' })} type="button" aria-pressed={scope === 'group' && !storeFilter} onClick={() => { setScope('group'); setStoreFilter(null) }}>All stores</button></div></div>
     </FlowPageHeader>
     <div className="service-tabs" role="group" aria-label="Service status">
       {STATUSES.map((value) => <button key={value} type="button" aria-pressed={status === value} onClick={() => setParams({ status: value, ...(returnTo ? { returnTo } : {}) })}>{SERVICE_LABELS[value]}{' '}<span>{counts[value]}</span></button>)}
