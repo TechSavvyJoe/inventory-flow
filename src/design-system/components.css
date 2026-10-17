@@ -10,6 +10,13 @@
 .ifx-page-header__controls { padding:var(--ifx-space-1) var(--ifx-space-3); }
 .ifx-page-header__actions { flex:none; margin-left:auto; }
 .ifx-page-header__facts { display:flex; flex-wrap:wrap; grid-column:1 / -1; align-items:center; gap:var(--ifx-space-1) var(--ifx-space-3); padding:0 var(--ifx-space-3) var(--ifx-space-2); color:var(--ink-600); font-size:var(--ifx-text-sm); }
+/* A shared navy identity band; controls stay on a neutral, readable surface. */
+.ifx-page-header--brand { border-radius:var(--ifx-radius-sm); }
+.ifx-page-header--brand .ifx-page-header__row { --ifx-workspace-header-ink:var(--ifx-masthead-ink); --ifx-workspace-header-muted:var(--ifx-masthead-muted); background:var(--ifx-brand-blue); border-radius:var(--ifx-radius-sm) 0 0 var(--ifx-radius-sm); }
+.ifx-page-header--brand :is(.ifx-page-header__icon,.ifx-page-header__title svg) { color:var(--ifx-masthead-ink); }
+.ifx-page-header--brand .ifx-page-header__row .ifx-button { background:var(--surface); color:var(--navy-900); border-color:var(--ifx-masthead-muted); }
+.ifx-page-header--brand .ifx-page-header__row .ifx-button:hover:not(:disabled) { background:var(--blue-050); }
+.ifx-page-header--brand .ifx-page-header__row :is(button,a):focus-visible { outline-color:var(--ifx-masthead-ink); }
 .ifx-ledger-heading { min-width:0; color:var(--navy-900); background:var(--ifx-panel-header); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-panel-border); }
 .ifx-ledger-heading__row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; min-width:0; }
 .ifx-ledger-heading__label { display:flex; align-items:center; min-width:0; max-width:100%; padding:var(--ifx-space-2) var(--ifx-space-3); }
@@ -21,6 +28,7 @@
 .ifx-ledger-heading--accent .ifx-ledger-heading__label { border-left:var(--ifx-stroke-emphasis) solid var(--blue-600); }
 @media (max-width:760px) {
   .ifx-page-header { grid-template-columns:minmax(0,1fr); }
+  .ifx-page-header--brand .ifx-page-header__row { border-radius:var(--ifx-radius-sm) var(--ifx-radius-sm) 0 0; }
   .ifx-page-header__row { padding-inline:var(--ifx-space-2); }
   .ifx-page-header .ifx-page-header__title { font-size:var(--ifx-text-xl); }
   .ifx-page-header__controls { padding-inline:var(--ifx-space-2); }

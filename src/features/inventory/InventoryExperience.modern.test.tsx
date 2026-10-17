@@ -78,6 +78,31 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByText('Showing 1–4 of 4')).toBeInTheDocument();
   });
 
+  it('keeps counted phone quick views synchronized with desktop filters', () => {
+    const local = { ...vehicle(1), location: { homeStore, sourceReportedStore: homeStore } };
+    const held = { ...vehicle(2), location: { homeStore, sourceReportedStore: homeStore }, dealerMail: { dataState: 'current' as const, hasActiveHold: true } };
+    render(<InventoryExperienceHarness initialQuickView="no-hold" homeStore={homeStore} vehicles={[local, held]} />);
+    const select = screen.getByRole('combobox', { name: 'Inventory quick view' });
+    expect(select).toHaveValue('no-hold');
+    expect(within(select).getByRole('option', { name: 'Held: 1 vehicles' })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'held' } });
+    expect(screen.getByRole('button', { name: 'Held: 1 vehicles' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'all' } });
+    expect(screen.getByText('Showing 1–2 of 2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'No hold: 1 vehicles' }));
+    expect(select).toHaveValue('no-hold');
+    fireEvent.change(select, { target: { value: 'held' } });
+    fireEvent.change(select, { target: { value: 'offsite' } });
+    expect(select).toHaveValue('custom');
+    expect(within(select).getByRole('option', { name: 'Custom view' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Held:/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Offsite:/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.change(select, { target: { value: 'all' } });
+    expect(select).toHaveValue('all');
+    expect(screen.getByText('Showing 1–2 of 2')).toBeInTheDocument();
+  });
+
   it('keeps service facet counts stable for a text search and offers owned-away matches across locations', async () => {
     const away = { id: 'fowlerville', name: 'Fowlerville' };
     const local = { ...vehicle(1), location: { homeStore, sourceReportedStore: homeStore }, serviceReadiness: { vin: vehicle(1).vin, status: 'serviced' as const, version: 1, serviceEnteredAt: null, completedAt: '2026-09-25', updatedAt: '2026-09-25T12:00:00Z', updatedBy: 'Synthetic Manager', updatedByRole: 'manager' as const, updatedAtStore: 'Howell' as const, store: 'Howell' as const, canManage: false } };
@@ -295,11 +320,11 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('button', { name: 'Being moved: 0 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New today: 0 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Price changed: 0 vehicles' })).toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Inventory quick view' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Inventory quick view' })).toHaveValue('all');
     const service = screen.getByRole('combobox', { name: 'Inventory service status' });
     expect(service).toHaveValue('all');
     expect(within(service).getAllByRole('option').map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent }))).toEqual([
-      { value: 'all', label: 'All service · 1' },
+      { value: 'all', label: 'All · 1' },
       { value: 'needs_service', label: 'Waiting · 1' },
       { value: 'in_service', label: 'In service · 0' },
       { value: 'serviced', label: 'Ready · 0' },

@@ -1,12 +1,12 @@
 .vehicle-certified-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ifx-space-1);
   flex: 0 0 auto;
   vertical-align: middle;
-  line-height: 1;
+  line-height: var(--ifx-leading-compact);
   color: var(--ink-700);
-  font-size: 12px;
+  font-size: var(--ifx-text-xs);
 }
 .vehicle-certified-badge > img {
   display: block;

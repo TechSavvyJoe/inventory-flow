@@ -1,3 +1,4 @@
+import { chooseInventoryView } from '../inventory-controls'
 import { expect, test, type Dialog, type Locator, type Page } from '@playwright/test'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
@@ -29,7 +30,7 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     await page.setViewportSize({ width, height: 844 })
     await page.goto('/inventory?scope=home')
     // Exercise both held and unheld records; the landing default is No hold.
-    await page.getByRole('button', { name: /^All:/ }).click()
+    await chooseInventoryView(page, 'all')
     // Shared workflow tests can add movement events. Use the real sort UI to
     // keep the ordinary Bronco first instead of depending on those events.
     await page.getByRole('button', { name: /^Sort inventory\./ }).click()
@@ -41,11 +42,12 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     const rows = page.locator('.if-srp-mobile-row--scan')
     await expect(rows).toHaveCount(2)
     const firstVisible = rows.first()
-    // The approved phone workbench has five functional 44px rows. The first
+    // The approved phone workbench has four functional 44px rows. The first
     // vehicle follows it within one control-height spacing unit, and its
     // identity and actions must still fit above the dock.
     const workbench = page.locator('.if-srp-workbench')
     const workbenchBounds = (await workbench.boundingBox())!
+    expect(workbenchBounds.height, `${width}px workbench leaves room for vehicles`).toBeLessThanOrEqual(196)
     const controlHeight = (await page.getByRole('button', { name: /^Filters(?: \d+)?$/ }).boundingBox())!.height
     const rowGap = (await firstVisible.boundingBox())!.y - workbenchBounds.y - workbenchBounds.height
     expect(rowGap).toBeGreaterThanOrEqual(-1)

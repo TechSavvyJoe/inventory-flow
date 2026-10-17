@@ -1,3 +1,4 @@
+import { chooseInventoryView } from './inventory-controls'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 // Synthetic fixture only. Compact rows must improve scanning without losing
@@ -8,7 +9,7 @@ const secondName = '2022 Lincoln Corsair Grand Touring'
 async function openInventory(page: Page) {
   await page.goto('/inventory?scope=group')
   await expect(page.getByRole('heading', { name: 'All locations inventory' })).toBeVisible()
-  await page.getByRole('button', { name: /^All: \d+ vehicles$/ }).click()
+  await chooseInventoryView(page, 'all')
   // Other workflow specs create synthetic moves in the shared demo service.
   // Use the real sort UI so density is measured in a stable vehicle order,
   // rather than mistaking a later row for the third vehicle after a move.
