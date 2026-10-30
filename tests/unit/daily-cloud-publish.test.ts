@@ -234,6 +234,21 @@ afterEach(() => {
 })
 
 describe('daily PowerShell publisher document retries', () => {
+  it('reuses a verified receipt when the optional manager overlay field is absent', () => {
+    const test = fixture(true)
+    const manifestPath = path.join(test.workspaceRoot, 'work/run-status', `${reportDate}.json`)
+    writeFileSync(manifestPath, JSON.stringify({ complete: true, report_date: reportDate }))
+    const savedReceipt = readFileSync(test.receiptPath, 'utf8')
+
+    const result = test.run()
+    expect(result.exitCode, result.output).toBe(0)
+    expect(result.output).toContain('SKIPPED (already current)')
+    expect(result.helpers).not.toContain('sync-cloud-release.mjs')
+    expect(result.helpers).toContain('publish-invoice-documents.mjs')
+    expect(readFileSync(test.receiptPath, 'utf8')).toBe(savedReceipt)
+    expect(test.readManifest()).toMatchObject({ cloudflare_publish: { status: 'published_and_verified' } })
+  }, 30_000)
+
   it('retries a failed invoice after the receipt was saved without recapturing or republishing sources', () => {
     const test = fixture()
     const first = test.run({ invoiceExit: 1 })
