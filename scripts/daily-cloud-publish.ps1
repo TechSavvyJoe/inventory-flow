@@ -341,7 +341,9 @@ function Test-ReceiptMatchesManagerOverlay {
     return $true
   }
 
-  $binding = $manifest.manager_disposition_overlay
+  # Strict mode throws on an absent optional property; distinguish missing from present.
+  $bindingProperty = $manifest.PSObject.Properties['manager_disposition_overlay']
+  $binding = if ($null -ne $bindingProperty) { $bindingProperty.Value } else { $null }
   $expected = if ($binding -and $binding.status -eq 'complete') { [string]$binding.sha256 } else { '' }
   # The manifest checksum is the raw operational input. The managerDisposition
   # receipt hash is the sanitized overlay and must not be compared to it.
